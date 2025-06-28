@@ -34,14 +34,26 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y ffmpeg espeak espeak-data libespeak1 libespeak-dev
         ffmpeg -version  # Verify ffmpeg installation
+        echo "ffmpeg version check completed"
       continue-on-error: false
       
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install --no-cache-dir -r requirements.txt  # Force fresh install without cache
+        pip install --no-cache-dir imageio_ffmpeg>=0.4.0  # Explicitly install imageio_ffmpeg
         pip show moviepy  # Verify moviepy installation
-        python -c "import moviepy.editor; print(moviepy.editor.__version__)"  # Test import
+        echo "Installed moviepy version details:"
+        pip show moviepy || echo "moviepy not found"
+        python -c "import moviepy.editor as mp; print('moviepy.editor version:', mp.__version__)" || {
+          echo "Error: moviepy.editor import failed with version 2.2.1";
+          pip install --no-cache-dir moviepy==1.0.3;
+          python -c "import moviepy.editor as mp; print('moviepy.editor version (fallback):', mp.__version__)" || {
+            echo "Error: moviepy.editor import failed even with fallback version 1.0.3";
+            exit 1;
+          }
+        }
+        echo "Dependency installation and verification completed"
       continue-on-error: false
       
     - name: Create output directory
