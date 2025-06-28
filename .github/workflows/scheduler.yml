@@ -2,7 +2,7 @@ name: Daily YouTube Automation
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # Daily at 6 AM UTC
+    - cron: '0 4 * * *'  # Daily at 6 AM UTC
   workflow_dispatch:      # Allow manual trigger
 
 jobs:
@@ -66,52 +66,47 @@ jobs:
 
       - name: 🔍 Verify critical imports
         run: |
-          python -c "
-import sys
-try:
-    import moviepy.editor as mp; print('✅ MoviePy imported successfully')
-    from gtts import gTTS; print('✅ gTTS imported successfully')
-    import openai; print('✅ OpenAI imported successfully, version:', openai.__version__)
-    from PIL import Image; print('✅ PIL imported successfully')
-    from googleapiclient.discovery import build; print('✅ Google API client imported successfully')
-except Exception as e:
-    print('❌ Import error:', e)
-    sys.exit(1)
-"
+          python -c 'import sys
+          import openai
+          try:
+              import moviepy.editor as mp; print("✅ MoviePy imported successfully")
+              from gtts import gTTS; print("✅ gTTS imported successfully")
+              print("✅ OpenAI imported successfully, version:", openai.__version__)
+              from PIL import Image; print("✅ PIL imported successfully")
+              from googleapiclient.discovery import build; print("✅ Google API client imported successfully")
+          except Exception as e:
+              print("❌ Import error:", e)
+              sys.exit(1)'
 
       - name: 🔐 Validate environment variables
         run: |
-          python -c "
-import os, sys
-required = ['OPENAI_API_KEY']
-optional = ['YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET', 'GOOGLE_API_KEY']
-missing = [v for v in required if not os.getenv(v)]
-if missing:
-    print('❌ Missing required environment variables:', missing)
-    sys.exit(1)
-else:
-    print('✅ Required environment variables found')
-missing_opt = [v for v in optional if not os.getenv(v)]
-if missing_opt:
-    print('⚠️ Missing optional environment variables:', missing_opt)
-else:
-    print('✅ All optional environment variables found')
-"
+          python -c 'import os, sys
+          required = ["OPENAI_API_KEY"]
+          optional = ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "GOOGLE_API_KEY"]
+          missing = [v for v in required if not os.getenv(v)]
+          if missing:
+              print("❌ Missing required environment variables:", missing)
+              sys.exit(1)
+          else:
+              print("✅ Required environment variables found")
+          missing_opt = [v for v in optional if not os.getenv(v)]
+          if missing_opt:
+              print("⚠️ Missing optional environment variables:", missing_opt)
+          else:
+              print("✅ All optional environment variables found")'
 
       - name: 🧪 Test utility module imports
         run: |
-          python -c "
-import sys
-try:
-    from utils.topic_rotator import get_today_topic; print('✅ topic_rotator imported')
-    from utils.scripting import generate_script; print('✅ scripting imported')
-    from utils.voice import generate_voice; print('✅ voice imported')
-    from utils.video import create_video; print('✅ video imported')
-    from utils.thumbnail_generator import generate_thumbnail; print('✅ thumbnail_generator imported')
-except Exception as e:
-    print('❌ Module import error:', e)
-    sys.exit(1)
-"
+          python -c 'import sys
+          try:
+              from utils.topic_rotator import get_today_topic; print("✅ topic_rotator imported")
+              from utils.scripting import generate_script; print("✅ scripting imported")
+              from utils.voice import generate_voice; print("✅ voice imported")
+              from utils.video import create_video; print("✅ video imported")
+              from utils.thumbnail_generator import generate_thumbnail; print("✅ thumbnail_generator imported")
+          except Exception as e:
+              print("❌ Module import error:", e)
+              sys.exit(1)'
 
       - name: 🚀 Run Main Script
         run: python3 main.py
