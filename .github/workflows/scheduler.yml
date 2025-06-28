@@ -8,7 +8,7 @@ on:
     # Allow manual triggering
     inputs:
       topic_override:
-        description: 'Override today\'s topic (optional)'
+        description: 'Override today''s topic (optional)'
         required: false
         type: string
       category_override:
