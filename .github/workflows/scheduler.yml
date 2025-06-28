@@ -2,10 +2,8 @@ name: YouTube Automation
 
 on:
   schedule:
-    # Run daily at 9:00 AM UTC (adjust as needed)
-    - cron: '0 9 * * *'
+    - cron: '0 9 * * *'  # Run daily at 9:00 AM UTC
   workflow_dispatch:
-    # Allow manual triggering
     inputs:
       topic_override:
         description: 'Override today''s topic (optional)'
@@ -13,55 +11,48 @@ on:
         type: string
       category_override:
         description: 'Override category (optional)'
-        required: false  
+        required: false
         type: string
 
 jobs:
   create-and-upload-video:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-        
+
     - name: Install system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y ffmpeg espeak espeak-data libespeak1 libespeak-dev
-        ffmpeg -version  # Verify ffmpeg installation
-        echo "ffmpeg version check completed"
-      continue-on-error: false
-      
+        ffmpeg -version
+
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install --no-cache-dir -r requirements.txt  # Force fresh install without cache
-        pip install --no-cache-dir imageio_ffmpeg>=0.4.0  # Explicitly install imageio_ffmpeg
-        pip show moviepy  # Verify moviepy installation
-        echo "Installed moviepy version details:"
-        pip show moviepy || echo "moviepy not found"
-        python -c "import moviepy; print('moviepy version:', moviepy.__version__)" || echo "Error: failed to get moviepy version"
-        python -c "import moviepy.editor as mp; mp.VideoFileClip('test.mp4', target_resolution=(720, 1280)).write_videofile('test_output.mp4', fps=30)" || {
-          echo "Error: moviepy.editor functionality test failed with current version"
-          pip uninstall -y moviepy
-          pip install --no-cache-dir moviepy==1.0.3
-          python -c "import moviepy; print('moviepy version (fallback):', moviepy.__version__)" || echo "Error: failed to get moviepy version (fallback)"
-          python -c "import moviepy.editor as mp; mp.VideoFileClip('test.mp4', target_resolution=(720, 1280)).write_videofile('test_output.mp4', fps=30)" || {
-            echo "Error: moviepy.editor functionality test failed even with fallback version 1.0.3"
-            exit 1
-          }
-        }
-        echo "Dependency installation and verification completed"
-      continue-on-error: false
-      
+        pip install --no-cache-dir -r requirements.txt
+        pip install --no-cache-dir imageio_ffmpeg>=0.4.0
+        pip show moviepy
+        python -c "import moviepy.editor as mp; print('✅ moviepy.editor imported successfully')"
+
+    - name: Create dummy video for test
+      run: |
+        ffmpeg -f lavfi -i color=c=blue:s=1280x720:d=1 -pix_fmt yuv420p test.mp4
+
+    - name: Verify moviepy functionality
+      run: |
+        python -c "import moviepy.editor as mp; mp.VideoFileClip('test.mp4').write_videofile('test_output.mp4', fps=24)"
+        echo "✅ moviepy test passed"
+
     - name: Create output directory
       run: mkdir -p output
-      
+
     - name: Set up YouTube credentials
       env:
         YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
@@ -71,7 +62,7 @@ jobs:
         if [ ! -z "$YOUTUBE_TOKEN" ]; then
           echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle
         fi
-        
+
     - name: Create environment file
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -87,7 +78,7 @@ jobs:
         ENABLE_UPLOAD=$ENABLE_UPLOAD
         DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL
         EOF
-        
+
     - name: Run YouTube automation
       id: automation
       env:
@@ -100,18 +91,16 @@ jobs:
         if [ ! -z "$CATEGORY_OVERRIDE" ]; then
           echo "CATEGORY_OVERRIDE=$CATEGORY_OVERRIDE" >> .env
         fi
-        
         python main.py 2>&1 | tee automation.log
         echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
-        
+
     - name: Save updated token
       if: always()
       run: |
         if [ -f token.pickle ]; then
           base64 -w 0 token.pickle > token_updated.txt
-          echo "Updated token available for storage"
         fi
-        
+
     - name: Upload artifacts on failure
       if: failure()
       uses: actions/upload-artifact@v4
@@ -121,7 +110,7 @@ jobs:
           automation.log
           output/
         retention-days: 7
-        
+
     - name: Send success notification
       if: success() && env.DISCORD_WEBHOOK_URL != ''
       env:
@@ -129,44 +118,37 @@ jobs:
       run: |
         VIDEO_TITLE=$(grep "Topic:" automation.log | head -1 | cut -d' ' -f3-)
         VIDEO_ID=$(grep "Video uploaded with ID:" automation.log | tail -1 | awk '{print $NF}')
-        
         if [ ! -z "$VIDEO_ID" ]; then
-          curl -H "Content-Type: application/json" \
-               -X POST \
-               -d "{
-                 \"embeds\": [{
-                   \"title\": \"✅ YouTube Video Published Successfully!\",
-                   \"description\": \"**Title:** $VIDEO_TITLE\\n**Video ID:** $VIDEO_ID\\n**URL:** https://www.youtube.com/watch?v=$VIDEO_ID\",
-                   \"color\": 5763719,
-                   \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
-                 }]
-               }" \
-               $DISCORD_WEBHOOK_URL
+          curl -H "Content-Type: application/json" -X POST -d "{
+            \"embeds\": [{
+              \"title\": \"✅ YouTube Video Published Successfully!\",
+              \"description\": \"**Title:** $VIDEO_TITLE\\n**Video ID:** $VIDEO_ID\\n**URL:** https://www.youtube.com/watch?v=$VIDEO_ID\",
+              \"color\": 5763719,
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
+            }]
+          }" $DISCORD_WEBHOOK_URL
         fi
-        
-    - name: Send failure notification  
+
+    - name: Send failure notification
       if: failure() && env.DISCORD_WEBHOOK_URL != ''
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
         ERROR_MSG=$(tail -10 automation.log | tr '\n' ' ')
-        curl -H "Content-Type: application/json" \
-             -X POST \
-             -d "{
-               \"embeds\": [{
-                 \"title\": \"❌ YouTube Automation Failed\",
-                 \"description\": \"**Error:** $ERROR_MSG\\n**Run:** ${{ github.run_number }}\\n**Workflow:** ${{ github.workflow }}\",
-                 \"color\": 15158332,
-                 \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
-               }]
-             }" \
-             $DISCORD_WEBHOOK_URL
+        curl -H "Content-Type: application/json" -X POST -d "{
+          \"embeds\": [{
+            \"title\": \"❌ YouTube Automation Failed\",
+            \"description\": \"**Error:** $ERROR_MSG\\n**Run:** ${{ github.run_number }}\\n**Workflow:** ${{ github.workflow }}\",
+            \"color\": 15158332,
+            \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
+          }]
+        }" $DISCORD_WEBHOOK_URL
 
   cleanup:
     runs-on: ubuntu-latest
     needs: create-and-upload-video
     if: always()
-    
+
     steps:
     - name: Cleanup old artifacts
       uses: actions/github-script@v7
@@ -177,12 +159,9 @@ jobs:
             repo: context.repo.repo,
             run_id: context.runId
           });
-          
-          // Keep only the 5 most recent artifacts
           const oldArtifacts = artifacts.data.artifacts
             .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
             .slice(5);
-            
           for (const artifact of oldArtifacts) {
             await github.rest.actions.deleteArtifact({
               owner: context.repo.owner,
