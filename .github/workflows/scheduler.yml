@@ -1,208 +1,57 @@
-name: Daily YouTube Automation
+name: YouTube Shorts Automation
+
 on:
   schedule:
-    - cron: '0 6 * * *'  # Daily at 6 AM UTC
-  workflow_dispatch:      # Allow manual trigger
+    - cron: '0 6 * * *'  # Runs every day at 6 AM UTC
+  workflow_dispatch:      # Allows manual run from the Actions tab
 
 jobs:
-  run-automation:
+  generate-video:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        
-      - name: Set up Python 3.10
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v3
+
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          
-      - name: Install system dependencies
+
+      - name: 🧰 Install system dependencies (ImageMagick for moviepy)
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            ffmpeg \
-            imagemagick \
-            espeak \
-            espeak-data \
-            libespeak1 \
-            libespeak-dev \
-            portaudio19-dev \
-            python3-pyaudio
-          
-      - name: Configure ImageMagick policy
-        run: |
-          sudo sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml || true
-          sudo sed -i 's/rights="none" pattern="PS"/rights="read|write" pattern="PS"/' /etc/ImageMagick-6/policy.xml || true
-          sudo sed -i 's/rights="none" pattern="EPS"/rights="read|write" pattern="EPS"/' /etc/ImageMagick-6/policy.xml || true
-          
-      - name: Create output directory
-        run: |
-          mkdir -p output
-          
-      - name: Create requirements.txt
-        run: |
-          cat > requirements.txt << EOF
-          moviepy==1.0.3
-          imageio-ffmpeg
-          gTTS
-          openai==0.28
-          pillow
-          flask
-          google-api-python-client
-          google-auth-httplib2
-          google-auth-oauthlib
-          decorator
-          proglog
-          mutagen
-          pydub
-          EOF
-          
-      - name: Install Python dependencies
+          sudo apt-get install -y imagemagick ffmpeg
+        # ImageMagick is used by moviepy's TextClip
+        # ffmpeg is used to process audio/video
+
+      - name: 🔧 Set ImageMagick binary path
+        run: echo "IMAGEMAGICK_BINARY=/usr/bin/convert" >> $GITHUB_ENV
+
+      - name: 📦 Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          
-      - name: Verify critical imports
+          pip install moviepy  # Ensure moviepy is explicitly available
+
+      - name: ✅ Validate environment variables
         run: |
           python -c "
-          import sys
-          
-          # Test critical imports
-          try:
-              import moviepy.editor as mp
-              print('✅ MoviePy imported successfully')
-          except Exception as e:
-              print('❌ MoviePy error:', e)
-              sys.exit(1)
-              
-          try:
-              from gtts import gTTS
-              print('✅ gTTS imported successfully')
-          except Exception as e:
-              print('❌ gTTS error:', e)
-              sys.exit(1)
-              
-          try:
-              import openai
-              print('✅ OpenAI imported successfully')
-              print('OpenAI version:', openai.__version__)
-          except Exception as e:
-              print('❌ OpenAI error:', e)
-              sys.exit(1)
-              
-          try:
-              from PIL import Image, ImageDraw, ImageFont
-              print('✅ PIL imported successfully')
-          except Exception as e:
-              print('❌ PIL error:', e)
-              sys.exit(1)
-              
-          try:
-              from googleapiclient.discovery import build
-              print('✅ Google API client imported successfully')
-          except Exception as e:
-              print('❌ Google API client error:', e)
-              sys.exit(1)
-          "
-          
-      - name: Validate environment variables
-        run: |
-          python -c "
-          import os
-          import sys
-          
-          required_vars = ['OPENAI_API_KEY']
-          optional_vars = ['YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET', 'GOOGLE_API_KEY']
-          
-          missing_required = []
-          for var in required_vars:
-              if not os.getenv(var):
-                  missing_required.append(var)
-          
-          if missing_required:
-              print('❌ Missing required environment variables:', missing_required)
-              sys.exit(1)
-          else:
-              print('✅ Required environment variables found')
-              
-          missing_optional = []
-          for var in optional_vars:
-              if not os.getenv(var):
-                  missing_optional.append(var)
-                  
-          if missing_optional:
-              print('⚠️ Missing optional environment variables:', missing_optional)
-              print('Some features may not work properly')
-          else:
-              print('✅ All optional environment variables found')
-          "
-          
-      - name: Test utility modules
-        run: |
-          python -c "
-          import sys
-          import os
-          
-          # Test if all utility modules can be imported
-          try:
-              from utils.topic_rotator import get_today_topic
-              print('✅ topic_rotator imported')
-          except Exception as e:
-              print('❌ topic_rotator error:', e)
-              sys.exit(1)
-              
-          try:
-              from utils.scripting import generate_script
-              print('✅ scripting imported')
-          except Exception as e:
-              print('❌ scripting error:', e)
-              sys.exit(1)
-              
-          try:
-              from utils.voice import generate_voice
-              print('✅ voice imported')
-          except Exception as e:
-              print('❌ voice error:', e)
-              sys.exit(1)
-              
-          try:
-              from utils.video import create_video
-              print('✅ video imported')
-          except Exception as e:
-              print('❌ video error:', e)
-              sys.exit(1)
-              
-          try:
-              from utils.thumbnail_generator import generate_thumbnail
-              print('✅ thumbnail_generator imported')
-          except Exception as e:
-              print('❌ thumbnail_generator error:', e)
-              sys.exit(1)
-          "
-          
-      - name: Run Main Script
+import os, sys
+required = ['OPENAI_API_KEY']
+missing = [var for var in required if not os.getenv(var)]
+if missing:
+    print('❌ Missing:', missing)
+    sys.exit(1)
+else:
+    print('✅ Required env vars present')
+"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: ▶️ Run main script
+        run: python3 main.py
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-        run: |
-          python3 main.py
-          
-      - name: Upload artifacts on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-logs
-          path: |
-            output/
-            *.log
-            
-      - name: Upload generated content
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-content
-          path: |
-            output/
-          retention-days: 7
