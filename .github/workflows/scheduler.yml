@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4  # Updated to v4
+        uses: actions/checkout@v4
         
       - name: Set up Python 3.10
         uses: actions/setup-python@v4
@@ -27,42 +27,82 @@ jobs:
             libffi-dev \
             libjpeg-dev \
             libpng-dev \
-            libwebp-dev
+            libwebp-dev \
+            python3-dev \
+            build-essential
           
-      - name: Upgrade pip and install setuptools
+      - name: Upgrade pip and install build tools
         run: |
           python -m pip install --upgrade pip setuptools wheel
-        
-      - name: Install Python Dependencies Step by Step
-        run: |
-          pip install --no-cache-dir imageio
-          pip install --no-cache-dir imageio[ffmpeg]
-          pip install --no-cache-dir gTTS
-          pip install --no-cache-dir openai
-          pip install --no-cache-dir pillow
-          pip install --no-cache-dir flask
-          pip install --no-cache-dir google-api-python-client
-          pip install --no-cache-dir google-auth-httplib2
-          pip install --no-cache-dir google-auth-oauthlib
-            
-      - name: Install MoviePy with verbose output
-        run: |
-          pip install --no-cache-dir --verbose moviepy
           
-      - name: Debug Python path and packages
+      - name: Install imageio and ffmpeg plugin first
         run: |
-          python -c "import sys; print('Python path:', sys.path)"
-          pip list | grep -i movie
-          python -c "import moviepy; print('MoviePy location:', moviepy.__file__)"
+          pip install imageio
+          pip install imageio-ffmpeg
+          python -c "import imageio; imageio.plugins.ffmpeg.download()"
           
-      - name: Confirm moviepy import
+      - name: Install MoviePy dependencies separately
         run: |
-          python -c "import moviepy.editor as mp; print('✅ moviepy works:', mp.TextClip)"
+          pip install numpy
+          pip install decorator
+          pip install tqdm
+          pip install requests
+          pip install proglog
+          
+      - name: Install MoviePy using different methods
+        run: |
+          # Method 1: Try standard installation
+          pip install moviepy || echo "Standard install failed"
+          
+          # Method 2: Try with --no-deps to avoid conflicts
+          pip install --no-deps moviepy || echo "No-deps install failed"
+          
+          # Method 3: Try from source
+          pip install git+https://github.com/Zulko/moviepy.git || echo "Git install failed"
+          
+      - name: Comprehensive debug output
+        run: |
+          echo "=== Python version ==="
+          python --version
+          echo "=== Python path ==="
+          python -c "import sys; print('\\n'.join(sys.path))"
+          echo "=== Installed packages ==="
+          pip list
+          echo "=== MoviePy specific ==="
+          pip show moviepy || echo "MoviePy not found in pip"
+          echo "=== Try direct import ==="
+          python -c "import moviepy; print('Base moviepy imported successfully')" || echo "Base moviepy import failed"
+          echo "=== Try editor import ==="
+          python -c "import moviepy.editor; print('moviepy.editor imported successfully')" || echo "moviepy.editor import failed"
+          echo "=== Check moviepy location ==="
+          python -c "import moviepy; print(moviepy.__file__)" || echo "Can't find moviepy file"
+          echo "=== Check moviepy contents ==="
+          python -c "import moviepy; print(dir(moviepy))" || echo "Can't check moviepy contents"
+          
+      - name: Install other dependencies
+        run: |
+          pip install gTTS openai pillow flask \
+            google-api-python-client google-auth-httplib2 google-auth-oauthlib
+          
+      - name: Final MoviePy test
+        run: |
+          python -c "
+          try:
+              import moviepy.editor as mp
+              print('✅ MoviePy editor imported successfully')
+              print('Available classes:', [x for x in dir(mp) if not x.startswith('_')])
+              # Test creating a simple clip
+              clip = mp.TextClip('Test', fontsize=50, color='white')
+              print('✅ TextClip created successfully')
+          except Exception as e:
+              print('❌ Error:', str(e))
+              import traceback
+              traceback.print_exc()
+          "
           
       - name: Run Automation Script
+        if: success()
         env:
-          # Add your environment variables here
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          # Add other secrets as needed
         run: python3 main.py
