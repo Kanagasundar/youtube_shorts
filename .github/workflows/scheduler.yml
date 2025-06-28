@@ -19,7 +19,9 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip show gTTS
 
       - name: Run automation script
         run: python3 main.py
