@@ -53,7 +53,7 @@ jobs:
             moviepy==1.0.3 \
             imageio-ffmpeg \
             gTTS \
-            openai==0.28 \
+            openai>=1.0.0 \
             pillow \
             flask \
             google-api-python-client \
@@ -67,11 +67,11 @@ jobs:
       - name: 🔍 Verify critical imports
         run: |
           python -c 'import sys
-          import openai
+          from openai import OpenAI
           try:
               import moviepy.editor as mp; print("✅ MoviePy imported successfully")
               from gtts import gTTS; print("✅ gTTS imported successfully")
-              print("✅ OpenAI imported successfully, version:", openai.__version__)
+              import openai; print("✅ OpenAI imported successfully, version:", openai.__version__)
               from PIL import Image; print("✅ PIL imported successfully")
               from googleapiclient.discovery import build; print("✅ Google API client imported successfully")
           except Exception as e:
