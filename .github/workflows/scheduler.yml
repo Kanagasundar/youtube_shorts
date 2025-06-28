@@ -45,12 +45,15 @@ jobs:
         pip show moviepy  # Verify moviepy installation
         echo "Installed moviepy version details:"
         pip show moviepy || echo "moviepy not found"
-        python -c "import moviepy.editor as mp; print('moviepy.editor version:', mp.__version__)" || {
-          echo "Error: moviepy.editor import failed with version 2.2.1";
-          pip install --no-cache-dir moviepy==1.0.3;
-          python -c "import moviepy.editor as mp; print('moviepy.editor version (fallback):', mp.__version__)" || {
-            echo "Error: moviepy.editor import failed even with fallback version 1.0.3";
-            exit 1;
+        python -c "import moviepy; print('moviepy version:', moviepy.__version__)" || echo "Error: failed to get moviepy version"
+        python -c "import moviepy.editor as mp; mp.VideoFileClip('test.mp4', target_resolution=(720, 1280)).write_videofile('test_output.mp4', fps=30)" || {
+          echo "Error: moviepy.editor functionality test failed with current version"
+          pip uninstall -y moviepy
+          pip install --no-cache-dir moviepy==1.0.3
+          python -c "import moviepy; print('moviepy version (fallback):', moviepy.__version__)" || echo "Error: failed to get moviepy version (fallback)"
+          python -c "import moviepy.editor as mp; mp.VideoFileClip('test.mp4', target_resolution=(720, 1280)).write_videofile('test_output.mp4', fps=30)" || {
+            echo "Error: moviepy.editor functionality test failed even with fallback version 1.0.3"
+            exit 1
           }
         }
         echo "Dependency installation and verification completed"
