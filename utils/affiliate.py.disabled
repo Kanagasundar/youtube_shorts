@@ -1,0 +1,12 @@
+import random
+
+# Add your affiliate links here
+AFFILIATE_LINKS = [
+    "https://example.com/ai-tool1",
+    "https://example.com/ai-tool2",
+    "https://example.com/ai-course3",
+    "https://example.com/ai-app4",
+]
+
+def get_affiliate_link():
+    return random.choice(AFFILIATE_LINKS)
