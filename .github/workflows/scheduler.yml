@@ -2,8 +2,8 @@ name: Daily YouTube Automation
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # Runs daily at 6 AM UTC
-  workflow_dispatch:      # (Optional) Run manually via GitHub UI
+    - cron: '0 6 * * *'
+  workflow_dispatch:
 
 jobs:
   run-script:
@@ -18,11 +18,14 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Clean pip cache
+        run: pip cache purge
+
       - name: Install dependencies
         run: pip install --upgrade -r requirements.txt
 
-      - name: Force install gTTS (with upgrade)
-        run: pip install --upgrade gTTS
+      - name: Verify gTTS
+        run: python3 -c "from gtts import gTTS; print('gTTS is available')"
 
       - name: Run automation script
         run: python3 main.py
