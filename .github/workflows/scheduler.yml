@@ -24,6 +24,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+
       - name: Verify gTTS
         run: python3 -c "from gtts import gTTS; print('gTTS loaded')"
 
