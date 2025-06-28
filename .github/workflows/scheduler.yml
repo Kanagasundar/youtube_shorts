@@ -19,19 +19,25 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick
+          sudo apt-get install -y \
+            ffmpeg \
+            imagemagick \
+            espeak \
+            espeak-data \
+            libespeak1 \
+            libespeak-dev \
+            portaudio19-dev \
+            python3-pyaudio
           
       - name: Configure ImageMagick policy
         run: |
-          sudo sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml
-          sudo sed -i 's/rights="none" pattern="PS"/rights="read|write" pattern="PS"/' /etc/ImageMagick-6/policy.xml
-          sudo sed -i 's/rights="none" pattern="EPS"/rights="read|write" pattern="EPS"/' /etc/ImageMagick-6/policy.xml
-          sudo sed -i 's/rights="none" pattern="XPS"/rights="read|write" pattern="XPS"/' /etc/ImageMagick-6/policy.xml
+          sudo sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml || true
+          sudo sed -i 's/rights="none" pattern="PS"/rights="read|write" pattern="PS"/' /etc/ImageMagick-6/policy.xml || true
+          sudo sed -i 's/rights="none" pattern="EPS"/rights="read|write" pattern="EPS"/' /etc/ImageMagick-6/policy.xml || true
           
-      - name: Verify ImageMagick installation
+      - name: Create output directory
         run: |
-          which convert
-          convert -version
+          mkdir -p output
           
       - name: Create requirements.txt
         run: |
@@ -39,7 +45,7 @@ jobs:
           moviepy==1.0.3
           imageio-ffmpeg
           gTTS
-          openai
+          openai==0.28
           pillow
           flask
           google-api-python-client
@@ -47,6 +53,8 @@ jobs:
           google-auth-oauthlib
           decorator
           proglog
+          mutagen
+          pydub
           EOF
           
       - name: Install Python dependencies
@@ -54,46 +62,147 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           
-      - name: Test MoviePy installation
+      - name: Verify critical imports
         run: |
           python -c "
           import sys
-          print('Python version:', sys.version)
           
+          # Test critical imports
           try:
-              import moviepy
-              print('✅ moviepy imported successfully')
-              print('MoviePy version:', moviepy.__version__)
-              
               import moviepy.editor as mp
-              print('✅ moviepy.editor imported successfully')
-              
-              # Test creating a simple color clip first (doesn't need ImageMagick)
-              color_clip = mp.ColorClip(size=(640,480), color=(255,0,0), duration=1)
-              print('✅ ColorClip created successfully')
-              
-              # Test TextClip (needs ImageMagick)
-              try:
-                  text_clip = mp.TextClip('Hello', fontsize=50, color='white').set_duration(1)
-                  print('✅ TextClip created successfully')
-              except Exception as text_error:
-                  print('⚠️ TextClip failed (ImageMagick issue):', text_error)
-                  print('Note: Video processing will work, but text overlays may not')
-              
-              print('Available in moviepy.editor:', [x for x in dir(mp) if not x.startswith('_')][:10])
-              
-          except ImportError as e:
-              print('❌ Import error:', e)
-              sys.exit(1)
+              print('✅ MoviePy imported successfully')
           except Exception as e:
-              print('❌ Other error:', e)
-              import traceback
-              traceback.print_exc()
+              print('❌ MoviePy error:', e)
+              sys.exit(1)
+              
+          try:
+              from gtts import gTTS
+              print('✅ gTTS imported successfully')
+          except Exception as e:
+              print('❌ gTTS error:', e)
+              sys.exit(1)
+              
+          try:
+              import openai
+              print('✅ OpenAI imported successfully')
+              print('OpenAI version:', openai.__version__)
+          except Exception as e:
+              print('❌ OpenAI error:', e)
+              sys.exit(1)
+              
+          try:
+              from PIL import Image, ImageDraw, ImageFont
+              print('✅ PIL imported successfully')
+          except Exception as e:
+              print('❌ PIL error:', e)
+              sys.exit(1)
+              
+          try:
+              from googleapiclient.discovery import build
+              print('✅ Google API client imported successfully')
+          except Exception as e:
+              print('❌ Google API client error:', e)
               sys.exit(1)
           "
           
-      - name: Run Automation Script
+      - name: Validate environment variables
+        run: |
+          python -c "
+          import os
+          import sys
+          
+          required_vars = ['OPENAI_API_KEY']
+          optional_vars = ['YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET', 'GOOGLE_API_KEY']
+          
+          missing_required = []
+          for var in required_vars:
+              if not os.getenv(var):
+                  missing_required.append(var)
+          
+          if missing_required:
+              print('❌ Missing required environment variables:', missing_required)
+              sys.exit(1)
+          else:
+              print('✅ Required environment variables found')
+              
+          missing_optional = []
+          for var in optional_vars:
+              if not os.getenv(var):
+                  missing_optional.append(var)
+                  
+          if missing_optional:
+              print('⚠️ Missing optional environment variables:', missing_optional)
+              print('Some features may not work properly')
+          else:
+              print('✅ All optional environment variables found')
+          "
+          
+      - name: Test utility modules
+        run: |
+          python -c "
+          import sys
+          import os
+          
+          # Test if all utility modules can be imported
+          try:
+              from utils.topic_rotator import get_today_topic
+              print('✅ topic_rotator imported')
+          except Exception as e:
+              print('❌ topic_rotator error:', e)
+              sys.exit(1)
+              
+          try:
+              from utils.scripting import generate_script
+              print('✅ scripting imported')
+          except Exception as e:
+              print('❌ scripting error:', e)
+              sys.exit(1)
+              
+          try:
+              from utils.voice import generate_voice
+              print('✅ voice imported')
+          except Exception as e:
+              print('❌ voice error:', e)
+              sys.exit(1)
+              
+          try:
+              from utils.video import create_video
+              print('✅ video imported')
+          except Exception as e:
+              print('❌ video error:', e)
+              sys.exit(1)
+              
+          try:
+              from utils.thumbnail_generator import generate_thumbnail
+              print('✅ thumbnail_generator imported')
+          except Exception as e:
+              print('❌ thumbnail_generator error:', e)
+              sys.exit(1)
+          "
+          
+      - name: Run Main Script
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-        run: python3 main.py
+        run: |
+          python3 main.py
+          
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: debug-logs
+          path: |
+            output/
+            *.log
+            
+      - name: Upload generated content
+        if: success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: generated-content
+          path: |
+            output/
+          retention-days: 7
