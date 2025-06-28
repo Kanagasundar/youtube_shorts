@@ -42,6 +42,11 @@ jobs:
           sudo sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml || true
           sudo sed -i 's/rights="none" pattern="PS"/rights="read|write" pattern="PS"/' /etc/ImageMagick-6/policy.xml || true
           sudo sed -i 's/rights="none" pattern="EPS"/rights="read|write" pattern="EPS"/' /etc/ImageMagick-6/policy.xml || true
+          sudo sed -i 's/rights="none" pattern="LABEL"/rights="read|write" pattern="LABEL"/' /etc/ImageMagick-6/policy.xml || true
+          sudo sed -i 's/rights="none" pattern="URL"/rights="read|write" pattern="URL"/' /etc/ImageMagick-6/policy.xml || true
+          sudo sed -i 's/rights="none" pattern="TEXT"/rights="read|write" pattern="TEXT"/' /etc/ImageMagick-6/policy.xml || true
+          sudo sed -i 's/rights="none" pattern="CAPTION"/rights="read|write" pattern="CAPTION"/' /etc/ImageMagick-6/policy.xml || true
+          sudo sed -i '/<policy domain="path" rights="none" pattern="@\*"\/>/d' /etc/ImageMagick-6/policy.xml || true
 
       - name: 📁 Create output directory
         run: mkdir -p output
