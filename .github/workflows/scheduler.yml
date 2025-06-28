@@ -2,7 +2,7 @@ name: Daily YouTube Automation
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # Runs daily at 6 AM UTC
+    - cron: '0 6 * * *'  # Daily at 6 AM UTC
   workflow_dispatch:      # Allow manual trigger
 
 jobs:
@@ -18,16 +18,17 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install All Dependencies
+      - name: Clean and Reinstall All Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --no-cache-dir moviepy imageio[ffmpeg] gTTS openai pillow flask \
+          pip uninstall -y moviepy || true
+          pip install --no-cache-dir --force-reinstall git+https://github.com/Zulko/moviepy.git@master
+          pip install --no-cache-dir imageio[ffmpeg] gTTS openai pillow flask \
             google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
-      - name: Verify moviepy installation
+      - name: Validate MoviePy Import
         run: |
-          pip show moviepy
-          python -c "from moviepy.editor import TextClip; print('✅ moviepy imported successfully')"
+          python -c "import moviepy.editor as mp; print('✅ moviepy loaded:', mp.TextClip)"
 
       - name: Run Automation Script
         run: python3 main.py
