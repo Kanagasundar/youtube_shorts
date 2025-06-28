@@ -20,8 +20,36 @@ jobs:
       - name: 🔐 Set up Google Credentials
         run: |
           echo "${{ secrets.GOOGLE_CREDENTIALS }}" > /tmp/credentials.json
-          # Validate JSON
-          python -c 'import json; with open("/tmp/credentials.json", "r") as f: json.load(f); print("✅ Credentials JSON is valid")' || { echo "❌ Invalid JSON in GOOGLE_CREDENTIALS"; exit 1; }
+
+      - name: 🔍 Debug Credentials File
+        run: |
+          if [ -f /tmp/credentials.json ]; then
+            cat /tmp/credentials.json | sed 's/"private_key":\s*".*"/"private_key": "[REDACTED]"/' \
+                                    | sed 's/"client_email":\s*".*"/"client_email": "[REDACTED]"/' \
+                                    | sed 's/"client_id":\s*".*"/"client_id": "[REDACTED]"/' || true
+          else
+            echo "❌ Credentials file not found at /tmp/credentials.json"
+            exit 1
+          fi
+
+      - name: 🔐 Validate Credentials JSON
+        run: |
+          python -c '
+          import json, sys
+          try:
+              with open("/tmp/credentials.json", "r") as f:
+                  json.load(f)
+              print("✅ Credentials JSON is valid")
+          except json.JSONDecodeError as e:
+              print(f"❌ Invalid JSON in credentials file: {e}")
+              sys.exit(1)
+          except FileNotFoundError:
+              print("❌ Credentials file not found at /tmp/credentials.json")
+              sys.exit(1)
+          except Exception as e:
+              print(f"❌ Unexpected error validating JSON: {e}")
+              sys.exit(1)
+          '
 
       - name: 🐍 Set up Python 3.10
         uses: actions/setup-python@v4
