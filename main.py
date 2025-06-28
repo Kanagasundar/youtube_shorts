@@ -3,6 +3,7 @@ from utils.scripting import generate_script
 from utils.voice import generate_voice
 from utils.video import create_video
 from utils.thumbnail_generator import generate_thumbnail
+from utils.youtube_uploader import YouTubeUploader, generate_video_metadata
 import os
 import moviepy.editor as mp
 
@@ -75,6 +76,27 @@ def main():
         generate_thumbnail(None, thumbnail_path, overlay_text=category)
     
     print("Thumbnail with overlay generated.")
+    
+    # Generate video metadata
+    title, description, tags = generate_video_metadata(topic, category)
+    print(f"Generated metadata - Title: {title}")
+    
+    # Upload to YouTube
+    uploader = YouTubeUploader()
+    video_id = uploader.upload_video(
+        video_path=video_path,
+        thumbnail_path=thumbnail_path,
+        title=title,
+        description=description,
+        tags=tags
+    )
+    
+    if video_id:
+        print(f"🎉 Successfully uploaded to YouTube! Video ID: {video_id}")
+        print(f"🔗 Watch at: https://www.youtube.com/watch?v={video_id}")
+    else:
+        print("⚠️ YouTube upload was skipped or failed")
+        print("📁 Files are available in the output/ directory:")
 
 if __name__ == "__main__":
     main()
