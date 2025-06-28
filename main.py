@@ -1,7 +1,7 @@
 
 from utils.topic_rotator import get_today_topic
 from utils.scripting import generate_script
-from utils.voice import generate_voiceover
+from utils.voice import generate_voice
 from utils.video import create_video
 from utils.thumbnail_generator import generate_thumbnail
 import os
@@ -21,7 +21,7 @@ def main():
 
     # Generate voiceover from script
     voice_path = "output/voice.mp3"
-    generate_voiceover(script, voice_path)
+    generate_voice(script, voice_path)
     print("Voiceover generated.")
 
     # Create video
