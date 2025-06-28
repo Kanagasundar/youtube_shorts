@@ -8,64 +8,87 @@ import os
 import sys
 import traceback
 from datetime import datetime
+import logging
 
-# Import modules from the same directory
-from utils.topic_rotator import get_today_topic
-from utils.scripting import generate_script
-from utils.voice import generate_voice
-from utils.video import create_video
-from utils.thumbnail_generator import generate_thumbnail
-from utils.youtube_uploader import YouTubeUploader, generate_video_metadata
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Ensure the utils directory is in sys.path
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils'))
+
+# Import modules from the utils directory
+try:
+    from topic_rotator import get_today_topic
+    from scripting import generate_script
+    from voice import generate_voice
+    from video import create_video
+    from thumbnail_generator import generate_thumbnail
+    from youtube_uploader import YouTubeUploader, generate_video_metadata
+except ImportError as e:
+    logger.error(f"Failed to import modules: {e}")
+    sys.exit(1)
 
 def main():
     """Main function to orchestrate the entire process"""
-    print("🚀 Starting YouTube Automation...")
+    logger.info("🚀 Starting YouTube Automation...")
     print(f"📅 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     try:
         # Step 1: Get today's topic
+        logger.info("📝 Step 1: Getting today's topic...")
         print("\n" + "="*50)
         print("📝 Step 1: Getting today's topic...")
         print("="*50)
         
         topic, category = get_today_topic()
+        logger.info(f"✅ Topic: {topic}, Category: {category}")
         print(f"✅ Topic: {topic}")
         print(f"✅ Category: {category}")
         
         # Step 2: Generate script
+        logger.info("✍️ Step 2: Generating script...")
         print("\n" + "="*50)
         print("✍️ Step 2: Generating script...")
         print("="*50)
         
         script = generate_script(topic, category)
+        logger.info(f"✅ Generated script ({len(script)} characters)")
         print(f"✅ Generated script ({len(script)} characters)")
         print(f"📄 Script preview: {script[:200]}...")
         
         # Step 3: Generate voice narration
+        logger.info("🎙️ Step 3: Generating voice narration...")
         print("\n" + "="*50)
         print("🎙️ Step 3: Generating voice narration...")
         print("="*50)
         
         audio_path = generate_voice(script)
+        logger.info(f"✅ Audio generated: {audio_path}")
         print(f"✅ Audio generated: {audio_path}")
         
         # Step 4: Generate thumbnail
+        logger.info("🖼️ Step 4: Generating thumbnail...")
         print("\n" + "="*50)
         print("🖼️ Step 4: Generating thumbnail...")
         print("="*50)
         
         thumbnail_path = generate_thumbnail(topic, category)
+        logger.info(f"✅ Thumbnail generated: {thumbnail_path}")
         print(f"✅ Thumbnail generated: {thumbnail_path}")
         
         # Step 5: Create video
+        logger.info("🎬 Step 5: Creating video...")
         print("\n" + "="*50)
         print("🎬 Step 5: Creating video...")
         print("="*50)
         
         video_path = create_video(script, audio_path, thumbnail_path, topic)
+        logger.info(f"✅ Video created: {video_path}")
         print(f"✅ Video created: {video_path}")
         
         # Step 6: Upload to YouTube
+        logger.info("📤 Step 6: Uploading to YouTube...")
         print("\n" + "="*50)
         print("📤 Step 6: Uploading to YouTube...")
         print("="*50)
@@ -74,6 +97,7 @@ def main():
         upload_enabled = os.getenv('UPLOAD_TO_YOUTUBE', 'true').lower() == 'true'
         
         if not upload_enabled:
+            logger.warning("⚠️ Upload disabled (UPLOAD_TO_YOUTUBE=false)")
             print("⚠️ Upload disabled (UPLOAD_TO_YOUTUBE=false)")
             print(f"📁 Video saved locally: {video_path}")
             print(f"📁 Thumbnail saved locally: {thumbnail_path}")
@@ -87,6 +111,8 @@ def main():
             # Generate metadata
             title, description, tags = generate_video_metadata(topic, category, script)
             
+            logger.info(f"📝 Title: {title}")
+            logger.info(f"🏷️ Tags: {', '.join(tags[:5])}...")
             print(f"📝 Title: {title}")
             print(f"🏷️ Tags: {', '.join(tags[:5])}...")
             
@@ -100,6 +126,7 @@ def main():
             )
             
             if video_id:
+                logger.info(f"🎉 SUCCESS! Video uploaded with ID: {video_id}")
                 print(f"\n🎉 SUCCESS! Video uploaded!")
                 print(f"📺 Video ID: {video_id}")
                 print(f"🔗 Watch at: https://www.youtube.com/watch?v={video_id}")
@@ -109,23 +136,28 @@ def main():
                 save_upload_info(video_id, title, topic, category, video_path, thumbnail_path)
                 
             else:
+                logger.error("❌ Video upload failed")
                 print("❌ Video upload failed")
                 return 1
         else:
+            logger.error("❌ YouTube authentication failed - cannot upload")
             print("❌ YouTube authentication failed - cannot upload")
             print("💡 Check your credentials.json and make sure you've authorized the app")
             return 1
         
+        logger.info("✅ AUTOMATION COMPLETED SUCCESSFULLY!")
         print("\n" + "="*50)
         print("✅ AUTOMATION COMPLETED SUCCESSFULLY!")
         print("="*50)
         return 0
         
     except KeyboardInterrupt:
+        logger.warning("\n⚠️ Process interrupted by user")
         print("\n⚠️ Process interrupted by user")
         return 1
         
     except Exception as e:
+        logger.error(f"\n❌ Automation failed: {str(e)}")
         print(f"\n❌ Automation failed: {str(e)}")
         print("\n🔍 Error details:")
         print(traceback.format_exc())
@@ -157,8 +189,10 @@ Shorts URL: https://youtube.com/shorts/{video_id}
     try:
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(log_entry)
+        logger.info(f"📝 Upload info saved to: {log_file}")
         print(f"📝 Upload info saved to: {log_file}")
     except Exception as e:
+        logger.error(f"⚠️ Could not save upload info: {e}")
         print(f"⚠️ Could not save upload info: {e}")
 
 def check_dependencies():
@@ -184,13 +218,16 @@ def check_dependencies():
             missing_packages.append(package)
     
     if missing_packages:
+        logger.error("❌ Missing required packages:")
         print("❌ Missing required packages:")
         for package in missing_packages:
+            logger.error(f"   - {package}")
             print(f"   - {package}")
         print("\n💡 Install missing packages with:")
         print(f"   pip install {' '.join(missing_packages)}")
         return False
     
+    logger.info("✅ All required dependencies are installed")
     return True
 
 def check_environment():
@@ -207,19 +244,23 @@ def check_environment():
             missing_vars.append(var)
     
     if missing_vars:
+        logger.error("❌ Missing required environment variables:")
         print("❌ Missing required environment variables:")
         for var in missing_vars:
+            logger.error(f"   - {var}")
             print(f"   - {var}")
         print("\n💡 Set environment variables:")
         for var in missing_vars:
             print(f"   export {var}=your_value_here")
         return False
     
+    logger.info("✅ All required environment variables are set")
     return True
 
 def setup_check():
     """Perform setup checks before running automation"""
     
+    logger.info("🔍 Performing setup checks...")
     print("🔍 Performing setup checks...")
     
     # Check dependencies
@@ -232,6 +273,7 @@ def setup_check():
     
     # Check if credentials.json exists for YouTube upload
     if not os.path.exists('credentials.json'):
+        logger.warning("⚠️ credentials.json not found")
         print("⚠️ credentials.json not found")
         print("💡 YouTube upload will be disabled")
         print("💡 To enable upload, add your Google API credentials.json file")
@@ -240,15 +282,18 @@ def setup_check():
     # Create output directory
     os.makedirs('output', exist_ok=True)
     
+    logger.info("✅ Setup checks completed")
     print("✅ Setup checks completed")
     return True
 
 if __name__ == "__main__":
+    logger.info("🎬 YouTube Automation System")
     print("🎬 YouTube Automation System")
     print("=" * 50)
     
     # Perform setup checks
     if not setup_check():
+        logger.error("❌ Setup checks failed. Please fix the issues above.")
         print("❌ Setup checks failed. Please fix the issues above.")
         sys.exit(1)
     
@@ -256,8 +301,10 @@ if __name__ == "__main__":
     exit_code = main()
     
     if exit_code == 0:
+        logger.info("\n🎉 Have a great day!")
         print("\n🎉 Have a great day!")
     else:
+        logger.error("\n😞 Better luck next time!")
         print("\n😞 Better luck next time!")
     
     sys.exit(exit_code)
