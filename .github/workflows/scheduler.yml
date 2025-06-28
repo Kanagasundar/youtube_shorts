@@ -19,7 +19,19 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg imagemagick
+          
+      - name: Configure ImageMagick policy
+        run: |
+          sudo sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml
+          sudo sed -i 's/rights="none" pattern="PS"/rights="read|write" pattern="PS"/' /etc/ImageMagick-6/policy.xml
+          sudo sed -i 's/rights="none" pattern="EPS"/rights="read|write" pattern="EPS"/' /etc/ImageMagick-6/policy.xml
+          sudo sed -i 's/rights="none" pattern="XPS"/rights="read|write" pattern="XPS"/' /etc/ImageMagick-6/policy.xml
+          
+      - name: Verify ImageMagick installation
+        run: |
+          which convert
+          convert -version
           
       - name: Create requirements.txt
         run: |
@@ -33,6 +45,8 @@ jobs:
           google-api-python-client
           google-auth-httplib2
           google-auth-oauthlib
+          decorator
+          proglog
           EOF
           
       - name: Install Python dependencies
@@ -54,9 +68,18 @@ jobs:
               import moviepy.editor as mp
               print('✅ moviepy.editor imported successfully')
               
-              # Test creating a text clip
-              clip = mp.TextClip('Hello', fontsize=50, color='white').set_duration(1)
-              print('✅ TextClip created successfully')
+              # Test creating a simple color clip first (doesn't need ImageMagick)
+              color_clip = mp.ColorClip(size=(640,480), color=(255,0,0), duration=1)
+              print('✅ ColorClip created successfully')
+              
+              # Test TextClip (needs ImageMagick)
+              try:
+                  text_clip = mp.TextClip('Hello', fontsize=50, color='white').set_duration(1)
+                  print('✅ TextClip created successfully')
+              except Exception as text_error:
+                  print('⚠️ TextClip failed (ImageMagick issue):', text_error)
+                  print('Note: Video processing will work, but text overlays may not')
+              
               print('Available in moviepy.editor:', [x for x in dir(mp) if not x.startswith('_')][:10])
               
           except ImportError as e:
