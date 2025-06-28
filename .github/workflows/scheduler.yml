@@ -55,7 +55,7 @@ jobs:
               print('✅ moviepy.editor imported successfully')
               
               # Test creating a text clip
-              clip = mp.TextClip('Hello', fontsize=50, color='white', duration=1)
+              clip = mp.TextClip('Hello', fontsize=50, color='white').set_duration(1)
               print('✅ TextClip created successfully')
               print('Available in moviepy.editor:', [x for x in dir(mp) if not x.startswith('_')][:10])
               
