@@ -6,6 +6,10 @@ from utils.video import create_video
 from utils.thumbnail_generator import generate_thumbnail
 import os
 
+openai_key = os.getenv("OPENAI_API_KEY")
+yt_client_id = os.getenv("YOUTUBE_CLIENT_ID")
+yt_client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
+
 def main():
     # Get today's topic and category
     category, topic = get_today_topic()
