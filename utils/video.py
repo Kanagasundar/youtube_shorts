@@ -1,123 +1,66 @@
+#!/usr/bin/env python3
+"""
+Video Creator - Creates YouTube Shorts videos with audio and visuals
+"""
+
+import os
+import sys
+from datetime import datetime
 import moviepy.editor as mp
 from PIL import Image, ImageDraw, ImageFont
-import numpy as np
-import os
-import tempfile
+import textwrap
 
-def create_text_image(text, width=1080, height=200, fontsize=50):
-    """Create a text image using PIL instead of ImageMagick"""
-    # Create a black image
-    img = Image.new('RGB', (width, height), color='black')
-    draw = ImageDraw.Draw(img)
+def create_video(script, audio_path, background_image_path, topic, output_dir="output"):
+    """
+    Create a YouTube Shorts video
     
-    # Try to use a system font, fall back to default if not available
+    Args:
+        script (str): The script text
+        audio_path (str): Path to audio narration
+        background_image_path (str): Path to background image
+        topic (str): Video topic
+        output_dir (str): Output directory
+        
+    Returns:
+        str: Path to created video file
+    """
+    
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Generate filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    video_filename = f"youtube_short_{timestamp}.mp4"
+    video_path = os.path.join(output_dir, video_filename)
+    
     try:
-        # Try common system fonts
-        font_paths = [
-            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-            '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
-            '/System/Library/Fonts/Arial.ttf',  # macOS
-            'C:/Windows/Fonts/arial.ttf'  # Windows
-        ]
+        print(f"🎬 Creating video...")
         
-        font = None
-        for font_path in font_paths:
-            if os.path.exists(font_path):
-                try:
-                    font = ImageFont.truetype(font_path, fontsize)
-                    break
-                except:
-                    continue
+        # Load audio to get duration
+        audio_clip = mp.AudioFileClip(audio_path)
+        duration = audio_clip.duration
         
-        if font is None:
-            font = ImageFont.load_default()
-    except:
-        font = ImageFont.load_default()
-    
-    # Word wrap text
-    words = text.split()
-    lines = []
-    current_line = []
-    
-    for word in words:
-        test_line = ' '.join(current_line + [word])
-        bbox = draw.textbbox((0, 0), test_line, font=font)
-        if bbox[2] - bbox[0] <= width - 40:  # 20px margin on each side
-            current_line.append(word)
-        else:
-            if current_line:
-                lines.append(' '.join(current_line))
-                current_line = [word]
-            else:
-                lines.append(word)
-    
-    if current_line:
-        lines.append(' '.join(current_line))
-    
-    # Calculate total text height
-    line_height = fontsize + 10
-    total_height = len(lines) * line_height
-    start_y = (height - total_height) // 2
-    
-    # Draw each line
-    for i, line in enumerate(lines):
-        bbox = draw.textbbox((0, 0), line, font=font)
-        text_width = bbox[2] - bbox[0]
-        x = (width - text_width) // 2
-        y = start_y + i * line_height
-        draw.text((x, y), line, font=font, fill='white')
-    
-    return np.array(img)
-
-def create_video(voice_path, script, output_path):
-    """Create video with text overlays using PIL instead of ImageMagick"""
-    try:
-        # Load audio
-        audio = mp.AudioFileClip(voice_path)
-        duration = audio.duration
+        print(f"⏱️ Video duration: {duration:.1f} seconds")
         
-        # Split script into sentences
-        sentences = [s.strip() for s in script.replace('?', '?|').replace('!', '!|').replace('.', '.|').split('|') if s.strip()]
+        # Create visual elements
+        video_clip = create_visual_content(
+            script, 
+            background_image_path, 
+            topic, 
+            duration
+        )
         
-        if not sentences:
-            sentences = [script]  # Fallback to full script
+        # Combine video and audio
+        final_video = video_clip.set_audio(audio_clip)
         
-        # Calculate duration per sentence
-        time_per_sentence = duration / len(sentences)
+        # Optimize for YouTube Shorts
+        final_video = optimize_for_shorts(final_video)
         
-        # Create text clips using PIL
-        clips = []
-        for i, sentence in enumerate(sentences):
-            # Create text image using PIL
-            text_img = create_text_image(sentence, width=1080, height=200, fontsize=40)
-            
-            # Save temporary image
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
-                img_pil = Image.fromarray(text_img)
-                img_pil.save(tmp_file.name)
-                
-                # Create clip from image
-                img_clip = mp.ImageClip(tmp_file.name, duration=time_per_sentence)
-                img_clip = img_clip.set_position('center')
-                clips.append(img_clip)
-                
-                # Clean up temp file
-                os.unlink(tmp_file.name)
-        
-        # Concatenate all text clips
-        if clips:
-            video = mp.concatenate_videoclips(clips)
-        else:
-            # Fallback: create a simple black video
-            video = mp.ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=duration)
-        
-        # Set audio
-        final_video = video.set_audio(audio)
-        
-        # Write video file
+        # Export video
+        print(f"📤 Exporting video...")
         final_video.write_videofile(
-            output_path, 
-            fps=24, 
+            video_path,
+            fps=30,
             codec='libx264',
             audio_codec='aac',
             temp_audiofile='temp-audio.m4a',
@@ -127,21 +70,126 @@ def create_video(voice_path, script, output_path):
         )
         
         # Clean up
-        audio.close()
-        video.close()
+        audio_clip.close()
+        video_clip.close()
         final_video.close()
         
-        print(f"Video created successfully: {output_path}")
+        print(f"✅ Video created: {video_path}")
+        return video_path
         
     except Exception as e:
-        print(f"Error creating video: {e}")
-        # Create a minimal fallback video
+        print(f"❌ Error creating video: {e}")
+        
+        # Try fallback method
         try:
-            audio = mp.AudioFileClip(voice_path)
-            black_clip = mp.ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=audio.duration)
-            final_video = black_clip.set_audio(audio)
-            final_video.write_videofile(output_path, fps=24, verbose=False, logger=None)
-            print(f"Fallback video created: {output_path}")
+            print("🔄 Trying fallback video creation...")
+            return create_simple_video(script, audio_path, topic, output_dir)
         except Exception as fallback_error:
-            print(f"Fallback video creation failed: {fallback_error}")
-            raise
+            print(f"❌ Fallback also failed: {fallback_error}")
+            raise Exception(f"Video creation failed: {e}")
+
+def create_visual_content(script, background_image_path, topic, duration):
+    """
+    Create visual content for the video
+    """
+    
+    # YouTube Shorts dimensions (9:16 aspect ratio)
+    width, height = 1080, 1920
+    
+    try:
+        # Try to use provided background image
+        if os.path.exists(background_image_path):
+            background = Image.open(background_image_path)
+        else:
+            # Create gradient background
+            background = create_gradient_background(width, height)
+    except:
+        # Fallback to solid color background
+        background = create_gradient_background(width, height)
+    
+    # Resize and crop to fit 9:16 aspect ratio
+    background = resize_and_crop(background, width, height)
+    
+    # Add text overlay
+    background_with_text = add_text_overlay(background, topic, script)
+    
+    # Convert PIL image to MoviePy clip
+    image_array = mp.ImageClip(background_with_text, duration=duration)
+    
+    # Add subtle zoom effect for engagement
+    zoom_clip = image_array.resize(lambda t: 1 + 0.1 * t / duration)
+    
+    return zoom_clip
+
+def create_gradient_background(width, height):
+    """Create a gradient background"""
+    
+    # Create gradient from top to bottom
+    image = Image.new('RGB', (width, height))
+    draw = ImageDraw.Draw(image)
+    
+    # Define gradient colors (dark blue to purple)
+    start_color = (25, 25, 112)  # MidnightBlue
+    end_color = (75, 0, 130)     # Indigo
+    
+    for y in range(height):
+        # Calculate color at this position
+        ratio = y / height
+        r = int(start_color[0] + (end_color[0] - start_color[0]) * ratio)
+        g = int(start_color[1] + (end_color[1] - start_color[1]) * ratio)
+        b = int(start_color[2] + (end_color[2] - start_color[2]) * ratio)
+        
+        draw.line([(0, y), (width, y)], fill=(r, g, b))
+    
+    return image
+
+def resize_and_crop(image, target_width, target_height):
+    """Resize and crop image to target dimensions"""
+    
+    # Calculate aspect ratios
+    img_ratio = image.width / image.height
+    target_ratio = target_width / target_height
+    
+    if img_ratio > target_ratio:
+        # Image is wider than target, crop width
+        new_height = target_height
+        new_width = int(new_height * img_ratio)
+        image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        
+        # Crop to center
+        left = (new_width - target_width) // 2
+        image = image.crop((left, 0, left + target_width, target_height))
+    else:
+        # Image is taller than target, crop height
+        new_width = target_width
+        new_height = int(new_width / img_ratio)
+        image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        
+        # Crop to center
+        top = (new_height - target_height) // 2
+        image = image.crop((0, top, target_width, top + target_height))
+    
+    return image
+
+def add_text_overlay(image, title, script):
+    """Add text overlay to image"""
+    
+    draw = ImageDraw.Draw(image)
+    width, height = image.size
+    
+    try:
+        # Try to load a nice font
+        title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 80)
+        text_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 50)
+    except:
+        # Fallback to default font
+        title_font = ImageFont.load_default()
+        text_font = ImageFont.load_default()
+    
+    # Add title at top
+    title_wrapped = textwrap.fill(title, width=20)
+    title_bbox = draw.textbbox((0, 0), title_wrapped, font=title_font)
+    title_width = title_bbox[2] - title_bbox[0]
+    title_height = title_bbox[3] - title_bbox[1]
+    
+    title_x = (width - title_width) // 2

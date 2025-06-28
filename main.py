@@ -1,102 +1,263 @@
-from utils.topic_rotator import get_today_topic
-from utils.scripting import generate_script
-from utils.voice import generate_voice
-from utils.video import create_video
-from utils.thumbnail_generator import generate_thumbnail
-from utils.youtube_uploader import YouTubeUploader, generate_video_metadata
+#!/usr/bin/env python3
+"""
+YouTube Automation Main Script
+Generates and uploads daily YouTube Shorts content
+"""
+
 import os
-import moviepy.editor as mp
+import sys
+import traceback
+from datetime import datetime
 
-openai_key = os.getenv("OPENAI_API_KEY")
-yt_client_id = os.getenv("YOUTUBE_CLIENT_ID")
-yt_client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
-
-def extract_frame_from_video(video_path, frame_path, time=1.0):
-    """Extract a frame from the video to use for thumbnail"""
-    try:
-        if not os.path.exists(video_path):
-            print(f"Video file not found: {video_path}")
-            return False
-            
-        video = mp.VideoFileClip(video_path)
-        # Extract frame at 1 second or 10% into video, whichever is smaller
-        extract_time = min(time, video.duration * 0.1, video.duration - 0.1)
-        frame = video.get_frame(extract_time)
-        
-        # Convert frame to PIL Image and save
-        from PIL import Image
-        img = Image.fromarray(frame.astype('uint8'))
-        
-        # Ensure output directory exists
-        os.makedirs(os.path.dirname(frame_path), exist_ok=True)
-        img.save(frame_path, "JPEG", quality=95)
-        
-        video.close()
-        print(f"Frame extracted: {frame_path}")
-        return True
-        
-    except Exception as e:
-        print(f"Error extracting frame: {e}")
-        return False
+# Import modules from the same directory
+from topic_rotator import get_today_topic
+from script_generator import generate_script
+from voice_generator import generate_voice
+from video_creator import create_video
+from thumbnail_generator import generate_thumbnail
+from youtube_uploader import YouTubeUploader, generate_video_metadata
 
 def main():
-    # Ensure output directory exists
-    os.makedirs("output", exist_ok=True)
+    """Main function to orchestrate the entire process"""
+    print("🚀 Starting YouTube Automation...")
+    print(f"📅 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
-    # Get today's topic and category
-    category, topic = get_today_topic()
-    print(f"Generating content for: {category} -> {topic}")
+    try:
+        # Step 1: Get today's topic
+        print("\n" + "="*50)
+        print("📝 Step 1: Getting today's topic...")
+        print("="*50)
+        
+        topic, category = get_today_topic()
+        print(f"✅ Topic: {topic}")
+        print(f"✅ Category: {category}")
+        
+        # Step 2: Generate script
+        print("\n" + "="*50)
+        print("✍️ Step 2: Generating script...")
+        print("="*50)
+        
+        script = generate_script(topic, category)
+        print(f"✅ Generated script ({len(script)} characters)")
+        print(f"📄 Script preview: {script[:200]}...")
+        
+        # Step 3: Generate voice narration
+        print("\n" + "="*50)
+        print("🎙️ Step 3: Generating voice narration...")
+        print("="*50)
+        
+        audio_path = generate_voice(script)
+        print(f"✅ Audio generated: {audio_path}")
+        
+        # Step 4: Generate thumbnail
+        print("\n" + "="*50)
+        print("🖼️ Step 4: Generating thumbnail...")
+        print("="*50)
+        
+        thumbnail_path = generate_thumbnail(topic, category)
+        print(f"✅ Thumbnail generated: {thumbnail_path}")
+        
+        # Step 5: Create video
+        print("\n" + "="*50)
+        print("🎬 Step 5: Creating video...")
+        print("="*50)
+        
+        video_path = create_video(script, audio_path, thumbnail_path, topic)
+        print(f"✅ Video created: {video_path}")
+        
+        # Step 6: Upload to YouTube
+        print("\n" + "="*50)
+        print("📤 Step 6: Uploading to YouTube...")
+        print("="*50)
+        
+        # Check if we should upload (can be disabled for testing)
+        upload_enabled = os.getenv('UPLOAD_TO_YOUTUBE', 'true').lower() == 'true'
+        
+        if not upload_enabled:
+            print("⚠️ Upload disabled (UPLOAD_TO_YOUTUBE=false)")
+            print(f"📁 Video saved locally: {video_path}")
+            print(f"📁 Thumbnail saved locally: {thumbnail_path}")
+            print("✅ Automation completed (upload skipped)")
+            return 0
+        
+        # Initialize uploader
+        uploader = YouTubeUploader()
+        
+        if uploader.youtube:
+            # Generate metadata
+            title, description, tags = generate_video_metadata(topic, category, script)
+            
+            print(f"📝 Title: {title}")
+            print(f"🏷️ Tags: {', '.join(tags[:5])}...")
+            
+            # Upload video
+            video_id = uploader.upload_video(
+                video_path=video_path,
+                thumbnail_path=thumbnail_path,
+                title=title,
+                description=description,
+                tags=tags
+            )
+            
+            if video_id:
+                print(f"\n🎉 SUCCESS! Video uploaded!")
+                print(f"📺 Video ID: {video_id}")
+                print(f"🔗 Watch at: https://www.youtube.com/watch?v={video_id}")
+                print(f"🔗 YouTube Shorts: https://youtube.com/shorts/{video_id}")
+                
+                # Save upload info
+                save_upload_info(video_id, title, topic, category, video_path, thumbnail_path)
+                
+            else:
+                print("❌ Video upload failed")
+                return 1
+        else:
+            print("❌ YouTube authentication failed - cannot upload")
+            print("💡 Check your credentials.json and make sure you've authorized the app")
+            return 1
+        
+        print("\n" + "="*50)
+        print("✅ AUTOMATION COMPLETED SUCCESSFULLY!")
+        print("="*50)
+        return 0
+        
+    except KeyboardInterrupt:
+        print("\n⚠️ Process interrupted by user")
+        return 1
+        
+    except Exception as e:
+        print(f"\n❌ Automation failed: {str(e)}")
+        print("\n🔍 Error details:")
+        print(traceback.format_exc())
+        return 1
 
-    # Generate script
-    script = generate_script(topic)
-    print("Script generated.")
+def save_upload_info(video_id, title, topic, category, video_path, thumbnail_path):
+    """Save upload information to a log file"""
+    
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+    
+    log_file = os.path.join(log_dir, "upload_history.txt")
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    log_entry = f"""
+{timestamp}
+Video ID: {video_id}
+Title: {title}
+Topic: {topic}
+Category: {category}
+Video Path: {video_path}
+Thumbnail Path: {thumbnail_path}
+YouTube URL: https://www.youtube.com/watch?v={video_id}
+Shorts URL: https://youtube.com/shorts/{video_id}
+{'='*80}
+"""
+    
+    try:
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
+        print(f"📝 Upload info saved to: {log_file}")
+    except Exception as e:
+        print(f"⚠️ Could not save upload info: {e}")
 
-    # Generate voiceover from script
-    voice_path = "output/voice.mp3"
-    generate_voice(script, voice_path)
-    print("Voiceover generated.")
+def check_dependencies():
+    """Check if required dependencies are installed"""
+    
+    required_packages = [
+        'openai',
+        'gtts',
+        'pydub',
+        'Pillow',
+        'moviepy',
+        'google-auth',
+        'google-auth-oauthlib',
+        'google-api-python-client'
+    ]
+    
+    missing_packages = []
+    
+    for package in required_packages:
+        try:
+            __import__(package.replace('-', '_'))
+        except ImportError:
+            missing_packages.append(package)
+    
+    if missing_packages:
+        print("❌ Missing required packages:")
+        for package in missing_packages:
+            print(f"   - {package}")
+        print("\n💡 Install missing packages with:")
+        print(f"   pip install {' '.join(missing_packages)}")
+        return False
+    
+    return True
 
-    # Create video
-    video_path = "output/video.mp4"
-    create_video(voice_path, script, video_path)
-    print("Video created.")
+def check_environment():
+    """Check if required environment variables are set"""
+    
+    required_vars = [
+        'OPENAI_API_KEY'
+    ]
+    
+    missing_vars = []
+    
+    for var in required_vars:
+        if not os.getenv(var):
+            missing_vars.append(var)
+    
+    if missing_vars:
+        print("❌ Missing required environment variables:")
+        for var in missing_vars:
+            print(f"   - {var}")
+        print("\n💡 Set environment variables:")
+        for var in missing_vars:
+            print(f"   export {var}=your_value_here")
+        return False
+    
+    return True
 
-    # Extract frame from video for thumbnail
-    base_image_path = "output/frame.jpg"
-    frame_extracted = extract_frame_from_video(video_path, base_image_path)
+def setup_check():
+    """Perform setup checks before running automation"""
     
-    # Generate thumbnail with overlay
-    thumbnail_path = "output/thumbnail.jpg"
-    if frame_extracted:
-        # Use extracted frame as base
-        generate_thumbnail(base_image_path, thumbnail_path, overlay_text=category)
-    else:
-        # Use None to trigger default background creation
-        print("Using default background for thumbnail")
-        generate_thumbnail(None, thumbnail_path, overlay_text=category)
+    print("🔍 Performing setup checks...")
     
-    print("Thumbnail with overlay generated.")
+    # Check dependencies
+    if not check_dependencies():
+        return False
     
-    # Generate video metadata
-    title, description, tags = generate_video_metadata(topic, category)
-    print(f"Generated metadata - Title: {title}")
+    # Check environment variables
+    if not check_environment():
+        return False
     
-    # Upload to YouTube
-    uploader = YouTubeUploader()
-    video_id = uploader.upload_video(
-        video_path=video_path,
-        thumbnail_path=thumbnail_path,
-        title=title,
-        description=description,
-        tags=tags
-    )
+    # Check if credentials.json exists for YouTube upload
+    if not os.path.exists('credentials.json'):
+        print("⚠️ credentials.json not found")
+        print("💡 YouTube upload will be disabled")
+        print("💡 To enable upload, add your Google API credentials.json file")
+        os.environ['UPLOAD_TO_YOUTUBE'] = 'false'
     
-    if video_id:
-        print(f"🎉 Successfully uploaded to YouTube! Video ID: {video_id}")
-        print(f"🔗 Watch at: https://www.youtube.com/watch?v={video_id}")
-    else:
-        print("⚠️ YouTube upload was skipped or failed")
-        print("📁 Files are available in the output/ directory:")
+    # Create output directory
+    os.makedirs('output', exist_ok=True)
+    
+    print("✅ Setup checks completed")
+    return True
 
 if __name__ == "__main__":
-    main()
+    print("🎬 YouTube Automation System")
+    print("=" * 50)
+    
+    # Perform setup checks
+    if not setup_check():
+        print("❌ Setup checks failed. Please fix the issues above.")
+        sys.exit(1)
+    
+    # Run main automation
+    exit_code = main()
+    
+    if exit_code == 0:
+        print("\n🎉 Have a great day!")
+    else:
+        print("\n😞 Better luck next time!")
+    
+    sys.exit(exit_code)
