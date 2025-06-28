@@ -1,12 +1,8 @@
 import os
-import json
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-import pickle
+from google.oauth2.service_account import Credentials
 
 # YouTube API scopes
 SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
@@ -17,66 +13,17 @@ class YouTubeUploader:
         self.authenticate()
     
     def authenticate(self):
-        """Authenticate with YouTube API using OAuth2"""
-        creds = None
-        
-        # Check if we have stored credentials
-        if os.path.exists('token.pickle'):
-            with open('token.pickle', 'rb') as token:
-                creds = pickle.load(token)
-        
-        # If there are no (valid) credentials available, let the user log in
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                except Exception as e:
-                    print(f"Error refreshing credentials: {e}")
-                    creds = None
-            
-            if not creds:
-                # For GitHub Actions, we need to use a different flow
-                if os.getenv('GITHUB_ACTIONS'):
-                    # In production, you'd typically use service account or pre-authorized tokens
-                    print("Running in GitHub Actions - using environment variables for auth")
-                    creds = self.authenticate_with_env_vars()
-                else:
-                    # Local development flow
-                    client_config = {
-                        "installed": {
-                            "client_id": os.getenv('YOUTUBE_CLIENT_ID'),
-                            "client_secret": os.getenv('YOUTUBE_CLIENT_SECRET'),
-                            "redirect_uris": ["http://localhost:8080/callback"],
-                            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                            "token_uri": "https://oauth2.googleapis.com/token"
-                        }
-                    }
-                    
-                    flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
-                    creds = flow.run_local_server(port=8080)
-            
-            # Save the credentials for the next run
-            with open('token.pickle', 'wb') as token:
-                pickle.dump(creds, token)
-        
-        self.youtube = build('youtube', 'v3', credentials=creds)
-    
-    def authenticate_with_env_vars(self):
-        """Alternative authentication for CI/CD environments"""
-        # This is a simplified version - in production you'd want to use
-        # service accounts or pre-generated refresh tokens
+        """Authenticate with YouTube API using service account credentials"""
         try:
-            # Try to load from environment variable if stored as JSON
-            if os.getenv('YOUTUBE_CREDENTIALS_JSON'):
-                creds_data = json.loads(os.getenv('YOUTUBE_CREDENTIALS_JSON'))
-                creds = Credentials.from_authorized_user_info(creds_data, SCOPES)
-                return creds
+            creds = Credentials.from_service_account_file(
+                os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '/tmp/credentials.json'),
+                scopes=SCOPES
+            )
+            self.youtube = build('youtube', 'v3', credentials=creds)
+            print("✅ YouTube API authentication successful")
         except Exception as e:
-            print(f"Error loading credentials from environment: {e}")
-        
-        # Fallback - return None to skip upload
-        print("No valid credentials found for automated upload")
-        return None
+            print(f"❌ YouTube API authentication failed: {e}")
+            self.youtube = None
     
     def upload_video(self, video_path, thumbnail_path, title, description, tags=None, category_id="22"):
         """Upload video to YouTube"""

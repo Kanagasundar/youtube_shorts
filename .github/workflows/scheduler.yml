@@ -11,13 +11,15 @@ jobs:
 
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
-      YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      GOOGLE_APPLICATION_CREDENTIALS: /tmp/credentials.json
 
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
+
+      - name: 🔐 Set up Google Credentials
+        run: |
+          echo "${{ secrets.GOOGLE_CREDENTIALS }}" > /tmp/credentials.json
 
       - name: 🐍 Set up Python 3.10
         uses: actions/setup-python@v4
@@ -86,19 +88,13 @@ jobs:
       - name: 🔐 Validate environment variables
         run: |
           python -c 'import os, sys
-          required = ["OPENAI_API_KEY"]
-          optional = ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "GOOGLE_API_KEY"]
+          required = ["OPENAI_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS"]
           missing = [v for v in required if not os.getenv(v)]
           if missing:
               print("❌ Missing required environment variables:", missing)
               sys.exit(1)
           else:
-              print("✅ Required environment variables found")
-          missing_opt = [v for v in optional if not os.getenv(v)]
-          if missing_opt:
-              print("⚠️ Missing optional environment variables:", missing_opt)
-          else:
-              print("✅ All optional environment variables found")'
+              print("✅ Required environment variables found")'
 
       - name: 🧪 Test utility module imports
         run: |
