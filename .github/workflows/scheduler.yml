@@ -18,18 +18,22 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Clean and Reinstall All Dependencies
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Force Install moviepy from GitHub
         run: |
-          python -m pip install --upgrade pip
           pip uninstall -y moviepy || true
-          pip install moviepy
           pip install --no-cache-dir --force-reinstall git+https://github.com/Zulko/moviepy.git@master
+
+      - name: Install Other Dependencies
+        run: |
           pip install --no-cache-dir imageio[ffmpeg] gTTS openai pillow flask \
             google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
-      - name: Validate MoviePy Import
+      - name: Confirm moviepy import
         run: |
-          python -c "import moviepy.editor as mp; print('✅ moviepy loaded:', mp.TextClip)"
+          python -c "import moviepy.editor as mp; print('✅ moviepy works:', mp.TextClip)"
 
       - name: Run Automation Script
         run: python3 main.py
