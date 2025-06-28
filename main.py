@@ -11,9 +11,9 @@ from datetime import datetime
 
 # Import modules from the same directory
 from utils.topic_rotator import get_today_topic
-from utils.script_generator import generate_script
-from utils.voice_generator import generate_voice
-from utils.video_creator import create_video
+from utils.scripting import generate_script
+from utils.voice import generate_voice
+from utils.video import create_video
 from utils.thumbnail_generator import generate_thumbnail
 from utils.youtube_uploader import YouTubeUploader, generate_video_metadata
 
