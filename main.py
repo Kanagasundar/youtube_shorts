@@ -10,12 +10,12 @@ import traceback
 from datetime import datetime
 
 # Import modules from the same directory
-from topic_rotator import get_today_topic
-from script_generator import generate_script
-from voice_generator import generate_voice
-from video_creator import create_video
-from thumbnail_generator import generate_thumbnail
-from youtube_uploader import YouTubeUploader, generate_video_metadata
+from utils.topic_rotator import get_today_topic
+from utils.script_generator import generate_script
+from utils.voice_generator import generate_voice
+from utils.video_creator import create_video
+from utils.thumbnail_generator import generate_thumbnail
+from utils.youtube_uploader import YouTubeUploader, generate_video_metadata
 
 def main():
     """Main function to orchestrate the entire process"""
