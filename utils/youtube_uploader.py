@@ -1,4 +1,5 @@
 import os
+import json
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
@@ -14,13 +15,33 @@ class YouTubeUploader:
     
     def authenticate(self):
         """Authenticate with YouTube API using service account credentials"""
+        credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '/tmp/credentials.json')
         try:
+            # Check if the credentials file exists and is readable
+            if not os.path.exists(credentials_path):
+                raise FileNotFoundError(f"Credentials file not found at {credentials_path}")
+            
+            # Read and validate JSON
+            with open(credentials_path, 'r') as f:
+                creds_data = json.load(f)
+            
+            # Log partial credentials info for debugging (mask sensitive fields)
+            print(f"✅ Loaded credentials: project_id={creds_data.get('project_id')}, "
+                  f"client_email={creds_data.get('client_email')}")
+            
             creds = Credentials.from_service_account_file(
-                os.getenv('GOOGLE_APPLICATION_CREDENTIALS', '/tmp/credentials.json'),
+                credentials_path,
                 scopes=SCOPES
             )
             self.youtube = build('youtube', 'v3', credentials=creds)
             print("✅ YouTube API authentication successful")
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON parsing error in credentials file: {e}")
+            print(f"❌ Check the GOOGLE_CREDENTIALS secret for valid JSON format")
+            self.youtube = None
+        except FileNotFoundError as e:
+            print(f"❌ File error: {e}")
+            self.youtube = None
         except Exception as e:
             print(f"❌ YouTube API authentication failed: {e}")
             self.youtube = None

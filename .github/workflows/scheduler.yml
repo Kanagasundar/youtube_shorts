@@ -20,6 +20,8 @@ jobs:
       - name: 🔐 Set up Google Credentials
         run: |
           echo "${{ secrets.GOOGLE_CREDENTIALS }}" > /tmp/credentials.json
+          # Validate JSON
+          python -c 'import json; with open("/tmp/credentials.json", "r") as f: json.load(f); print("✅ Credentials JSON is valid")' || { echo "❌ Invalid JSON in GOOGLE_CREDENTIALS"; exit 1; }
 
       - name: 🐍 Set up Python 3.10
         uses: actions/setup-python@v4
