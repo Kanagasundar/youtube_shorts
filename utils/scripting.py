@@ -1,8 +1,8 @@
-from openai import OpenAI
+import openai
 import os
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Set API key for OpenAI
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def generate_script(topic):
     prompt = f"""Write a short, punchy 60-second YouTube Shorts script based on the topic: '{topic}'.
@@ -11,7 +11,7 @@ Focus on one interesting fact or story. End with a call-to-action like:
 "Did you know this? Comment below." or "Want more hidden facts? Follow for more." 
 Do NOT include any affiliate links."""
 
-    response = client.chat.completions.create(
+    response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": prompt}]
     )
