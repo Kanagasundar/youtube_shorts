@@ -1,3 +1,4 @@
+
 name: YouTube Automation
 
 on:
@@ -64,7 +65,7 @@ jobs:
         python -c "import PIL; print(f'✅ Pillow {PIL.__version__}')"
         python -c "import openai; print(f'✅ OpenAI {openai.__version__}')"
         python -c "import gtts; print(f'✅ gTTS {gtts.__version__}')"
-        python -c "import google.auth; print('✅ google-auth imported')"
+        python -c "import google.auth; print(f'✅ google-auth imported (v{google.auth.__version__})')"
         python -c "import google_auth_oauthlib; print('✅ google-auth-oauthlib imported')"
         python -c "import googleapiclient; print('✅ google-api-python-client imported')"
         python -c "

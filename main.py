@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 YouTube Automation Main Script
@@ -19,52 +20,42 @@ logger = logging.getLogger(__name__)
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils'))
 
 def check_dependencies():
-    """Check if required dependencies are installed with improved detection"""
+    """Check if required dependencies are installed with robust detection"""
     
     required_packages = {
-        'openai': ['openai'],
-        'gtts': ['gtts'], 
-        'pydub': ['pydub'],
-        'Pillow': ['PIL', 'Pillow'],
-        'moviepy': ['moviepy'],
-        'numpy': ['numpy'],
-        'google-auth': ['google.auth'],  # Correct import path
-        'google-auth-oauthlib': ['google_auth_oauthlib'],
-        'google-api-python-client': ['googleapiclient']
+        'openai': 'openai',
+        'gtts': 'gtts',
+        'pydub': 'pydub',
+        'Pillow': 'PIL',
+        'moviepy': 'moviepy',
+        'numpy': 'numpy',
+        'google-auth': 'google.auth',
+        'google-auth-oauthlib': 'google_auth_oauthlib',
+        'google-api-python-client': 'googleapiclient'
     }
     
     missing_packages = []
     
-    for package_name, import_names in required_packages.items():
-        package_found = False
-        last_error = None
-        
-        for import_name in import_names:
-            try:
-                # Handle nested imports like google.auth
-                if '.' in import_name:
-                    parts = import_name.split('.')
-                    module = __import__(parts[0])
-                    for part in parts[1:]:
-                        module = getattr(module, part)
-                else:
-                    module = __import__(import_name)
-                
-                # Verify the module is actually loaded
-                if module is not None:
-                    version = getattr(module, '__version__', 'unknown')
-                    logger.debug(f"✅ {package_name} ({import_name}) - OK (v{version})")
-                    package_found = True
-                    break
-                
-            except (ImportError, AttributeError) as e:
-                last_error = e
-                logger.debug(f"❌ {package_name} ({import_name}) - Failed: {e}")
-                continue
-        
-        if not package_found:
+    for package_name, import_name in required_packages.items():
+        try:
+            # Import the module
+            module = __import__(import_name)
+            
+            # For nested imports (e.g., google.auth), resolve the full path
+            if '.' in import_name:
+                parts = import_name.split('.')
+                for part in parts[1:]:
+                    module = getattr(module, part)
+            
+            # Verify the module is loaded
+            version = getattr(module, '__version__', 'unknown')
+            logger.info(f"✅ {package_name} ({import_name}) - OK (v{version})")
+            print(f"✅ {package_name} ({import_name}) - OK (v{version})")
+            
+        except (ImportError, AttributeError) as e:
+            logger.error(f"❌ {package_name} ({import_name}) - Failed: {str(e)}")
+            print(f"❌ {package_name} ({import_name}) - Failed: {str(e)}")
             missing_packages.append(package_name)
-            logger.debug(f"❌ {package_name} - All import attempts failed. Last error: {last_error}")
     
     if missing_packages:
         logger.error("❌ Missing required packages:")
@@ -89,6 +80,7 @@ def check_dependencies():
         return False
     
     logger.info("✅ All required dependencies are installed")
+    print("✅ All required dependencies are installed")
     return True
 
 def detailed_package_check():
