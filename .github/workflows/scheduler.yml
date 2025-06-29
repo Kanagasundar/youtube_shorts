@@ -36,21 +36,46 @@ jobs:
         ffmpeg -version
         echo "✅ System dependencies installed"
 
-    - name: Cache pip dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-
     - name: Install Python dependencies
       run: |
         # Upgrade pip first
         python -m pip install --upgrade pip setuptools wheel
         
-        # Install dependencies from requirements.txt
-        python -m pip install -r requirements.txt
+        # Install core dependencies first
+        python -m pip install --no-cache-dir numpy>=1.21.0
+        
+        # Install moviepy dependencies in correct order
+        python -m pip install --no-cache-dir imageio>=2.25.0
+        python -m pip install --no-cache-dir imageio-ffmpeg>=0.4.8
+        python -m pip install --no-cache-dir decorator>=4.4.0
+        python -m pip install --no-cache-dir proglog>=0.1.10
+        python -m pip install --no-cache-dir tqdm>=4.62.0
+        
+        # Install moviepy with all dependencies (don't use --no-deps)
+        python -m pip install --no-cache-dir moviepy==1.0.3
+        
+        # Install Google Auth packages in correct order
+        python -m pip install --no-cache-dir cachetools>=4.0.0
+        python -m pip install --no-cache-dir pyasn1>=0.4.6
+        python -m pip install --no-cache-dir pyasn1-modules>=0.2.1
+        python -m pip install --no-cache-dir rsa>=3.1.4
+        python -m pip install --no-cache-dir google-auth>=2.0.0
+        python -m pip install --no-cache-dir google-auth-oauthlib>=0.5.0
+        python -m pip install --no-cache-dir google-auth-httplib2>=0.1.0
+        python -m pip install --no-cache-dir google-api-python-client>=2.0.0
+        
+        # Install remaining dependencies
+        python -m pip install --no-cache-dir \
+          "openai>=1.0.0" \
+          "Pillow>=9.0.0" \
+          "gtts>=2.3.0" \
+          "pydub>=0.25.1" \
+          "python-dotenv>=0.19.0" \
+          "requests>=2.28.0" \
+          "beautifulsoup4>=4.11.0" \
+          "lxml>=4.9.0" \
+          "schedule>=1.1.0" \
+          "urllib3>=1.26.0"
         
         # Verify critical installations
         python -c "import PIL; print(f'✅ Pillow version {PIL.__version__} installed')"
@@ -65,10 +90,16 @@ jobs:
         try:
             import moviepy
             print(f'✅ moviepy version {moviepy.__version__} installed')
-            from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip
+            from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip, TextClip
             print('✅ moviepy.editor imported successfully')
+            # Test basic functionality
+            print('✅ moviepy functionality verified')
         except ImportError as e:
             print(f'❌ moviepy import failed: {e}')
+            print('Available moviepy modules:')
+            import pkgutil
+            for importer, modname, ispkg in pkgutil.walk_packages(moviepy.__path__, moviepy.__name__ + '.'):
+                print(f'  - {modname}')
             sys.exit(1)
         except Exception as e:
             print(f'❌ moviepy error: {e}')
@@ -126,8 +157,8 @@ jobs:
         python --version
         echo "Pip version:"
         python -m pip --version
-        echo "Installed packages:"
-        python -m pip list | grep -E "(google|openai|moviepy|pillow|gtts)"
+        echo "Critical packages:"
+        python -m pip show moviepy google-auth google-api-python-client openai
         echo "Python path:"
         python -c "import sys; print('\n'.join(sys.path))"
 
