@@ -90,7 +90,7 @@ jobs:
         except Exception as e:
             print(f'❌ moviepy error: {e}')
             sys.exit(1)
-        "
+                "
         
         echo "✅ All Python dependencies installed and verified"
 
@@ -116,14 +116,26 @@ jobs:
         ENABLE_UPLOAD: ${{ vars.ENABLE_UPLOAD || 'true' }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        cat << EOF > .env
-        OPENAI_API_KEY=$OPENAI_API_KEY
-        VIDEO_PRIVACY=$VIDEO_PRIVACY
-        VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID
-        ENABLE_UPLOAD=$ENABLE_UPLOAD
-        DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL
-        EOF
-        echo "✅ Environment file created"
+        # Create .env file with proper formatting
+        echo "OPENAI_API_KEY=$OPENAI_API_KEY" > .env
+        echo "VIDEO_PRIVACY=$VIDEO_PRIVACY" >> .env
+        echo "VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID" >> .env
+        echo "ENABLE_UPLOAD=$ENABLE_UPLOAD" >> .env
+        echo "UPLOAD_TO_YOUTUBE=$ENABLE_UPLOAD" >> .env
+        if [ ! -z "$DISCORD_WEBHOOK_URL" ]; then
+          echo "DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL" >> .env
+        fi
+        
+        # Debug: Show environment file contents (hide sensitive values)
+        echo "✅ Environment file created with contents:"
+        sed 's/\(.*=\).*/\1[HIDDEN]/' .env
+        
+        # Also set as GitHub Actions environment variables for the Python script
+        echo "OPENAI_API_KEY=$OPENAI_API_KEY" >> $GITHUB_ENV
+        echo "VIDEO_PRIVACY=$VIDEO_PRIVACY" >> $GITHUB_ENV
+        echo "VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID" >> $GITHUB_ENV
+        echo "ENABLE_UPLOAD=$ENABLE_UPLOAD" >> $GITHUB_ENV
+        echo "UPLOAD_TO_YOUTUBE=$ENABLE_UPLOAD" >> $GITHUB_ENV
 
     - name: Debug Python environment
       run: |
@@ -141,13 +153,33 @@ jobs:
       env:
         TOPIC_OVERRIDE: ${{ github.event.inputs.topic_override }}
         CATEGORY_OVERRIDE: ${{ github.event.inputs.category_override }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        VIDEO_PRIVACY: ${{ vars.VIDEO_PRIVACY || 'public' }}
+        VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
+        ENABLE_UPLOAD: ${{ vars.ENABLE_UPLOAD || 'true' }}
+        UPLOAD_TO_YOUTUBE: ${{ vars.ENABLE_UPLOAD || 'true' }}
       run: |
+        # Add topic and category overrides to .env if provided
         if [ ! -z "$TOPIC_OVERRIDE" ]; then
           echo "TOPIC_OVERRIDE=$TOPIC_OVERRIDE" >> .env
         fi
         if [ ! -z "$CATEGORY_OVERRIDE" ]; then
           echo "CATEGORY_OVERRIDE=$CATEGORY_OVERRIDE" >> .env
         fi
+        
+        # Debug: Verify environment variables are set
+        echo "🔍 Checking environment variables:"
+        if [ ! -z "$OPENAI_API_KEY" ]; then
+          echo "✅ OPENAI_API_KEY is set (length: ${#OPENAI_API_KEY})"
+        else
+          echo "❌ OPENAI_API_KEY is not set"
+        fi
+        
+        # Load .env file and run automation
+        set -a  # Export all variables
+        source .env
+        set +a
+        
         python main.py 2>&1 | tee automation.log
         echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
 
