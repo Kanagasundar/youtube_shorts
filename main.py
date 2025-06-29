@@ -82,7 +82,7 @@ def check_dependencies():
     return True
 
 def validate_credentials_file():
-    """Validate the credentials.json file"""
+    """Validate the credentials.json file - FIXED VERSION"""
     
     if not os.path.exists('credentials.json'):
         logger.warning("⚠️ credentials.json not found")
@@ -92,31 +92,69 @@ def validate_credentials_file():
         with open('credentials.json', 'r', encoding='utf-8') as f:
             creds_data = json.load(f)
         
-        # Check for required fields
-        if 'type' not in creds_data:
-            logger.error("❌ credentials.json missing 'type' field")
-            return False
+        logger.info(f"📝 Credentials file structure: {list(creds_data.keys())}")
         
-        # Handle different credential types
-        if creds_data.get('type') == 'service_account':
+        # Handle different credential formats
+        if 'installed' in creds_data:
+            # Google OAuth2 installed application credentials
+            installed_creds = creds_data['installed']
+            required_fields = ['client_id', 'client_secret', 'auth_uri', 'token_uri']
+            
+            logger.info("📝 Detected installed application credentials (OAuth2)")
+            
+            missing_fields = [field for field in required_fields if field not in installed_creds]
+            
+            if missing_fields:
+                logger.error(f"❌ credentials.json missing required fields in 'installed' section: {missing_fields}")
+                return False
+            
+            # Validate URLs
+            if not installed_creds.get('auth_uri', '').startswith('https://'):
+                logger.error("❌ Invalid auth_uri in credentials")
+                return False
+            
+            if not installed_creds.get('token_uri', '').startswith('https://'):
+                logger.error("❌ Invalid token_uri in credentials")
+                return False
+            
+            logger.info("✅ OAuth2 installed application credentials validation passed")
+            return True
+            
+        elif 'web' in creds_data:
+            # Google OAuth2 web application credentials
+            web_creds = creds_data['web']
+            required_fields = ['client_id', 'client_secret', 'auth_uri', 'token_uri']
+            
+            logger.info("📝 Detected web application credentials (OAuth2)")
+            
+            missing_fields = [field for field in required_fields if field not in web_creds]
+            
+            if missing_fields:
+                logger.error(f"❌ credentials.json missing required fields in 'web' section: {missing_fields}")
+                return False
+            
+            logger.info("✅ OAuth2 web application credentials validation passed")
+            return True
+            
+        elif creds_data.get('type') == 'service_account':
+            # Google Service Account credentials
             required_fields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email']
+            
             logger.info("📝 Detected service account credentials")
+            
+            missing_fields = [field for field in required_fields if field not in creds_data]
+            
+            if missing_fields:
+                logger.error(f"❌ credentials.json missing required fields: {missing_fields}")
+                return False
+            
+            logger.info("✅ Service account credentials validation passed")
+            return True
+            
         else:
-            # Installed application credentials
-            required_fields = ['type', 'project_id', 'client_id', 'client_secret']
-            if 'installed' in creds_data:
-                required_fields = ['installed']
-                creds_data = creds_data['installed']
-            logger.info("📝 Detected installed application credentials")
-        
-        missing_fields = [field for field in required_fields if field not in creds_data]
-        
-        if missing_fields:
-            logger.error(f"❌ credentials.json missing required fields: {missing_fields}")
+            logger.error("❌ Unknown credentials format. Expected 'installed', 'web', or service account format")
+            logger.error(f"Available keys: {list(creds_data.keys())}")
             return False
-        
-        logger.info("✅ credentials.json validation passed")
-        return True
         
     except json.JSONDecodeError as e:
         logger.error(f"❌ credentials.json is not valid JSON: {e}")
