@@ -36,38 +36,21 @@ jobs:
         ffmpeg -version
         echo "✅ System dependencies installed"
 
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
     - name: Install Python dependencies
       run: |
         # Upgrade pip first
         python -m pip install --upgrade pip setuptools wheel
         
-        # Install core dependencies first
-        python -m pip install --no-cache-dir numpy>=1.21.0
-        
-        # Install moviepy dependencies separately to avoid conflicts
-        python -m pip install --no-cache-dir imageio>=2.25.0 imageio-ffmpeg>=0.4.8
-        python -m pip install --no-cache-dir decorator>=4.4.0 proglog>=0.1.10
-        
-        # Install moviepy with specific version
-        python -m pip install --no-cache-dir moviepy==1.0.3 --no-deps
-        python -m pip install --no-cache-dir requests tqdm
-        
-        # Install remaining dependencies from requirements.txt (excluding moviepy)
-        python -m pip install --no-cache-dir \
-          "openai>=1.0.0" \
-          "google-api-python-client>=2.0.0" \
-          "google-auth-httplib2>=0.1.0" \
-          "google-auth-oauthlib>=0.5.0" \
-          "google-auth>=2.0.0" \
-          "Pillow>=9.0.0" \
-          "gtts>=2.3.0" \
-          "pydub>=0.25.1" \
-          "python-dotenv>=0.19.0" \
-          "requests>=2.28.0" \
-          "beautifulsoup4>=4.11.0" \
-          "lxml>=4.9.0" \
-          "schedule>=1.1.0" \
-          "urllib3>=1.26.0"
+        # Install dependencies from requirements.txt
+        python -m pip install -r requirements.txt
         
         # Verify critical installations
         python -c "import PIL; print(f'✅ Pillow version {PIL.__version__} installed')"
@@ -76,7 +59,7 @@ jobs:
         python -c "import gtts; print(f'✅ gTTS version {gtts.__version__} installed')"
         python -c "import openai; print(f'✅ OpenAI version {openai.__version__} installed')"
         
-        # Test moviepy separately with better error handling
+        # Test moviepy with better error handling
         python -c "
         import sys
         try:
@@ -90,7 +73,7 @@ jobs:
         except Exception as e:
             print(f'❌ moviepy error: {e}')
             sys.exit(1)
-                "
+        "
         
         echo "✅ All Python dependencies installed and verified"
 
@@ -144,7 +127,7 @@ jobs:
         echo "Pip version:"
         python -m pip --version
         echo "Installed packages:"
-        python -m pip list
+        python -m pip list | grep -E "(google|openai|moviepy|pillow|gtts)"
         echo "Python path:"
         python -c "import sys; print('\n'.join(sys.path))"
 
