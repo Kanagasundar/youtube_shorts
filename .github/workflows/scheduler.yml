@@ -36,31 +36,22 @@ jobs:
         ffmpeg -version
         echo "✅ System dependencies installed"
 
-    - name: Create and activate virtual environment
-      run: |
-        python -m venv venv
-        source venv/bin/activate
-        echo "VIRTUAL_ENV=$PWD/venv" >> $GITHUB_ENV
-        echo "PATH=$PWD/venv/bin:$PATH" >> $GITHUB_ENV
-
     - name: Install Python dependencies
       run: |
-        pip install --upgrade pip setuptools wheel
-        # Core dependencies with pinned versions
-        pip install --no-cache-dir numpy==1.23.5 pillow==9.5.0
-        # MoviePy and its dependencies
-        pip install --no-cache-dir imageio==2.31.1 imageio-ffmpeg==0.4.8
-        pip install --no-cache-dir moviepy==1.0.3
-        # Other required packages
-        pip install --no-cache-dir openai gTTS pydub
-        pip install --no-cache-dir google-api-python-client google-auth-httplib2 google-auth-oauthlib
-        pip install --no-cache-dir requests python-dotenv beautifulsoup4 lxml html5lib
+        # Upgrade pip first
+        python -m pip install --upgrade pip setuptools wheel
         
-        # Verify installations
+        # Install from requirements.txt
+        python -m pip install --no-cache-dir -r requirements.txt
+        
+        # Verify critical installations
+        python -c "import PIL; print(f'✅ Pillow version {PIL.__version__} installed')"
+        python -c "import google.auth; print('✅ google-auth installed successfully')"
+        python -c "import googleapiclient; print('✅ google-api-python-client installed successfully')"
         python -c "from moviepy.editor import *; print('✅ moviepy.editor imported successfully')"
         python -c "import gtts; print(f'✅ gTTS version {gtts.__version__} installed')"
         python -c "import openai; print(f'✅ OpenAI version {openai.__version__} installed')"
-        echo "✅ All Python dependencies installed"
+        echo "✅ All Python dependencies installed and verified"
 
     - name: Create output directory
       run: mkdir -p output
@@ -92,6 +83,17 @@ jobs:
         DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL
         EOF
         echo "✅ Environment file created"
+
+    - name: Debug Python environment
+      run: |
+        echo "Python version:"
+        python --version
+        echo "Pip version:"
+        python -m pip --version
+        echo "Installed packages:"
+        python -m pip list
+        echo "Python path:"
+        python -c "import sys; print('\n'.join(sys.path))"
 
     - name: Run YouTube automation
       id: automation
@@ -131,8 +133,8 @@ jobs:
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        VIDEO_TITLE=$(grep "Topic:" automation.log | head -1 | cut -d' ' -f3-)
-        VIDEO_ID=$(grep "Video uploaded with ID:" automation.log | tail -1 | awk '{print $NF}')
+        VIDEO_TITLE=$(grep "Topic:" automation.log | head -1 | cut -d' ' -f3- || echo "Unknown")
+        VIDEO_ID=$(grep "Video uploaded with ID:" automation.log | tail -1 | awk '{print $NF}' || echo "")
         if [ ! -z "$VIDEO_ID" ]; then
           curl -H "Content-Type: application/json" \
                -X POST \
@@ -152,7 +154,7 @@ jobs:
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        ERROR_MSG=$(tail -10 automation.log | tr '\n' ' ' | sed 's/"/\\"/g')
+        ERROR_MSG=$(tail -10 automation.log 2>/dev/null | tr '\n' ' ' | sed 's/"/\\"/g' || echo "Unknown error")
         curl -H "Content-Type: application/json" \
              -X POST \
              -d "{
