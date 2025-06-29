@@ -198,24 +198,34 @@ Shorts URL: https://youtube.com/shorts/{video_id}
 def check_dependencies():
     """Check if required dependencies are installed"""
     
-    required_packages = [
-        'openai',
-        'gtts',
-        'pydub',
-        'Pillow',
-        'moviepy',
-        'google-auth',
-        'google-auth-oauthlib',
-        'google-api-python-client'
-    ]
+    # Map of package names to their import names
+    required_packages = {
+        'openai': 'openai',
+        'gtts': 'gtts', 
+        'pydub': 'pydub',
+        'Pillow': 'PIL',  # Pillow is imported as PIL
+        'moviepy': 'moviepy',
+        'google-auth': 'google.auth',  # google-auth is imported as google.auth
+        'google-auth-oauthlib': 'google_auth_oauthlib',
+        'google-api-python-client': 'googleapiclient'  # google-api-python-client is imported as googleapiclient
+    }
     
     missing_packages = []
     
-    for package in required_packages:
+    for package_name, import_name in required_packages.items():
         try:
-            __import__(package.replace('-', '_'))
-        except ImportError:
-            missing_packages.append(package)
+            # Handle nested imports like google.auth
+            if '.' in import_name:
+                parts = import_name.split('.')
+                module = __import__(parts[0])
+                for part in parts[1:]:
+                    module = getattr(module, part)
+            else:
+                __import__(import_name)
+            logger.debug(f"✅ {package_name} ({import_name}) - OK")
+        except (ImportError, AttributeError) as e:
+            missing_packages.append(package_name)
+            logger.debug(f"❌ {package_name} ({import_name}) - Missing: {e}")
     
     if missing_packages:
         logger.error("❌ Missing required packages:")
