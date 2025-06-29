@@ -73,7 +73,7 @@ jobs:
         echo "🔧 Installing numpy..."
         pip install --no-cache-dir numpy==1.26.4
         
-        # Install Google Auth dependencies in correct order
+        # Install Google Auth dependencies in correct order - FIXED
         echo "🔧 Installing Google Auth stack..."
         pip install --no-cache-dir \
           cachetools==5.3.3 \
@@ -81,6 +81,7 @@ jobs:
           pyasn1-modules==0.4.0 \
           rsa==4.9
         
+        # Install google-auth package properly
         pip install --no-cache-dir google-auth==2.29.0
         pip install --no-cache-dir google-auth-oauthlib==1.2.0
         pip install --no-cache-dir \
@@ -103,9 +104,9 @@ jobs:
           proglog==0.1.10 \
           tqdm==4.66.4
         
-        # Install MoviePy with specific version that works
+        # Install MoviePy - FIXED VERSION
         echo "🔧 Installing MoviePy..."
-        pip install --no-cache-dir moviepy==1.0.3
+        pip install --no-cache-dir "moviepy>=1.0.3,<2.0.0"
         
         # Install audio processing
         echo "🔧 Installing audio processing..."
@@ -125,6 +126,11 @@ jobs:
           colorama==0.4.6 \
           python-dateutil==2.9.0.post0 \
           pytz==2024.1
+        
+        # Force reinstall problematic packages
+        echo "🔧 Force reinstalling problematic packages..."
+        pip install --no-cache-dir --force-reinstall google-auth==2.29.0
+        pip install --no-cache-dir --force-reinstall "moviepy>=1.0.3,<2.0.0"
         
         echo "✅ All dependencies installed successfully"
 
