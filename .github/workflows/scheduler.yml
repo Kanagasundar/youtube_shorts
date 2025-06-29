@@ -46,26 +46,27 @@ jobs:
 
     - name: Install Python dependencies from requirements.txt
       run: |
-        # Use requirements.txt for better dependency management
         python -m pip install --no-cache-dir -r requirements.txt
         echo "✅ Requirements installed from requirements.txt"
+        # Verify google-auth installation
+        pip show google-auth || echo "❌ google-auth not found in pip"
+        python -c "import google.auth; print(f'✅ google-auth version: {google.auth.__version__}')"
+
+    - name: List installed packages
+      run: |
+        echo "🔍 Listing all installed packages..."
+        pip list
 
     - name: Verify critical installations
       run: |
         echo "🔍 Verifying installations..."
-        
-        # Test core packages
         python -c "import numpy; print(f'✅ NumPy {numpy.__version__}')"
         python -c "import PIL; print(f'✅ Pillow {PIL.__version__}')"
         python -c "import openai; print(f'✅ OpenAI {openai.__version__}')"
-        python -c "import gtts; print(f'✅ gTTS {gtts.__version__}')" 
-        
-        # Test Google Auth packages
+        python -c "import gtts; print(f'✅ gTTS {gtts.__version__}')"
         python -c "import google.auth; print('✅ google-auth imported')"
         python -c "import google_auth_oauthlib; print('✅ google-auth-oauthlib imported')"
         python -c "import googleapiclient; print('✅ google-api-python-client imported')"
-        
-        # Test MoviePy with better error handling
         python -c "
         try:
             import moviepy
@@ -76,7 +77,6 @@ jobs:
             print(f'❌ MoviePy error: {e}')
             exit(1)
         "
-        
         echo "✅ All critical packages verified"
 
     - name: Create output directory
@@ -93,7 +93,6 @@ jobs:
           echo "$YOUTUBE_CREDENTIALS" > credentials.json
           echo "✅ YouTube credentials.json created"
         fi
-        
         if [ ! -z "$YOUTUBE_TOKEN" ]; then
           echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle
           echo "✅ YouTube token restored"
@@ -107,13 +106,10 @@ jobs:
         ENABLE_UPLOAD: ${{ vars.ENABLE_UPLOAD || 'true' }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        # Validate required secrets
         if [ -z "$OPENAI_API_KEY" ]; then
           echo "❌ OPENAI_API_KEY is not set"
           exit 1
         fi
-        
-        # Create .env file
         cat > .env << EOF
         OPENAI_API_KEY=$OPENAI_API_KEY
         VIDEO_PRIVACY=$VIDEO_PRIVACY
@@ -121,21 +117,15 @@ jobs:
         ENABLE_UPLOAD=$ENABLE_UPLOAD
         UPLOAD_TO_YOUTUBE=$ENABLE_UPLOAD
         EOF
-        
-        # Add Discord webhook if provided
         if [ ! -z "$DISCORD_WEBHOOK_URL" ]; then
           echo "DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL" >> .env
         fi
-        
-        # Add overrides if provided
         if [ ! -z "${{ github.event.inputs.topic_override }}" ]; then
           echo "TOPIC_OVERRIDE=${{ github.event.inputs.topic_override }}" >> .env
         fi
         if [ ! -z "${{ github.event.inputs.category_override }}" ]; then
           echo "CATEGORY_OVERRIDE=${{ github.event.inputs.category_override }}" >> .env
         fi
-        
-        # Debug: Show environment file (hide sensitive values)
         echo "✅ Environment file created:"
         sed 's/\(.*API_KEY=\).*/\1[HIDDEN]/' .env
         sed 's/\(.*WEBHOOK_URL=\).*/\1[HIDDEN]/' .env
@@ -145,11 +135,8 @@ jobs:
       run: |
         echo "🚀 Starting YouTube automation..."
         python main.py 2>&1 | tee automation.log
-        
-        # Capture exit code
         EXIT_CODE=${PIPESTATUS[0]}
         echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
-        
         if [ $EXIT_CODE -ne 0 ]; then
           echo "❌ Automation failed with code $EXIT_CODE"
           exit $EXIT_CODE
@@ -180,10 +167,8 @@ jobs:
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        # Extract video information from logs
         VIDEO_TITLE=$(grep -E "^✅ Topic:" automation.log | head -1 | cut -d' ' -f3- 2>/dev/null || echo "Unknown")
         VIDEO_ID=$(grep "Video uploaded with ID:" automation.log | tail -1 | awk '{print $NF}' 2>/dev/null || echo "")
-        
         if [ ! -z "$VIDEO_ID" ] && [ "$VIDEO_ID" != "" ]; then
           curl -H "Content-Type: application/json" \
                -X POST \
@@ -233,12 +218,9 @@ jobs:
               repo: context.repo.repo,
               run_id: context.runId
             });
-            
-            // Keep only the 5 most recent artifacts
             const oldArtifacts = artifacts.artifacts
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
               .slice(5);
-            
             for (const artifact of oldArtifacts) {
               try {
                 await github.rest.actions.deleteArtifact({
@@ -254,4 +236,3 @@ jobs:
           } catch (error) {
             console.log(`Cleanup failed: ${error.message}`);
           }
-            

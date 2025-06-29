@@ -21,17 +21,16 @@ sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils'
 def check_dependencies():
     """Check if required dependencies are installed with improved detection"""
     
-    # Map of package names to their import names and alternative import paths
     required_packages = {
         'openai': ['openai'],
         'gtts': ['gtts'], 
         'pydub': ['pydub'],
-        'Pillow': ['PIL', 'Pillow'],  # Pillow can be imported as PIL
+        'Pillow': ['PIL', 'Pillow'],
         'moviepy': ['moviepy'],
         'numpy': ['numpy'],
-        'google-auth': ['google.auth', 'google_auth'],  # Try both import paths
-        'google-auth-oauthlib': ['google_auth_oauthlib', 'google.auth.oauthlib'],
-        'google-api-python-client': ['googleapiclient', 'google.api', 'google_api_python_client']
+        'google-auth': ['google.auth'],  # Correct import path
+        'google-auth-oauthlib': ['google_auth_oauthlib'],
+        'google-api-python-client': ['googleapiclient']
     }
     
     missing_packages = []
@@ -49,11 +48,14 @@ def check_dependencies():
                     for part in parts[1:]:
                         module = getattr(module, part)
                 else:
-                    __import__(import_name)
+                    module = __import__(import_name)
                 
-                logger.debug(f"✅ {package_name} ({import_name}) - OK")
-                package_found = True
-                break
+                # Verify the module is actually loaded
+                if module is not None:
+                    version = getattr(module, '__version__', 'unknown')
+                    logger.debug(f"✅ {package_name} ({import_name}) - OK (v{version})")
+                    package_found = True
+                    break
                 
             except (ImportError, AttributeError) as e:
                 last_error = e
@@ -79,6 +81,11 @@ def check_dependencies():
         print(f"   Python executable: {sys.executable}")
         print(f"   Site packages: {[p for p in sys.path if 'site-packages' in p]}")
         
+        # List Google-related modules in sys.modules
+        matching_modules = [name for name in sys.modules.keys() if 'google' in name.lower()]
+        if matching_modules:
+            print(f"   Google-related modules: {matching_modules[:10]}")
+        
         return False
     
     logger.info("✅ All required dependencies are installed")
@@ -89,7 +96,6 @@ def detailed_package_check():
     
     print("\n🔍 Detailed package analysis:")
     
-    # Check specific Google packages that are causing issues
     google_packages = [
         ('google-auth', 'google.auth'),
         ('google-auth-oauthlib', 'google_auth_oauthlib'),
@@ -106,14 +112,11 @@ def detailed_package_check():
             else:
                 module = __import__(import_name)
             
-            # Try to get version if available
             version = getattr(module, '__version__', 'unknown')
             print(f"   ✅ {package_name}: {import_name} (v{version})")
             
         except Exception as e:
             print(f"   ❌ {package_name}: {import_name} - {e}")
-            
-            # Try to find the package in sys.modules
             matching_modules = [name for name in sys.modules.keys() if 'google' in name.lower()]
             if matching_modules:
                 print(f"      Found Google-related modules: {matching_modules[:5]}")
@@ -141,7 +144,6 @@ def check_environment():
         else:
             logger.debug(f"✅ {var} is set (length: {len(value)})")
     
-    # Check optional vars
     for var in optional_vars:
         value = os.getenv(var)
         if value:
@@ -169,16 +171,13 @@ def setup_check():
     logger.info("🔍 Performing setup checks...")
     print("🔍 Performing setup checks...")
     
-    # Check dependencies with detailed analysis if needed
     if not check_dependencies():
         detailed_package_check()
         return False
     
-    # Check environment variables
     if not check_environment():
         return False
     
-    # Check if credentials.json exists for YouTube upload
     upload_enabled = os.getenv('UPLOAD_TO_YOUTUBE', 'true').lower() == 'true'
     
     if upload_enabled and not os.path.exists('credentials.json'):
@@ -191,7 +190,6 @@ def setup_check():
         logger.info("✅ credentials.json found")
         print("✅ credentials.json found")
     
-    # Create output directory
     os.makedirs('output', exist_ok=True)
     os.makedirs('logs', exist_ok=True)
     
@@ -199,7 +197,6 @@ def setup_check():
     print("✅ Setup checks completed")
     return True
 
-# Import modules from the utils directory after dependency check
 def import_modules():
     """Import required modules with error handling"""
     global get_today_topic, generate_script, generate_voice, create_video, generate_thumbnail, YouTubeUploader, generate_video_metadata
@@ -224,7 +221,6 @@ def import_modules():
         print("   - thumbnail_generator.py")
         print("   - youtube_uploader.py")
         
-        # Try to list what's actually in the utils directory
         utils_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils')
         if os.path.exists(utils_dir):
             print(f"\n📁 Files in {utils_dir}:")
@@ -242,7 +238,6 @@ def main():
     print(f"📅 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     try:
-        # Step 1: Get today's topic
         logger.info("📝 Step 1: Getting today's topic...")
         print("\n" + "="*50)
         print("📝 Step 1: Getting today's topic...")
@@ -253,7 +248,6 @@ def main():
         print(f"✅ Topic: {topic}")
         print(f"✅ Category: {category}")
         
-        # Step 2: Generate script
         logger.info("✍️ Step 2: Generating script...")
         print("\n" + "="*50)
         print("✍️ Step 2: Generating script...")
@@ -264,7 +258,6 @@ def main():
         print(f"✅ Generated script ({len(script)} characters)")
         print(f"📄 Script preview: {script[:200]}...")
         
-        # Step 3: Generate voice narration
         logger.info("🎙️ Step 3: Generating voice narration...")
         print("\n" + "="*50)
         print("🎙️ Step 3: Generating voice narration...")
@@ -274,7 +267,6 @@ def main():
         logger.info(f"✅ Audio generated: {audio_path}")
         print(f"✅ Audio generated: {audio_path}")
         
-        # Step 4: Generate thumbnail
         logger.info("🖼️ Step 4: Generating thumbnail...")
         print("\n" + "="*50)
         print("🖼️ Step 4: Generating thumbnail...")
@@ -284,7 +276,6 @@ def main():
         logger.info(f"✅ Thumbnail generated: {thumbnail_path}")
         print(f"✅ Thumbnail generated: {thumbnail_path}")
         
-        # Step 5: Create video
         logger.info("🎬 Step 5: Creating video...")
         print("\n" + "="*50)
         print("🎬 Step 5: Creating video...")
@@ -294,13 +285,11 @@ def main():
         logger.info(f"✅ Video created: {video_path}")
         print(f"✅ Video created: {video_path}")
         
-        # Step 6: Upload to YouTube
         logger.info("📤 Step 6: Uploading to YouTube...")
         print("\n" + "="*50)
         print("📤 Step 6: Uploading to YouTube...")
         print("="*50)
         
-        # Check if we should upload (can be disabled for testing)
         upload_enabled = os.getenv('UPLOAD_TO_YOUTUBE', 'true').lower() == 'true'
         
         if not upload_enabled:
@@ -311,12 +300,10 @@ def main():
             print("✅ Automation completed (upload skipped)")
             return 0
         
-        # Initialize uploader
         try:
             uploader = YouTubeUploader()
             
             if uploader.youtube:
-                # Generate metadata
                 title, description, tags = generate_video_metadata(topic, category, script)
                 
                 logger.info(f"📝 Title: {title}")
@@ -324,7 +311,6 @@ def main():
                 print(f"📝 Title: {title}")
                 print(f"🏷️ Tags: {', '.join(tags[:5])}...")
                 
-                # Upload video
                 video_id = uploader.upload_video(
                     video_path=video_path,
                     thumbnail_path=thumbnail_path,
@@ -340,7 +326,6 @@ def main():
                     print(f"🔗 Watch at: https://www.youtube.com/watch?v={video_id}")
                     print(f"🔗 YouTube Shorts: https://youtube.com/shorts/{video_id}")
                     
-                    # Save upload info
                     save_upload_info(video_id, title, topic, category, video_path, thumbnail_path)
                     
                 else:
@@ -417,17 +402,14 @@ if __name__ == "__main__":
     print("="*50)
     
     try:
-        # Perform setup checks
         if not setup_check():
             print("\n❌ Setup checks failed. Please fix the issues above and try again.")
             sys.exit(1)
         
-        # Import required modules
         if not import_modules():
             print("\n❌ Module import failed. Please check your utils directory.")
             sys.exit(1)
         
-        # Run the main automation process
         exit_code = main()
         
         if exit_code == 0:
