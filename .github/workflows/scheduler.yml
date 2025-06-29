@@ -17,7 +17,7 @@ on:
 jobs:
   create-and-upload-video:
     runs-on: ubuntu-latest
-    timeout-minutes: 45  # Increased timeout for video processing
+    timeout-minutes: 45
 
     steps:
     - name: Checkout repository
@@ -37,199 +37,198 @@ jobs:
         sudo apt-get install -y libffi-dev libssl-dev libxml2-dev libxslt-dev
         sudo apt-get install -y build-essential libasound2-dev portaudio19-dev
         sudo apt-get install -y jq
-        # Additional dependencies for video processing
         sudo apt-get install -y libavcodec-dev libavformat-dev libavdevice-dev
         sudo apt-get install -y libavfilter-dev libswscale-dev libswresample-dev
-        # Verify ffmpeg installation
         ffmpeg -version
         echo "✅ System dependencies installed"
 
-    - name: Upgrade pip and setuptools
+    - name: Clean pip cache and upgrade pip
       run: |
+        python -m pip cache purge
         python -m pip install --upgrade pip setuptools wheel
-        echo "✅ Pip upgraded to $(pip --version)"
+        pip --version
 
-    - name: Install Python dependencies with retry logic
+    - name: Install Python dependencies in correct order
       run: |
-        echo "📦 Installing Python dependencies..."
+        echo "📦 Installing Python dependencies in optimized order..."
         
-        # Function to install package with retries
-        install_with_retry() {
-          local package=$1
-          local max_attempts=3
-          local attempt=1
-          
-          while [ $attempt -le $max_attempts ]; do
-            echo "Attempt $attempt: Installing $package"
-            if python -m pip install --no-cache-dir "$package"; then
-              echo "✅ Successfully installed $package"
-              return 0
-            else
-              echo "❌ Failed to install $package (attempt $attempt)"
-              attempt=$((attempt + 1))
-              if [ $attempt -le $max_attempts ]; then
-                echo "Retrying in 5 seconds..."
-                sleep 5
-              fi
-            fi
-          done
-          
-          echo "❌ Failed to install $package after $max_attempts attempts"
-          return 1
-        }
+        # Install base dependencies first
+        echo "🔧 Installing base dependencies..."
+        pip install --no-cache-dir --upgrade \
+          setuptools==69.5.1 \
+          wheel==0.43.0 \
+          pip==24.0
         
-        # Install critical dependencies first in specific order
-        echo "🔧 Installing critical dependencies first..."
+        # Install core utilities
+        echo "🔧 Installing core utilities..."
+        pip install --no-cache-dir \
+          six==1.16.0 \
+          certifi==2024.2.2 \
+          charset-normalizer==3.3.2 \
+          idna==3.7 \
+          urllib3==2.2.1 \
+          requests==2.31.0
         
-        # Base dependencies
-        install_with_retry "setuptools>=65.0.0,<70.0.0"
-        install_with_retry "wheel>=0.37.0,<1.0.0"
-        install_with_retry "six>=1.16.0,<2.0.0"
-        install_with_retry "certifi>=2022.12.7"
-        install_with_retry "requests>=2.28.0,<3.0.0"
-        install_with_retry "numpy>=1.21.0,<2.0.0"
+        # Install numpy first (many packages depend on it)
+        echo "🔧 Installing numpy..."
+        pip install --no-cache-dir numpy==1.26.4
         
-        # Google Auth dependencies in order
-        echo "🔧 Installing Google Auth dependencies..."
-        install_with_retry "cachetools>=4.0.0,<6.0.0"
-        install_with_retry "pyasn1>=0.4.6,<0.6.0"
-        install_with_retry "pyasn1-modules>=0.2.1,<0.4.0"
-        install_with_retry "rsa>=3.1.4,<5.0.0"
-        install_with_retry "google-auth>=2.0.0,<3.0.0"
-        install_with_retry "google-auth-oauthlib>=0.5.0,<2.0.0"
-        install_with_retry "google-api-python-client>=2.0.0,<3.0.0"
+        # Install Google Auth dependencies in correct order
+        echo "🔧 Installing Google Auth stack..."
+        pip install --no-cache-dir \
+          cachetools==5.3.3 \
+          pyasn1==0.6.0 \
+          pyasn1-modules==0.4.0 \
+          rsa==4.9
         
-        # Video processing dependencies
+        pip install --no-cache-dir google-auth==2.29.0
+        pip install --no-cache-dir google-auth-oauthlib==1.2.0
+        pip install --no-cache-dir \
+          google-auth-httplib2==0.2.0 \
+          googleapis-common-protos==1.63.0 \
+          google-api-core==2.19.0
+        
+        pip install --no-cache-dir google-api-python-client==2.129.0
+        
+        # Install image processing
+        echo "🔧 Installing image processing..."
+        pip install --no-cache-dir Pillow==10.3.0
+        
+        # Install video processing dependencies
         echo "🔧 Installing video processing dependencies..."
-        install_with_retry "Pillow>=9.0.0,<10.0.0"
-        install_with_retry "imageio>=2.25.0,<3.0.0"
-        install_with_retry "imageio-ffmpeg>=0.4.8,<1.0.0"
-        install_with_retry "decorator>=4.4.0,<6.0.0"
-        install_with_retry "proglog>=0.1.10,<1.0.0"
-        install_with_retry "tqdm>=4.62.0,<5.0.0"
+        pip install --no-cache-dir \
+          decorator==5.1.1 \
+          imageio==2.34.1 \
+          imageio-ffmpeg==0.5.1 \
+          proglog==0.1.10 \
+          tqdm==4.66.4
         
-        # MoviePy - often problematic, install separately
+        # Install MoviePy with specific version that works
         echo "🔧 Installing MoviePy..."
-        install_with_retry "moviepy>=1.0.3,<2.0.0"
+        pip install --no-cache-dir moviepy==1.0.3
         
-        # Audio processing
-        echo "🔧 Installing audio dependencies..."
-        install_with_retry "gTTS>=2.3.0,<3.0.0"
-        install_with_retry "pydub>=0.25.1,<1.0.0"
+        # Install audio processing
+        echo "🔧 Installing audio processing..."
+        pip install --no-cache-dir \
+          gTTS==2.5.1 \
+          pydub==0.25.1
         
-        # OpenAI
+        # Install OpenAI
         echo "🔧 Installing OpenAI..."
-        install_with_retry "openai>=1.0.0,<2.0.0"
+        pip install --no-cache-dir \
+          openai==1.30.1 \
+          python-dotenv==1.0.1
         
-        # Install remaining requirements
-        echo "🔧 Installing remaining requirements..."
-        python -m pip install --no-cache-dir -r requirements.txt || echo "⚠️ Some packages from requirements.txt may have failed"
+        # Install additional utilities
+        echo "🔧 Installing additional utilities..."
+        pip install --no-cache-dir \
+          colorama==0.4.6 \
+          python-dateutil==2.9.0.post0 \
+          pytz==2024.1
         
-        echo "✅ All critical dependencies installation completed"
+        echo "✅ All dependencies installed successfully"
 
-    - name: Verify critical installations with detailed debugging
+    - name: Verify installations with enhanced testing
       run: |
         echo "🔍 Verifying critical package installations..."
         python -c "
         import sys
-        import importlib
-        import pkg_resources
+        import importlib.util
         
         print('🐍 Python version:', sys.version)
-        print('📦 Installed packages:')
-        for pkg in pkg_resources.working_set:
-            print(f'   - {pkg.project_name}: {pkg.version}')
         
-        print('\n🔍 Testing specific imports:')
+        # Test packages with enhanced error handling
+        test_results = []
         
-        # Test packages individually for better error handling
-        packages_to_test = [
-            ('numpy', 'import numpy; print(f\"✅ numpy: {numpy.__version__}\")'),
-            ('Pillow', 'import PIL; print(f\"✅ Pillow: {PIL.__version__}\")'),
-            ('openai', 'import openai; print(f\"✅ openai: {openai.__version__}\")'),
-            ('gTTS', 'import gtts; print(f\"✅ gTTS: {gtts.__version__}\")'),
-            ('pydub', 'import pydub; print(f\"✅ pydub: available\")'),
-            ('moviepy.editor', 'import moviepy.editor; print(f\"✅ moviepy.editor: {moviepy.__version__}\")', 'moviepy'),
-            ('google.auth', 'import google.auth; print(f\"✅ google.auth: {google.auth.__version__}\")', 'google-auth'),
-            ('google_auth_oauthlib', 'import google_auth_oauthlib; print(\"✅ google-auth-oauthlib: available\")'),
-            ('googleapiclient', 'import googleapiclient; print(\"✅ google-api-python-client: available\")'),
-            ('requests', 'import requests; print(f\"✅ requests: {requests.__version__}\")')
-        ]
-        
-        failed_packages = []
-        
-        for item in packages_to_test:
-            if len(item) == 3:
-                package_name, test_code, display_name = item
-            else:
-                package_name, test_code = item
-                display_name = package_name
+        def test_import(module_name, import_path=None, display_name=None):
+            if import_path is None:
+                import_path = module_name
+            if display_name is None:
+                display_name = module_name
                 
             try:
-                exec(test_code)
-            except Exception as e:
-                print(f'❌ {display_name}: {e}')
-                failed_packages.append(display_name)
-                
-                # Additional debugging for specific packages
-                if 'moviepy' in package_name:
-                    try:
-                        import moviepy
-                        print(f'   📋 moviepy module found at: {moviepy.__file__}')
-                        print(f'   📋 moviepy attributes: {dir(moviepy)[:10]}...')
-                    except:
-                        print('   📋 moviepy module not found at all')
-                
-                if 'google.auth' in package_name:
-                    try:
-                        import google
-                        print(f'   📋 google module found at: {google.__file__}')
-                        print(f'   📋 google attributes: {dir(google)[:10]}...')
-                    except:
-                        print('   📋 google module not found at all')
-        
-        if failed_packages:
-            print(f'\\n❌ Failed packages: {failed_packages}')
-            print('\\n🔧 Attempting to fix failed packages...')
-            
-            # Try alternative installations for common failures
-            if 'moviepy' in failed_packages:
-                print('🔧 Attempting alternative moviepy installation...')
-                import subprocess
-                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'])
-                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '--force-reinstall', 'moviepy==1.0.3'])
-            
-            if 'google-auth' in failed_packages:
-                print('🔧 Attempting alternative google-auth installation...')
-                import subprocess
-                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'google-auth'])
-                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '--force-reinstall', 'google-auth>=2.0.0'])
-            
-            # Re-test after fixes
-            print('\\n🔍 Re-testing after fixes...')
-            remaining_failures = []
-            for item in packages_to_test:
-                if len(item) == 3:
-                    package_name, test_code, display_name = item
+                if '.' in import_path:
+                    # Handle nested imports
+                    parts = import_path.split('.')
+                    module = __import__(parts[0])
+                    for part in parts[1:]:
+                        module = getattr(module, part)
                 else:
-                    package_name, test_code = item
-                    display_name = package_name
-                    
-                if display_name in failed_packages:
-                    try:
-                        exec(test_code)
-                        print(f'✅ {display_name}: Fixed!')
-                    except Exception as e:
-                        print(f'❌ {display_name}: Still failing - {e}')
-                        remaining_failures.append(display_name)
+                    module = __import__(import_path)
+                
+                version = getattr(module, '__version__', 'unknown')
+                print(f'✅ {display_name}: {version}')
+                test_results.append((display_name, True, version))
+                return True
+            except Exception as e:
+                print(f'❌ {display_name}: {str(e)}')
+                test_results.append((display_name, False, str(e)))
+                return False
+        
+        # Test all critical packages
+        print('\\n🔍 Testing imports...')
+        test_import('numpy')
+        test_import('PIL', display_name='Pillow')
+        test_import('openai')
+        test_import('gtts', display_name='gTTS')
+        test_import('pydub')
+        
+        # Special handling for moviepy
+        try:
+            import moviepy
+            import moviepy.editor
+            print(f'✅ MoviePy: {getattr(moviepy, \"__version__\", \"unknown\")} (with editor)')
+            test_results.append(('MoviePy', True, 'OK'))
+        except Exception as e:
+            print(f'❌ MoviePy: {str(e)}')
+            test_results.append(('MoviePy', False, str(e)))
+        
+        # Special handling for google.auth
+        try:
+            import google.auth
+            import google_auth_oauthlib
+            import googleapiclient.discovery
+            print(f'✅ Google Auth: {getattr(google.auth, \"__version__\", \"unknown\")}')
+            test_results.append(('Google Auth', True, 'OK'))
+        except Exception as e:
+            print(f'❌ Google Auth: {str(e)}')
+            test_results.append(('Google Auth', False, str(e)))
+        
+        test_import('requests')
+        
+        # Summary
+        failed = [name for name, success, _ in test_results if not success]
+        if failed:
+            print(f'\\n❌ Failed imports: {failed}')
+            print('\\n🔧 Attempting to fix failed imports...')
             
-            if remaining_failures:
-                print(f'\\n❌ Packages still failing after fixes: {remaining_failures}')
-                print('⚠️ Continuing with available packages...')
-            else:
-                print('\\n✅ All packages fixed successfully!')
+            # Try to fix common issues
+            import subprocess
+            import os
+            
+            if 'MoviePy' in failed:
+                print('🔧 Fixing MoviePy installation...')
+                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], 
+                             capture_output=True)
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                              '--force-reinstall', 'moviepy==1.0.3'], capture_output=True)
+                try:
+                    import moviepy.editor
+                    print('✅ MoviePy fixed!')
+                except:
+                    print('❌ MoviePy still failing')
+            
+            if 'Google Auth' in failed:
+                print('🔧 Fixing Google Auth installation...')
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                              '--force-reinstall', 'google-auth==2.29.0'], capture_output=True)
+                try:
+                    import google.auth
+                    print('✅ Google Auth fixed!')
+                except:
+                    print('❌ Google Auth still failing')
         else:
-            print('\\n✅ All critical packages verified successfully')
+            print('\\n✅ All critical packages verified successfully!')
         "
 
     - name: Create output directories
@@ -245,7 +244,6 @@ jobs:
       run: |
         echo "🔍 Setting up YouTube credentials..."
         
-        # Debug: Check if secrets are available
         CRED_SET="${{ secrets.YOUTUBE_CREDENTIALS != '' }}"
         TOKEN_SET="${{ secrets.YOUTUBE_TOKEN != '' }}"
         
@@ -253,11 +251,9 @@ jobs:
         echo "   - YOUTUBE_CREDENTIALS: $CRED_SET"
         echo "   - YOUTUBE_TOKEN: $TOKEN_SET"
         
-        # Method 1: Try environment variable approach
         if [ -n "$YOUTUBE_CREDENTIALS" ] && [ "$YOUTUBE_CREDENTIALS" != "" ]; then
           echo "✅ YOUTUBE_CREDENTIALS found via environment variable"
           echo "$YOUTUBE_CREDENTIALS" > credentials.json
-        # Method 2: Try direct secret substitution
         elif [ "${{ secrets.YOUTUBE_CREDENTIALS }}" != "" ]; then
           echo "✅ YOUTUBE_CREDENTIALS found via direct secret"
           cat > credentials.json << 'EOL'
@@ -267,17 +263,14 @@ jobs:
           echo "❌ YOUTUBE_CREDENTIALS not available through either method"
         fi
         
-        # Validate credentials file
         if [ -f credentials.json ]; then
           FILE_SIZE=$(wc -c < credentials.json)
           echo "✅ credentials.json created (size: $FILE_SIZE bytes)"
           
           if [ $FILE_SIZE -gt 10 ]; then
-            # Validate JSON format (without showing content)
             if jq empty credentials.json > /dev/null 2>&1; then
               echo "✅ credentials.json is valid JSON"
               
-              # Check for required Google API fields
               if jq -e '.type, .project_id, .client_id' credentials.json > /dev/null 2>&1; then
                 echo "✅ credentials.json contains required Google API fields"
                 echo "YOUTUBE_CREDENTIALS_VALID=true" >> $GITHUB_ENV
@@ -288,8 +281,6 @@ jobs:
             else
               echo "❌ credentials.json is not valid JSON"
               echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
-              echo "📄 First 100 characters of file:"
-              head -c 100 credentials.json
             fi
           else
             echo "❌ credentials.json file is too small (likely empty)"
@@ -300,7 +291,6 @@ jobs:
           echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
         fi
         
-        # Handle YouTube token restoration
         if [ -n "$YOUTUBE_TOKEN" ] && [ "$YOUTUBE_TOKEN" != "" ]; then
           echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle 2>/dev/null
           if [ -f token.pickle ] && [ -s token.pickle ]; then
@@ -319,16 +309,7 @@ jobs:
           echo "ℹ️ No YouTube token found (normal for first run)"
         fi
         
-        # Final status
-        if [ "$YOUTUBE_CREDENTIALS_VALID" = "true" ]; then
-          echo "✅ YouTube credentials setup completed successfully"
-        else
-          echo "⚠️ YouTube credentials setup failed - upload will be disabled"
-          echo "💡 Troubleshooting tips:"
-          echo "   1. Verify YOUTUBE_CREDENTIALS secret exists in repository settings"
-          echo "   2. Ensure the secret contains valid JSON from Google Cloud Console"
-          echo "   3. Check that the JSON includes all required fields (type, project_id, client_id, etc.)"
-        fi
+        echo "✅ YouTube credentials setup completed"
 
     - name: Set upload status
       run: |
@@ -343,12 +324,6 @@ jobs:
           echo "UPLOAD_TO_YOUTUBE=true" >> $GITHUB_ENV
         else
           echo "⚠️ Upload will be disabled"
-          if [ "${{ env.YOUTUBE_CREDENTIALS_VALID }}" != "true" ]; then
-            echo "   Reason: Invalid credentials"
-          fi
-          if [ "$ENABLE_UPLOAD_VAR" != "true" ]; then
-            echo "   Reason: Upload disabled in settings"
-          fi
           echo "UPLOAD_TO_YOUTUBE=false" >> $GITHUB_ENV
         fi
 
@@ -359,13 +334,11 @@ jobs:
         VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        # Validate required secrets
         if [ -z "$OPENAI_API_KEY" ]; then
           echo "❌ OPENAI_API_KEY is not set in repository secrets"
           exit 1
         fi
         
-        # Create .env file
         cat > .env << EOF
         OPENAI_API_KEY=$OPENAI_API_KEY
         VIDEO_PRIVACY=$VIDEO_PRIVACY
@@ -373,7 +346,6 @@ jobs:
         UPLOAD_TO_YOUTUBE=${{ env.UPLOAD_TO_YOUTUBE }}
         EOF
         
-        # Add optional variables
         if [ -n "$DISCORD_WEBHOOK_URL" ]; then
           echo "DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL" >> .env
           echo "DISCORD_NOTIFICATIONS_ENABLED=true" >> $GITHUB_ENV
@@ -389,16 +361,11 @@ jobs:
           echo "CATEGORY_OVERRIDE=${{ github.event.inputs.category_override }}" >> .env
         fi
         
-        echo "✅ Environment file created with $(wc -l < .env) variables"
-        echo "📋 Final upload status: ${{ env.UPLOAD_TO_YOUTUBE }}"
-        
-        # Show sanitized version
-        sed 's/\(.*API_KEY=\).*/\1[HIDDEN]/' .env | sed 's/\(.*WEBHOOK_URL=\).*/\1[HIDDEN]/'
+        echo "✅ Environment file created"
 
     - name: Run YouTube automation
       id: automation
       env:
-        # Explicitly pass all environment variables to the Python process
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         VIDEO_PRIVACY: ${{ vars.VIDEO_PRIVACY || 'public' }}
         VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
@@ -406,23 +373,18 @@ jobs:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         TOPIC_OVERRIDE: ${{ github.event.inputs.topic_override }}
         CATEGORY_OVERRIDE: ${{ github.event.inputs.category_override }}
-        PYTHONUNBUFFERED: "1"  # Ensure real-time output
+        PYTHONUNBUFFERED: "1"
         PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/utils
       run: |
         echo "🚀 Starting YouTube automation..."
         echo "📅 Timestamp: $(date)"
         echo "🐍 Python version: $(python --version)"
         echo "📁 Working directory: $(pwd)"
-        echo "📂 Directory contents:"
-        ls -la
-        
-        # Show final upload status
         echo "📋 Final configuration:"
         echo "   - YouTube credentials valid: ${{ env.YOUTUBE_CREDENTIALS_VALID }}"
         echo "   - Upload enabled: ${{ env.UPLOAD_TO_YOUTUBE }}"
         echo "   - Video privacy: $VIDEO_PRIVACY"
         
-        # Run the automation with proper error handling
         set -o pipefail
         python main.py 2>&1 | tee automation.log
         EXIT_CODE=${PIPESTATUS[0]}
@@ -446,11 +408,6 @@ jobs:
           base64 -w 0 token.pickle > token_updated.txt
           echo "token_content=$(cat token_updated.txt)" >> $GITHUB_OUTPUT
           echo "✅ Updated token prepared for storage"
-          
-          # Optionally, you could save this back to secrets using GitHub API
-          # This would require a personal access token with repo permissions
-          echo "💡 Consider updating your YOUTUBE_TOKEN secret with the new token"
-          echo "📄 New token (base64): $(head -c 50 token_updated.txt)..."
         else
           echo "ℹ️ No token.pickle file found to save"
         fi
@@ -484,23 +441,16 @@ jobs:
       if: success()
       id: video_info
       run: |
-        # Extract video information from logs
         VIDEO_TITLE=$(grep -E "^✅ Topic:" automation.log | head -1 | cut -d' ' -f3- 2>/dev/null || echo "Unknown")
         VIDEO_ID=$(grep "Video uploaded with ID:" automation.log | tail -1 | awk '{print $NF}' 2>/dev/null || echo "")
         VIDEO_CATEGORY=$(grep -E "^✅ Category:" automation.log | head -1 | cut -d' ' -f3- 2>/dev/null || echo "Unknown")
         
-        # Clean up extracted values
         VIDEO_TITLE=$(echo "$VIDEO_TITLE" | sed 's/[^a-zA-Z0-9 .,!?-]//g' | head -c 100)
         VIDEO_ID=$(echo "$VIDEO_ID" | grep -E '^[a-zA-Z0-9_-]{11}$' || echo "")
         
         echo "video_title=$VIDEO_TITLE" >> $GITHUB_OUTPUT
         echo "video_id=$VIDEO_ID" >> $GITHUB_OUTPUT
         echo "video_category=$VIDEO_CATEGORY" >> $GITHUB_OUTPUT
-        
-        echo "📺 Extracted video info:"
-        echo "   Title: $VIDEO_TITLE"
-        echo "   ID: $VIDEO_ID"
-        echo "   Category: $VIDEO_CATEGORY"
 
     - name: Send success notification
       if: success() && env.DISCORD_NOTIFICATIONS_ENABLED == 'true'
@@ -513,12 +463,11 @@ jobs:
         UPLOAD_STATUS="${{ env.UPLOAD_TO_YOUTUBE == 'true' && 'Uploaded' || 'Generated (Upload Disabled)' }}"
         
         if [ -n "$VIDEO_ID" ] && [ "$VIDEO_ID" != "" ]; then
-          # Create JSON payload for successful upload
           PAYLOAD=$(cat << EOF
         {
           "embeds": [{
             "title": "✅ YouTube Video Published Successfully!",
-            "description": "**Title:** ${VIDEO_TITLE}\n**Category:** ${VIDEO_CATEGORY}\n**Video ID:** ${VIDEO_ID}\n**URL:** https://www.youtube.com/watch?v=${VIDEO_ID}\n**Shorts:** https://youtube.com/shorts/${VIDEO_ID}",
+            "description": "**Title:** ${VIDEO_TITLE}\n**Category:** ${VIDEO_CATEGORY}\n**Video ID:** ${VIDEO_ID}\n**URL:** https://www.youtube.com/watch?v=${VIDEO_ID}",
             "color": 5763719,
             "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
             "footer": {
@@ -529,12 +478,11 @@ jobs:
         EOF
           )
         else
-          # Create JSON payload for generation without upload
           PAYLOAD=$(cat << EOF
         {
           "embeds": [{
             "title": "✅ YouTube Video Generated Successfully!",
-            "description": "**Title:** ${VIDEO_TITLE}\n**Category:** ${VIDEO_CATEGORY}\n**Status:** ${UPLOAD_STATUS}\n**Note:** Video was generated but not uploaded (check credentials setup)",
+            "description": "**Title:** ${VIDEO_TITLE}\n**Category:** ${VIDEO_CATEGORY}\n**Status:** ${UPLOAD_STATUS}",
             "color": 16776960,
             "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
             "footer": {
@@ -556,16 +504,14 @@ jobs:
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        # Extract error information
         ERROR_MSG=$(tail -10 automation.log 2>/dev/null | tr '\n' ' ' | sed 's/"/\\"/g' | head -c 400 || echo "Unknown error - check logs")
         STEP_NAME=$(echo "${{ github.workflow }}" | head -c 50)
         
-        # Create failure notification
         PAYLOAD=$(cat << EOF
         {
           "embeds": [{
             "title": "❌ YouTube Automation Failed",
-            "description": "**Error:** ${ERROR_MSG}\n**Run:** #${{ github.run_number }}\n**Workflow:** ${STEP_NAME}\n**Branch:** ${{ github.ref_name }}\n**Commit:** ${{ github.sha }}",
+            "description": "**Error:** ${ERROR_MSG}\n**Run:** #${{ github.run_number }}\n**Workflow:** ${STEP_NAME}",
             "color": 15158332,
             "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
             "footer": {
@@ -594,7 +540,6 @@ jobs:
           try {
             console.log('🧹 Starting artifact cleanup...');
             
-            // Get all artifacts for this repository
             const { data: artifacts } = await github.rest.actions.listArtifactsForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -603,15 +548,13 @@ jobs:
             
             console.log(`Found ${artifacts.artifacts.length} total artifacts`);
             
-            // Filter and sort artifacts by creation date (newest first)
             const oldArtifacts = artifacts.artifacts
               .filter(artifact => artifact.name.includes('automation-'))
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-              .slice(10); // Keep only the 10 most recent
+              .slice(10);
             
             console.log(`Found ${oldArtifacts.length} old artifacts to delete`);
             
-            // Delete old artifacts
             for (const artifact of oldArtifacts) {
               try {
                 await github.rest.actions.deleteArtifact({
@@ -619,7 +562,7 @@ jobs:
                   repo: context.repo.repo,
                   artifact_id: artifact.id
                 });
-                console.log(`✅ Deleted artifact: ${artifact.name} (${artifact.created_at})`);
+                console.log(`✅ Deleted artifact: ${artifact.name}`);
               } catch (error) {
                 console.log(`⚠️ Failed to delete artifact ${artifact.name}: ${error.message}`);
               }
@@ -629,7 +572,6 @@ jobs:
             
           } catch (error) {
             console.log(`❌ Cleanup failed: ${error.message}`);
-            // Don't fail the workflow if cleanup fails
           }
 
     - name: Cleanup summary
@@ -638,5 +580,3 @@ jobs:
         echo "📊 Workflow summary:"
         echo "   - Run number: ${{ github.run_number }}"
         echo "   - Triggered by: ${{ github.event_name }}"
-        echo "   - Branch: ${{ github.ref_name }}"
-        echo "   - Commit: ${{ github.sha }}"
