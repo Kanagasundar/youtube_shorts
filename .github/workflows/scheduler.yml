@@ -206,12 +206,33 @@ jobs:
           echo "   3. Check that the JSON includes all required fields (type, project_id, client_id, etc.)"
         fi
 
+    - name: Set upload status
+      run: |
+        echo "🔧 Determining upload status..."
+        ENABLE_UPLOAD_VAR="${{ vars.ENABLE_UPLOAD || 'true' }}"
+        echo "📋 Configuration check:"
+        echo "   - YOUTUBE_CREDENTIALS_VALID: ${{ env.YOUTUBE_CREDENTIALS_VALID }}"
+        echo "   - ENABLE_UPLOAD variable: $ENABLE_UPLOAD_VAR"
+        
+        if [ "${{ env.YOUTUBE_CREDENTIALS_VALID }}" = "true" ] && [ "$ENABLE_UPLOAD_VAR" = "true" ]; then
+          echo "✅ Upload will be enabled"
+          echo "UPLOAD_TO_YOUTUBE=true" >> $GITHUB_ENV
+        else
+          echo "⚠️ Upload will be disabled"
+          if [ "${{ env.YOUTUBE_CREDENTIALS_VALID }}" != "true" ]; then
+            echo "   Reason: Invalid credentials"
+          fi
+          if [ "$ENABLE_UPLOAD_VAR" != "true" ]; then
+            echo "   Reason: Upload disabled in settings"
+          fi
+          echo "UPLOAD_TO_YOUTUBE=false" >> $GITHUB_ENV
+        fi
+
     - name: Create environment file
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         VIDEO_PRIVACY: ${{ vars.VIDEO_PRIVACY || 'public' }}
         VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
-        ENABLE_UPLOAD: ${{ vars.ENABLE_UPLOAD || 'true' }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
         # Validate required secrets
@@ -220,21 +241,12 @@ jobs:
           exit 1
         fi
         
-        # Determine upload capability
-        UPLOAD_ENABLED="false"
-        if [ "$ENABLE_UPLOAD" = "true" ] && [ "$YOUTUBE_CREDENTIALS_VALID" = "true" ]; then
-          UPLOAD_ENABLED="true"
-        elif [ "$ENABLE_UPLOAD" = "true" ]; then
-          echo "⚠️ Upload requested but credentials invalid - disabling upload"
-        fi
-        
         # Create .env file
         cat > .env << EOF
         OPENAI_API_KEY=$OPENAI_API_KEY
         VIDEO_PRIVACY=$VIDEO_PRIVACY
         VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID
-        ENABLE_UPLOAD=$UPLOAD_ENABLED
-        UPLOAD_TO_YOUTUBE=$UPLOAD_ENABLED
+        UPLOAD_TO_YOUTUBE=${{ env.UPLOAD_TO_YOUTUBE }}
         EOF
         
         # Add optional variables
@@ -254,7 +266,7 @@ jobs:
         fi
         
         echo "✅ Environment file created with $(wc -l < .env) variables"
-        echo "📋 Upload enabled: $UPLOAD_ENABLED"
+        echo "📋 Final upload status: ${{ env.UPLOAD_TO_YOUTUBE }}"
         
         # Show sanitized version
         sed 's/\(.*API_KEY=\).*/\1[HIDDEN]/' .env | sed 's/\(.*WEBHOOK_URL=\).*/\1[HIDDEN]/'
@@ -266,8 +278,7 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         VIDEO_PRIVACY: ${{ vars.VIDEO_PRIVACY || 'public' }}
         VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
-        ENABLE_UPLOAD: ${{ vars.ENABLE_UPLOAD || 'true' }}
-        UPLOAD_TO_YOUTUBE: ${{ env.YOUTUBE_CREDENTIALS_VALID == 'true' && vars.ENABLE_UPLOAD || 'false' }}
+        UPLOAD_TO_YOUTUBE: ${{ env.UPLOAD_TO_YOUTUBE }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         TOPIC_OVERRIDE: ${{ github.event.inputs.topic_override }}
         CATEGORY_OVERRIDE: ${{ github.event.inputs.category_override }}
@@ -284,7 +295,7 @@ jobs:
         # Show final upload status
         echo "📋 Final configuration:"
         echo "   - YouTube credentials valid: ${{ env.YOUTUBE_CREDENTIALS_VALID }}"
-        echo "   - Upload enabled: $UPLOAD_TO_YOUTUBE"
+        echo "   - Upload enabled: ${{ env.UPLOAD_TO_YOUTUBE }}"
         echo "   - Video privacy: $VIDEO_PRIVACY"
         
         # Run the automation with proper error handling
@@ -375,7 +386,7 @@ jobs:
         VIDEO_TITLE="${{ steps.video_info.outputs.video_title }}"
         VIDEO_ID="${{ steps.video_info.outputs.video_id }}"
         VIDEO_CATEGORY="${{ steps.video_info.outputs.video_category }}"
-        UPLOAD_STATUS="${{ env.YOUTUBE_CREDENTIALS_VALID == 'true' && 'Uploaded' || 'Generated (Upload Disabled)' }}"
+        UPLOAD_STATUS="${{ env.UPLOAD_TO_YOUTUBE == 'true' && 'Uploaded' || 'Generated (Upload Disabled)' }}"
         
         if [ -n "$VIDEO_ID" ] && [ "$VIDEO_ID" != "" ]; then
           # Create JSON payload for successful upload
