@@ -56,36 +56,55 @@ jobs:
         echo "🔍 Verifying critical package installations..."
         python -c "
         import sys
-        packages = [
-            ('numpy', 'numpy'),
-            ('PIL', 'Pillow'),
-            ('openai', 'openai'),
-            ('gtts', 'gTTS'),
-            ('google.auth', 'google-auth'),
-            ('google_auth_oauthlib', 'google-auth-oauthlib'),
-            ('googleapiclient', 'google-api-python-client'),
-            ('moviepy', 'moviepy')
+        
+        # Test packages individually for better error handling
+        packages_to_test = [
+            ('numpy', 'import numpy; print(f\"✅ numpy: {numpy.__version__}\")'),
+            ('Pillow', 'import PIL; print(f\"✅ Pillow: {PIL.__version__}\")'),
+            ('openai', 'import openai; print(f\"✅ openai: {openai.__version__}\")'),
+            ('gTTS', 'import gtts; print(f\"✅ gTTS: {gtts.__version__}\")'),
+            ('google-auth', 'import google.auth; print(f\"✅ google-auth: {google.auth.__version__}\")'),
+            ('google-auth-oauthlib', 'import google_auth_oauthlib; print(\"✅ google-auth-oauthlib: installed\")'),
+            ('google-api-python-client', 'import googleapiclient; print(\"✅ google-api-python-client: installed\")'),
+            ('moviepy', 'import moviepy; print(f\"✅ moviepy: {moviepy.__version__}\")')
         ]
         
-        all_good = True
-        for import_name, package_name in packages:
+        failed_packages = []
+        
+        for package_name, test_code in packages_to_test:
             try:
-                if '.' in import_name:
-                    parts = import_name.split('.')
-                    module = __import__(parts[0])
-                    for part in parts[1:]:
-                        module = getattr(module, part)
-                else:
-                    module = __import__(import_name)
-                version = getattr(module, '__version__', 'unknown')
-                print(f'✅ {package_name}: {version}')
+                exec(test_code)
             except Exception as e:
                 print(f'❌ {package_name}: {e}')
-                all_good = False
+                failed_packages.append(package_name)
         
-        if not all_good:
+        # Additional Google packages verification
+        try:
+            from google.auth.transport.requests import Request
+            print('✅ google.auth.transport.requests: OK')
+        except Exception as e:
+            print(f'❌ google.auth.transport.requests: {e}')
+            failed_packages.append('google-auth-transport')
+        
+        try:
+            from googleapiclient.discovery import build
+            print('✅ googleapiclient.discovery: OK')
+        except Exception as e:
+            print(f'❌ googleapiclient.discovery: {e}')
+            failed_packages.append('google-api-client-discovery')
+        
+        try:
+            from google_auth_oauthlib.flow import InstalledAppFlow
+            print('✅ google_auth_oauthlib.flow: OK')
+        except Exception as e:
+            print(f'❌ google_auth_oauthlib.flow: {e}')
+            failed_packages.append('google-auth-oauthlib-flow')
+        
+        if failed_packages:
+            print(f'\\n❌ Failed packages: {failed_packages}')
             sys.exit(1)
-        print('✅ All critical packages verified')
+        
+        print('\\n✅ All critical packages verified successfully')
         "
 
     - name: Create output directories
