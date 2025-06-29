@@ -49,7 +49,6 @@ jobs:
       run: |
         python -m pip install --no-cache-dir -r requirements.txt
         echo "✅ Requirements installed from requirements.txt"
-        # Verify google-auth installation
         pip show google-auth || echo "❌ google-auth not found in pip"
         python -c "import google.auth; print(f'✅ google-auth version: {google.auth.__version__}')"
 
@@ -79,6 +78,18 @@ jobs:
             exit(1)
         "
         echo "✅ All critical packages verified"
+
+    - name: Verify environment variables
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        echo "🔍 Verifying environment variables..."
+        if [ -z "$OPENAI_API_KEY" ]; then
+          echo "❌ OPENAI_API_KEY is not set"
+          exit 1
+        else
+          echo "✅ OPENAI_API_KEY is set (length: ${#OPENAI_API_KEY})"
+        fi
 
     - name: Create output directory
       run: mkdir -p output
