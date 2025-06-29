@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 YouTube Automation Main Script
@@ -11,13 +10,16 @@ import traceback
 from datetime import datetime
 import logging
 import importlib.util
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Ensure the utils directory is in sys.path
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils'))
+utils_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils')
+if utils_path not in sys.path:
+    sys.path.insert(0, utils_path)
 
 def check_dependencies():
     """Check if required dependencies are installed with robust detection"""
@@ -27,11 +29,12 @@ def check_dependencies():
         'gtts': 'gtts',
         'pydub': 'pydub',
         'Pillow': 'PIL',
-        'moviepy': 'moviepy',
+        'moviepy': 'moviepy.editor',
         'numpy': 'numpy',
         'google-auth': 'google.auth',
         'google-auth-oauthlib': 'google_auth_oauthlib',
-        'google-api-python-client': 'googleapiclient'
+        'google-api-python-client': 'googleapiclient',
+        'requests': 'requests'
     }
     
     missing_packages = []
@@ -39,13 +42,13 @@ def check_dependencies():
     for package_name, import_name in required_packages.items():
         try:
             # Import the module
-            module = __import__(import_name)
-            
-            # For nested imports (e.g., google.auth), resolve the full path
             if '.' in import_name:
                 parts = import_name.split('.')
+                module = __import__(parts[0])
                 for part in parts[1:]:
                     module = getattr(module, part)
+            else:
+                module = __import__(import_name)
             
             # Verify the module is loaded
             version = getattr(module, '__version__', 'unknown')
@@ -72,46 +75,55 @@ def check_dependencies():
         print(f"   Python executable: {sys.executable}")
         print(f"   Site packages: {[p for p in sys.path if 'site-packages' in p]}")
         
-        # List Google-related modules in sys.modules
-        matching_modules = [name for name in sys.modules.keys() if 'google' in name.lower()]
-        if matching_modules:
-            print(f"   Google-related modules: {matching_modules[:10]}")
-        
         return False
     
     logger.info("✅ All required dependencies are installed")
     print("✅ All required dependencies are installed")
     return True
 
-def detailed_package_check():
-    """Perform detailed package checking for troubleshooting"""
+def validate_credentials_file():
+    """Validate the credentials.json file"""
     
-    print("\n🔍 Detailed package analysis:")
+    if not os.path.exists('credentials.json'):
+        logger.warning("⚠️ credentials.json not found")
+        return False
     
-    google_packages = [
-        ('google-auth', 'google.auth'),
-        ('google-auth-oauthlib', 'google_auth_oauthlib'),
-        ('google-api-python-client', 'googleapiclient'),
-    ]
-    
-    for package_name, import_name in google_packages:
-        try:
-            if '.' in import_name:
-                parts = import_name.split('.')
-                module = __import__(parts[0])
-                for part in parts[1:]:
-                    module = getattr(module, part)
-            else:
-                module = __import__(import_name)
-            
-            version = getattr(module, '__version__', 'unknown')
-            print(f"   ✅ {package_name}: {import_name} (v{version})")
-            
-        except Exception as e:
-            print(f"   ❌ {package_name}: {import_name} - {e}")
-            matching_modules = [name for name in sys.modules.keys() if 'google' in name.lower()]
-            if matching_modules:
-                print(f"      Found Google-related modules: {matching_modules[:5]}")
+    try:
+        with open('credentials.json', 'r', encoding='utf-8') as f:
+            creds_data = json.load(f)
+        
+        # Check for required fields
+        if 'type' not in creds_data:
+            logger.error("❌ credentials.json missing 'type' field")
+            return False
+        
+        # Handle different credential types
+        if creds_data.get('type') == 'service_account':
+            required_fields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email']
+            logger.info("📝 Detected service account credentials")
+        else:
+            # Installed application credentials
+            required_fields = ['type', 'project_id', 'client_id', 'client_secret']
+            if 'installed' in creds_data:
+                required_fields = ['installed']
+                creds_data = creds_data['installed']
+            logger.info("📝 Detected installed application credentials")
+        
+        missing_fields = [field for field in required_fields if field not in creds_data]
+        
+        if missing_fields:
+            logger.error(f"❌ credentials.json missing required fields: {missing_fields}")
+            return False
+        
+        logger.info("✅ credentials.json validation passed")
+        return True
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ credentials.json is not valid JSON: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Error validating credentials.json: {e}")
+        return False
 
 def check_environment():
     """Check if required environment variables are set"""
@@ -124,7 +136,9 @@ def check_environment():
         'UPLOAD_TO_YOUTUBE',
         'VIDEO_PRIVACY', 
         'VIDEO_CATEGORY_ID',
-        'DISCORD_WEBHOOK_URL'
+        'DISCORD_WEBHOOK_URL',
+        'TOPIC_OVERRIDE',
+        'CATEGORY_OVERRIDE'
     ]
     
     missing_vars = []
@@ -164,7 +178,6 @@ def setup_check():
     print("🔍 Performing setup checks...")
     
     if not check_dependencies():
-        detailed_package_check()
         return False
     
     if not check_environment():
@@ -172,16 +185,21 @@ def setup_check():
     
     upload_enabled = os.getenv('UPLOAD_TO_YOUTUBE', 'true').lower() == 'true'
     
-    if upload_enabled and not os.path.exists('credentials.json'):
-        logger.warning("⚠️ credentials.json not found")
-        print("⚠️ credentials.json not found")
-        print("💡 YouTube upload will be disabled")
-        print("💡 To enable upload, add your Google API credentials.json file")
-        os.environ['UPLOAD_TO_YOUTUBE'] = 'false'
-    elif upload_enabled:
-        logger.info("✅ credentials.json found")
-        print("✅ credentials.json found")
+    if upload_enabled:
+        if validate_credentials_file():
+            logger.info("✅ credentials.json found and validated")
+            print("✅ credentials.json found and validated")
+        else:
+            logger.warning("⚠️ credentials.json validation failed")
+            print("⚠️ credentials.json validation failed")
+            print("💡 YouTube upload will be disabled")
+            print("💡 To enable upload, fix your Google API credentials.json file")
+            os.environ['UPLOAD_TO_YOUTUBE'] = 'false'
+    else:
+        logger.info("ℹ️ YouTube upload disabled by configuration")
+        print("ℹ️ YouTube upload disabled by configuration")
     
+    # Create output directories
     os.makedirs('output', exist_ok=True)
     os.makedirs('logs', exist_ok=True)
     
@@ -213,14 +231,13 @@ def import_modules():
         print("   - thumbnail_generator.py")
         print("   - youtube_uploader.py")
         
-        utils_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils')
-        if os.path.exists(utils_dir):
-            print(f"\n📁 Files in {utils_dir}:")
-            for file in os.listdir(utils_dir):
+        if os.path.exists(utils_path):
+            print(f"\n📁 Files in {utils_path}:")
+            for file in os.listdir(utils_path):
                 if file.endswith('.py'):
                     print(f"   - {file}")
         else:
-            print(f"\n❌ Utils directory not found: {utils_dir}")
+            print(f"\n❌ Utils directory not found: {utils_path}")
         
         return False
 
@@ -235,10 +252,20 @@ def main():
         print("📝 Step 1: Getting today's topic...")
         print("="*50)
         
-        topic, category = get_today_topic()
-        logger.info(f"✅ Topic: {topic}, Category: {category}")
-        print(f"✅ Topic: {topic}")
-        print(f"✅ Category: {category}")
+        # Handle topic override
+        topic_override = os.getenv('TOPIC_OVERRIDE')
+        category_override = os.getenv('CATEGORY_OVERRIDE')
+        
+        if topic_override:
+            topic = topic_override
+            category = category_override or 'general'
+            logger.info(f"✅ Using override - Topic: {topic}, Category: {category}")
+            print(f"✅ Using override - Topic: {topic}, Category: {category}")
+        else:
+            topic, category = get_today_topic()
+            logger.info(f"✅ Topic: {topic}, Category: {category}")
+            print(f"✅ Topic: {topic}")
+            print(f"✅ Category: {category}")
         
         logger.info("✍️ Step 2: Generating script...")
         print("\n" + "="*50)
