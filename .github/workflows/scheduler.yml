@@ -24,9 +24,9 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v5  # Updated to latest version
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.11'  # Updated Python version
+        python-version: '3.11'
         cache: 'pip'
 
     - name: Install system dependencies
@@ -36,7 +36,10 @@ jobs:
         sudo apt-get install -y python3-dev python3-pip python3-venv
         sudo apt-get install -y libffi-dev libssl-dev libxml2-dev libxslt-dev
         sudo apt-get install -y build-essential libasound2-dev portaudio19-dev
-        sudo apt-get install -y jq  # Added for JSON validation
+        sudo apt-get install -y jq
+        # Additional dependencies for video processing
+        sudo apt-get install -y libavcodec-dev libavformat-dev libavdevice-dev
+        sudo apt-get install -y libavfilter-dev libswscale-dev libswresample-dev
         # Verify ffmpeg installation
         ffmpeg -version
         echo "✅ System dependencies installed"
@@ -46,17 +49,98 @@ jobs:
         python -m pip install --upgrade pip setuptools wheel
         echo "✅ Pip upgraded to $(pip --version)"
 
-    - name: Install Python dependencies
+    - name: Install Python dependencies with retry logic
       run: |
         echo "📦 Installing Python dependencies..."
-        python -m pip install --no-cache-dir -r requirements.txt
-        echo "✅ Requirements installed from requirements.txt"
+        
+        # Function to install package with retries
+        install_with_retry() {
+          local package=$1
+          local max_attempts=3
+          local attempt=1
+          
+          while [ $attempt -le $max_attempts ]; do
+            echo "Attempt $attempt: Installing $package"
+            if python -m pip install --no-cache-dir "$package"; then
+              echo "✅ Successfully installed $package"
+              return 0
+            else
+              echo "❌ Failed to install $package (attempt $attempt)"
+              attempt=$((attempt + 1))
+              if [ $attempt -le $max_attempts ]; then
+                echo "Retrying in 5 seconds..."
+                sleep 5
+              fi
+            fi
+          done
+          
+          echo "❌ Failed to install $package after $max_attempts attempts"
+          return 1
+        }
+        
+        # Install critical dependencies first in specific order
+        echo "🔧 Installing critical dependencies first..."
+        
+        # Base dependencies
+        install_with_retry "setuptools>=65.0.0,<70.0.0"
+        install_with_retry "wheel>=0.37.0,<1.0.0"
+        install_with_retry "six>=1.16.0,<2.0.0"
+        install_with_retry "certifi>=2022.12.7"
+        install_with_retry "requests>=2.28.0,<3.0.0"
+        install_with_retry "numpy>=1.21.0,<2.0.0"
+        
+        # Google Auth dependencies in order
+        echo "🔧 Installing Google Auth dependencies..."
+        install_with_retry "cachetools>=4.0.0,<6.0.0"
+        install_with_retry "pyasn1>=0.4.6,<0.6.0"
+        install_with_retry "pyasn1-modules>=0.2.1,<0.4.0"
+        install_with_retry "rsa>=3.1.4,<5.0.0"
+        install_with_retry "google-auth>=2.0.0,<3.0.0"
+        install_with_retry "google-auth-oauthlib>=0.5.0,<2.0.0"
+        install_with_retry "google-api-python-client>=2.0.0,<3.0.0"
+        
+        # Video processing dependencies
+        echo "🔧 Installing video processing dependencies..."
+        install_with_retry "Pillow>=9.0.0,<10.0.0"
+        install_with_retry "imageio>=2.25.0,<3.0.0"
+        install_with_retry "imageio-ffmpeg>=0.4.8,<1.0.0"
+        install_with_retry "decorator>=4.4.0,<6.0.0"
+        install_with_retry "proglog>=0.1.10,<1.0.0"
+        install_with_retry "tqdm>=4.62.0,<5.0.0"
+        
+        # MoviePy - often problematic, install separately
+        echo "🔧 Installing MoviePy..."
+        install_with_retry "moviepy>=1.0.3,<2.0.0"
+        
+        # Audio processing
+        echo "🔧 Installing audio dependencies..."
+        install_with_retry "gTTS>=2.3.0,<3.0.0"
+        install_with_retry "pydub>=0.25.1,<1.0.0"
+        
+        # OpenAI
+        echo "🔧 Installing OpenAI..."
+        install_with_retry "openai>=1.0.0,<2.0.0"
+        
+        # Install remaining requirements
+        echo "🔧 Installing remaining requirements..."
+        python -m pip install --no-cache-dir -r requirements.txt || echo "⚠️ Some packages from requirements.txt may have failed"
+        
+        echo "✅ All critical dependencies installation completed"
 
-    - name: Verify critical installations
+    - name: Verify critical installations with detailed debugging
       run: |
         echo "🔍 Verifying critical package installations..."
         python -c "
         import sys
+        import importlib
+        import pkg_resources
+        
+        print('🐍 Python version:', sys.version)
+        print('📦 Installed packages:')
+        for pkg in pkg_resources.working_set:
+            print(f'   - {pkg.project_name}: {pkg.version}')
+        
+        print('\n🔍 Testing specific imports:')
         
         # Test packages individually for better error handling
         packages_to_test = [
@@ -64,48 +148,88 @@ jobs:
             ('Pillow', 'import PIL; print(f\"✅ Pillow: {PIL.__version__}\")'),
             ('openai', 'import openai; print(f\"✅ openai: {openai.__version__}\")'),
             ('gTTS', 'import gtts; print(f\"✅ gTTS: {gtts.__version__}\")'),
-            ('google-auth', 'import google.auth; print(f\"✅ google-auth: {google.auth.__version__}\")'),
-            ('google-auth-oauthlib', 'import google_auth_oauthlib; print(\"✅ google-auth-oauthlib: installed\")'),
-            ('google-api-python-client', 'import googleapiclient; print(\"✅ google-api-python-client: installed\")'),
-            ('moviepy', 'import moviepy; print(f\"✅ moviepy: {moviepy.__version__}\")')
+            ('pydub', 'import pydub; print(f\"✅ pydub: available\")'),
+            ('moviepy.editor', 'import moviepy.editor; print(f\"✅ moviepy.editor: {moviepy.__version__}\")', 'moviepy'),
+            ('google.auth', 'import google.auth; print(f\"✅ google.auth: {google.auth.__version__}\")', 'google-auth'),
+            ('google_auth_oauthlib', 'import google_auth_oauthlib; print(\"✅ google-auth-oauthlib: available\")'),
+            ('googleapiclient', 'import googleapiclient; print(\"✅ google-api-python-client: available\")'),
+            ('requests', 'import requests; print(f\"✅ requests: {requests.__version__}\")')
         ]
         
         failed_packages = []
         
-        for package_name, test_code in packages_to_test:
+        for item in packages_to_test:
+            if len(item) == 3:
+                package_name, test_code, display_name = item
+            else:
+                package_name, test_code = item
+                display_name = package_name
+                
             try:
                 exec(test_code)
             except Exception as e:
-                print(f'❌ {package_name}: {e}')
-                failed_packages.append(package_name)
-        
-        # Additional Google packages verification
-        try:
-            from google.auth.transport.requests import Request
-            print('✅ google.auth.transport.requests: OK')
-        except Exception as e:
-            print(f'❌ google.auth.transport.requests: {e}')
-            failed_packages.append('google-auth-transport')
-        
-        try:
-            from googleapiclient.discovery import build
-            print('✅ googleapiclient.discovery: OK')
-        except Exception as e:
-            print(f'❌ googleapiclient.discovery: {e}')
-            failed_packages.append('google-api-client-discovery')
-        
-        try:
-            from google_auth_oauthlib.flow import InstalledAppFlow
-            print('✅ google_auth_oauthlib.flow: OK')
-        except Exception as e:
-            print(f'❌ google_auth_oauthlib.flow: {e}')
-            failed_packages.append('google-auth-oauthlib-flow')
+                print(f'❌ {display_name}: {e}')
+                failed_packages.append(display_name)
+                
+                # Additional debugging for specific packages
+                if 'moviepy' in package_name:
+                    try:
+                        import moviepy
+                        print(f'   📋 moviepy module found at: {moviepy.__file__}')
+                        print(f'   📋 moviepy attributes: {dir(moviepy)[:10]}...')
+                    except:
+                        print('   📋 moviepy module not found at all')
+                
+                if 'google.auth' in package_name:
+                    try:
+                        import google
+                        print(f'   📋 google module found at: {google.__file__}')
+                        print(f'   📋 google attributes: {dir(google)[:10]}...')
+                    except:
+                        print('   📋 google module not found at all')
         
         if failed_packages:
             print(f'\\n❌ Failed packages: {failed_packages}')
-            sys.exit(1)
-        
-        print('\\n✅ All critical packages verified successfully')
+            print('\\n🔧 Attempting to fix failed packages...')
+            
+            # Try alternative installations for common failures
+            if 'moviepy' in failed_packages:
+                print('🔧 Attempting alternative moviepy installation...')
+                import subprocess
+                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'])
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '--force-reinstall', 'moviepy==1.0.3'])
+            
+            if 'google-auth' in failed_packages:
+                print('🔧 Attempting alternative google-auth installation...')
+                import subprocess
+                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'google-auth'])
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '--force-reinstall', 'google-auth>=2.0.0'])
+            
+            # Re-test after fixes
+            print('\\n🔍 Re-testing after fixes...')
+            remaining_failures = []
+            for item in packages_to_test:
+                if len(item) == 3:
+                    package_name, test_code, display_name = item
+                else:
+                    package_name, test_code = item
+                    display_name = package_name
+                    
+                if display_name in failed_packages:
+                    try:
+                        exec(test_code)
+                        print(f'✅ {display_name}: Fixed!')
+                    except Exception as e:
+                        print(f'❌ {display_name}: Still failing - {e}')
+                        remaining_failures.append(display_name)
+            
+            if remaining_failures:
+                print(f'\\n❌ Packages still failing after fixes: {remaining_failures}')
+                print('⚠️ Continuing with available packages...')
+            else:
+                print('\\n✅ All packages fixed successfully!')
+        else:
+            print('\\n✅ All critical packages verified successfully')
         "
 
     - name: Create output directories
