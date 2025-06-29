@@ -36,6 +36,7 @@ jobs:
         sudo apt-get install -y python3-dev python3-pip python3-venv
         sudo apt-get install -y libffi-dev libssl-dev libxml2-dev libxslt-dev
         sudo apt-get install -y build-essential libasound2-dev portaudio19-dev
+        sudo apt-get install -y jq  # Added for JSON validation
         # Verify ffmpeg installation
         ffmpeg -version
         echo "✅ System dependencies installed"
@@ -118,18 +119,91 @@ jobs:
         YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
       run: |
-        if [ -n "$YOUTUBE_CREDENTIALS" ]; then
+        echo "🔍 Setting up YouTube credentials..."
+        
+        # Debug: Check if secrets are available
+        CRED_SET="${{ secrets.YOUTUBE_CREDENTIALS != '' }}"
+        TOKEN_SET="${{ secrets.YOUTUBE_TOKEN != '' }}"
+        
+        echo "📋 Secret availability check:"
+        echo "   - YOUTUBE_CREDENTIALS: $CRED_SET"
+        echo "   - YOUTUBE_TOKEN: $TOKEN_SET"
+        
+        # Method 1: Try environment variable approach
+        if [ -n "$YOUTUBE_CREDENTIALS" ] && [ "$YOUTUBE_CREDENTIALS" != "" ]; then
+          echo "✅ YOUTUBE_CREDENTIALS found via environment variable"
           echo "$YOUTUBE_CREDENTIALS" > credentials.json
-          echo "✅ YouTube credentials.json created"
+        # Method 2: Try direct secret substitution
+        elif [ "${{ secrets.YOUTUBE_CREDENTIALS }}" != "" ]; then
+          echo "✅ YOUTUBE_CREDENTIALS found via direct secret"
+          cat > credentials.json << 'EOL'
+        ${{ secrets.YOUTUBE_CREDENTIALS }}
+        EOL
         else
-          echo "⚠️ YOUTUBE_CREDENTIALS not set - upload will be disabled"
+          echo "❌ YOUTUBE_CREDENTIALS not available through either method"
         fi
         
-        if [ -n "$YOUTUBE_TOKEN" ]; then
-          echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle
-          echo "✅ YouTube token restored"
+        # Validate credentials file
+        if [ -f credentials.json ]; then
+          FILE_SIZE=$(wc -c < credentials.json)
+          echo "✅ credentials.json created (size: $FILE_SIZE bytes)"
+          
+          if [ $FILE_SIZE -gt 10 ]; then
+            # Validate JSON format (without showing content)
+            if jq empty credentials.json > /dev/null 2>&1; then
+              echo "✅ credentials.json is valid JSON"
+              
+              # Check for required Google API fields
+              if jq -e '.type, .project_id, .client_id' credentials.json > /dev/null 2>&1; then
+                echo "✅ credentials.json contains required Google API fields"
+                echo "YOUTUBE_CREDENTIALS_VALID=true" >> $GITHUB_ENV
+              else
+                echo "❌ credentials.json missing required Google API fields"
+                echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
+              fi
+            else
+              echo "❌ credentials.json is not valid JSON"
+              echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
+              echo "📄 First 100 characters of file:"
+              head -c 100 credentials.json
+            fi
+          else
+            echo "❌ credentials.json file is too small (likely empty)"
+            echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
+          fi
         else
-          echo "ℹ️ No existing YouTube token found"
+          echo "❌ credentials.json file was not created"
+          echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
+        fi
+        
+        # Handle YouTube token restoration
+        if [ -n "$YOUTUBE_TOKEN" ] && [ "$YOUTUBE_TOKEN" != "" ]; then
+          echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle 2>/dev/null
+          if [ -f token.pickle ] && [ -s token.pickle ]; then
+            echo "✅ YouTube token restored successfully"
+          else
+            echo "⚠️ YouTube token restoration failed"
+          fi
+        elif [ "${{ secrets.YOUTUBE_TOKEN }}" != "" ]; then
+          echo "${{ secrets.YOUTUBE_TOKEN }}" | base64 -d > token.pickle 2>/dev/null
+          if [ -f token.pickle ] && [ -s token.pickle ]; then
+            echo "✅ YouTube token restored via direct secret"
+          else
+            echo "⚠️ YouTube token restoration failed via direct secret"
+          fi
+        else
+          echo "ℹ️ No YouTube token found (normal for first run)"
+        fi
+        
+        # Final status
+        if [ "$YOUTUBE_CREDENTIALS_VALID" = "true" ]; then
+          echo "✅ YouTube credentials setup completed successfully"
+        else
+          echo "⚠️ YouTube credentials setup failed - upload will be disabled"
+          echo "💡 Troubleshooting tips:"
+          echo "   1. Verify YOUTUBE_CREDENTIALS secret exists in repository settings"
+          echo "   2. Ensure the secret contains valid JSON from Google Cloud Console"
+          echo "   3. Check that the JSON includes all required fields (type, project_id, client_id, etc.)"
         fi
 
     - name: Create environment file
@@ -146,18 +220,29 @@ jobs:
           exit 1
         fi
         
+        # Determine upload capability
+        UPLOAD_ENABLED="false"
+        if [ "$ENABLE_UPLOAD" = "true" ] && [ "$YOUTUBE_CREDENTIALS_VALID" = "true" ]; then
+          UPLOAD_ENABLED="true"
+        elif [ "$ENABLE_UPLOAD" = "true" ]; then
+          echo "⚠️ Upload requested but credentials invalid - disabling upload"
+        fi
+        
         # Create .env file
         cat > .env << EOF
         OPENAI_API_KEY=$OPENAI_API_KEY
         VIDEO_PRIVACY=$VIDEO_PRIVACY
         VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID
-        ENABLE_UPLOAD=$ENABLE_UPLOAD
-        UPLOAD_TO_YOUTUBE=$ENABLE_UPLOAD
+        ENABLE_UPLOAD=$UPLOAD_ENABLED
+        UPLOAD_TO_YOUTUBE=$UPLOAD_ENABLED
         EOF
         
         # Add optional variables
         if [ -n "$DISCORD_WEBHOOK_URL" ]; then
           echo "DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL" >> .env
+          echo "DISCORD_NOTIFICATIONS_ENABLED=true" >> $GITHUB_ENV
+        else
+          echo "DISCORD_NOTIFICATIONS_ENABLED=false" >> $GITHUB_ENV
         fi
         
         if [ -n "${{ github.event.inputs.topic_override }}" ]; then
@@ -169,6 +254,8 @@ jobs:
         fi
         
         echo "✅ Environment file created with $(wc -l < .env) variables"
+        echo "📋 Upload enabled: $UPLOAD_ENABLED"
+        
         # Show sanitized version
         sed 's/\(.*API_KEY=\).*/\1[HIDDEN]/' .env | sed 's/\(.*WEBHOOK_URL=\).*/\1[HIDDEN]/'
 
@@ -180,7 +267,7 @@ jobs:
         VIDEO_PRIVACY: ${{ vars.VIDEO_PRIVACY || 'public' }}
         VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
         ENABLE_UPLOAD: ${{ vars.ENABLE_UPLOAD || 'true' }}
-        UPLOAD_TO_YOUTUBE: ${{ vars.ENABLE_UPLOAD || 'true' }}
+        UPLOAD_TO_YOUTUBE: ${{ env.YOUTUBE_CREDENTIALS_VALID == 'true' && vars.ENABLE_UPLOAD || 'false' }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         TOPIC_OVERRIDE: ${{ github.event.inputs.topic_override }}
         CATEGORY_OVERRIDE: ${{ github.event.inputs.category_override }}
@@ -193,6 +280,12 @@ jobs:
         echo "📁 Working directory: $(pwd)"
         echo "📂 Directory contents:"
         ls -la
+        
+        # Show final upload status
+        echo "📋 Final configuration:"
+        echo "   - YouTube credentials valid: ${{ env.YOUTUBE_CREDENTIALS_VALID }}"
+        echo "   - Upload enabled: $UPLOAD_TO_YOUTUBE"
+        echo "   - Video privacy: $VIDEO_PRIVACY"
         
         # Run the automation with proper error handling
         set -o pipefail
@@ -211,14 +304,20 @@ jobs:
         echo "✅ Automation completed successfully"
 
     - name: Save updated YouTube token
-      if: always()
+      if: always() && env.YOUTUBE_CREDENTIALS_VALID == 'true'
+      id: save_token
       run: |
         if [ -f token.pickle ]; then
           base64 -w 0 token.pickle > token_updated.txt
           echo "token_content=$(cat token_updated.txt)" >> $GITHUB_OUTPUT
           echo "✅ Updated token prepared for storage"
+          
+          # Optionally, you could save this back to secrets using GitHub API
+          # This would require a personal access token with repo permissions
+          echo "💡 Consider updating your YOUTUBE_TOKEN secret with the new token"
+          echo "📄 New token (base64): $(head -c 50 token_updated.txt)..."
         else
-          echo "ℹ️ No token.pickle file found"
+          echo "ℹ️ No token.pickle file found to save"
         fi
 
     - name: Upload artifacts on failure
@@ -269,16 +368,17 @@ jobs:
         echo "   Category: $VIDEO_CATEGORY"
 
     - name: Send success notification
-      if: success() && env.DISCORD_WEBHOOK_URL != ''
+      if: success() && env.DISCORD_NOTIFICATIONS_ENABLED == 'true'
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
         VIDEO_TITLE="${{ steps.video_info.outputs.video_title }}"
         VIDEO_ID="${{ steps.video_info.outputs.video_id }}"
         VIDEO_CATEGORY="${{ steps.video_info.outputs.video_category }}"
+        UPLOAD_STATUS="${{ env.YOUTUBE_CREDENTIALS_VALID == 'true' && 'Uploaded' || 'Generated (Upload Disabled)' }}"
         
         if [ -n "$VIDEO_ID" ] && [ "$VIDEO_ID" != "" ]; then
-          # Create JSON payload with proper escaping
+          # Create JSON payload for successful upload
           PAYLOAD=$(cat << EOF
         {
           "embeds": [{
@@ -293,23 +393,31 @@ jobs:
         }
         EOF
           )
-          
-          curl -H "Content-Type: application/json" \
-               -X POST \
-               -d "$PAYLOAD" \
-               "$DISCORD_WEBHOOK_URL" || echo "⚠️ Failed to send Discord notification"
         else
-          echo "⚠️ Could not extract video ID for notification"
-          
-          # Send basic success notification without video details
-          curl -H "Content-Type: application/json" \
-               -X POST \
-               -d "{\"embeds\":[{\"title\":\"✅ YouTube Automation Completed\",\"description\":\"Video processing completed successfully, but video ID could not be extracted.\",\"color\":5763719,\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}]}" \
-               "$DISCORD_WEBHOOK_URL" || echo "⚠️ Failed to send Discord notification"
+          # Create JSON payload for generation without upload
+          PAYLOAD=$(cat << EOF
+        {
+          "embeds": [{
+            "title": "✅ YouTube Video Generated Successfully!",
+            "description": "**Title:** ${VIDEO_TITLE}\n**Category:** ${VIDEO_CATEGORY}\n**Status:** ${UPLOAD_STATUS}\n**Note:** Video was generated but not uploaded (check credentials setup)",
+            "color": 16776960,
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
+            "footer": {
+              "text": "YouTube Automation • Run #${{ github.run_number }}"
+            }
+          }]
+        }
+        EOF
+          )
         fi
+        
+        curl -H "Content-Type: application/json" \
+             -X POST \
+             -d "$PAYLOAD" \
+             "$DISCORD_WEBHOOK_URL" || echo "⚠️ Failed to send Discord notification"
 
     - name: Send failure notification
-      if: failure() && env.DISCORD_WEBHOOK_URL != ''
+      if: failure() && env.DISCORD_NOTIFICATIONS_ENABLED == 'true'
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
