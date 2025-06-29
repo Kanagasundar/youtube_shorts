@@ -1,4 +1,3 @@
-
 name: YouTube Automation
 
 on:
@@ -18,16 +17,16 @@ on:
 jobs:
   create-and-upload-video:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45  # Increased timeout for video processing
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5  # Updated to latest version
       with:
-        python-version: '3.9'
+        python-version: '3.11'  # Updated Python version
         cache: 'pip'
 
     - name: Install system dependencies
@@ -36,78 +35,82 @@ jobs:
         sudo apt-get install -y ffmpeg espeak espeak-data libespeak1 libespeak-dev
         sudo apt-get install -y python3-dev python3-pip python3-venv
         sudo apt-get install -y libffi-dev libssl-dev libxml2-dev libxslt-dev
-        sudo apt-get install -y build-essential
+        sudo apt-get install -y build-essential libasound2-dev portaudio19-dev
+        # Verify ffmpeg installation
         ffmpeg -version
         echo "✅ System dependencies installed"
 
     - name: Upgrade pip and setuptools
       run: |
         python -m pip install --upgrade pip setuptools wheel
-        echo "✅ Pip upgraded"
+        echo "✅ Pip upgraded to $(pip --version)"
 
-    - name: Install Python dependencies from requirements.txt
+    - name: Install Python dependencies
       run: |
+        echo "📦 Installing Python dependencies..."
         python -m pip install --no-cache-dir -r requirements.txt
         echo "✅ Requirements installed from requirements.txt"
-        pip show google-auth || echo "❌ google-auth not found in pip"
-        python -c "import google.auth; print(f'✅ google-auth version: {google.auth.__version__}')"
-
-    - name: List installed packages
-      run: |
-        echo "🔍 Listing all installed packages..."
-        pip list
 
     - name: Verify critical installations
       run: |
-        echo "🔍 Verifying installations..."
-        python -c "import numpy; print(f'✅ NumPy {numpy.__version__}')"
-        python -c "import PIL; print(f'✅ Pillow {PIL.__version__}')"
-        python -c "import openai; print(f'✅ OpenAI {openai.__version__}')"
-        python -c "import gtts; print(f'✅ gTTS {gtts.__version__}')"
-        python -c "import google.auth; print(f'✅ google-auth imported (v{google.auth.__version__})')"
-        python -c "import google_auth_oauthlib; print('✅ google-auth-oauthlib imported')"
-        python -c "import googleapiclient; print('✅ google-api-python-client imported')"
+        echo "🔍 Verifying critical package installations..."
         python -c "
-        try:
-            import moviepy
-            print(f'✅ MoviePy {moviepy.__version__}')
-            from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip, TextClip
-            print('✅ MoviePy editor components imported')
-        except Exception as e:
-            print(f'❌ MoviePy error: {e}')
-            exit(1)
+        import sys
+        packages = [
+            ('numpy', 'numpy'),
+            ('PIL', 'Pillow'),
+            ('openai', 'openai'),
+            ('gtts', 'gTTS'),
+            ('google.auth', 'google-auth'),
+            ('google_auth_oauthlib', 'google-auth-oauthlib'),
+            ('googleapiclient', 'google-api-python-client'),
+            ('moviepy', 'moviepy')
+        ]
+        
+        all_good = True
+        for import_name, package_name in packages:
+            try:
+                if '.' in import_name:
+                    parts = import_name.split('.')
+                    module = __import__(parts[0])
+                    for part in parts[1:]:
+                        module = getattr(module, part)
+                else:
+                    module = __import__(import_name)
+                version = getattr(module, '__version__', 'unknown')
+                print(f'✅ {package_name}: {version}')
+            except Exception as e:
+                print(f'❌ {package_name}: {e}')
+                all_good = False
+        
+        if not all_good:
+            sys.exit(1)
+        print('✅ All critical packages verified')
         "
-        echo "✅ All critical packages verified"
 
-    - name: Verify environment variables
-      env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    - name: Create output directories
       run: |
-        echo "🔍 Verifying environment variables..."
-        if [ -z "$OPENAI_API_KEY" ]; then
-          echo "❌ OPENAI_API_KEY is not set"
-          exit 1
-        else
-          echo "✅ OPENAI_API_KEY is set (length: ${#OPENAI_API_KEY})"
-        fi
-
-    - name: Create output directory
-      run: mkdir -p output
+        mkdir -p output
+        mkdir -p logs
+        echo "✅ Output directories created"
 
     - name: Set up YouTube credentials
       env:
         YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
       run: |
-        if [ -z "$YOUTUBE_CREDENTIALS" ]; then
-          echo "⚠️ YOUTUBE_CREDENTIALS not set - upload will be disabled"
-        else
+        if [ -n "$YOUTUBE_CREDENTIALS" ]; then
           echo "$YOUTUBE_CREDENTIALS" > credentials.json
           echo "✅ YouTube credentials.json created"
+        else
+          echo "⚠️ YOUTUBE_CREDENTIALS not set - upload will be disabled"
         fi
-        if [ ! -z "$YOUTUBE_TOKEN" ]; then
+        
+        if [ -n "$YOUTUBE_TOKEN" ]; then
           echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle
           echo "✅ YouTube token restored"
+        else
+          echo "ℹ️ No existing YouTube token found"
         fi
 
     - name: Create environment file
@@ -118,10 +121,13 @@ jobs:
         ENABLE_UPLOAD: ${{ vars.ENABLE_UPLOAD || 'true' }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
+        # Validate required secrets
         if [ -z "$OPENAI_API_KEY" ]; then
-          echo "❌ OPENAI_API_KEY is not set"
+          echo "❌ OPENAI_API_KEY is not set in repository secrets"
           exit 1
         fi
+        
+        # Create .env file
         cat > .env << EOF
         OPENAI_API_KEY=$OPENAI_API_KEY
         VIDEO_PRIVACY=$VIDEO_PRIVACY
@@ -129,110 +135,221 @@ jobs:
         ENABLE_UPLOAD=$ENABLE_UPLOAD
         UPLOAD_TO_YOUTUBE=$ENABLE_UPLOAD
         EOF
-        if [ ! -z "$DISCORD_WEBHOOK_URL" ]; then
+        
+        # Add optional variables
+        if [ -n "$DISCORD_WEBHOOK_URL" ]; then
           echo "DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL" >> .env
         fi
-        if [ ! -z "${{ github.event.inputs.topic_override }}" ]; then
+        
+        if [ -n "${{ github.event.inputs.topic_override }}" ]; then
           echo "TOPIC_OVERRIDE=${{ github.event.inputs.topic_override }}" >> .env
         fi
-        if [ ! -z "${{ github.event.inputs.category_override }}" ]; then
+        
+        if [ -n "${{ github.event.inputs.category_override }}" ]; then
           echo "CATEGORY_OVERRIDE=${{ github.event.inputs.category_override }}" >> .env
         fi
-        echo "✅ Environment file created:"
-        sed 's/\(.*API_KEY=\).*/\1[HIDDEN]/' .env
-        sed 's/\(.*WEBHOOK_URL=\).*/\1[HIDDEN]/' .env
+        
+        echo "✅ Environment file created with $(wc -l < .env) variables"
+        # Show sanitized version
+        sed 's/\(.*API_KEY=\).*/\1[HIDDEN]/' .env | sed 's/\(.*WEBHOOK_URL=\).*/\1[HIDDEN]/'
 
     - name: Run YouTube automation
       id: automation
+      env:
+        # Explicitly pass all environment variables to the Python process
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        VIDEO_PRIVACY: ${{ vars.VIDEO_PRIVACY || 'public' }}
+        VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
+        ENABLE_UPLOAD: ${{ vars.ENABLE_UPLOAD || 'true' }}
+        UPLOAD_TO_YOUTUBE: ${{ vars.ENABLE_UPLOAD || 'true' }}
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        TOPIC_OVERRIDE: ${{ github.event.inputs.topic_override }}
+        CATEGORY_OVERRIDE: ${{ github.event.inputs.category_override }}
+        PYTHONUNBUFFERED: "1"  # Ensure real-time output
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/utils
       run: |
         echo "🚀 Starting YouTube automation..."
+        echo "📅 Timestamp: $(date)"
+        echo "🐍 Python version: $(python --version)"
+        echo "📁 Working directory: $(pwd)"
+        echo "📂 Directory contents:"
+        ls -la
+        
+        # Run the automation with proper error handling
+        set -o pipefail
         python main.py 2>&1 | tee automation.log
         EXIT_CODE=${PIPESTATUS[0]}
+        
         echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+        
         if [ $EXIT_CODE -ne 0 ]; then
-          echo "❌ Automation failed with code $EXIT_CODE"
+          echo "❌ Automation failed with exit code $EXIT_CODE"
+          echo "📋 Last 20 lines of output:"
+          tail -20 automation.log || echo "Could not read log file"
           exit $EXIT_CODE
         fi
+        
+        echo "✅ Automation completed successfully"
 
-    - name: Save updated token
+    - name: Save updated YouTube token
       if: always()
       run: |
         if [ -f token.pickle ]; then
           base64 -w 0 token.pickle > token_updated.txt
+          echo "token_content=$(cat token_updated.txt)" >> $GITHUB_OUTPUT
           echo "✅ Updated token prepared for storage"
+        else
+          echo "ℹ️ No token.pickle file found"
         fi
 
     - name: Upload artifacts on failure
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: automation-logs-${{ github.run_number }}
+        name: automation-failure-logs-${{ github.run_number }}
         path: |
           automation.log
           output/
+          logs/
           *.json
           *.txt
+          *.env
         retention-days: 7
+
+    - name: Upload successful artifacts
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: automation-success-${{ github.run_number }}
+        path: |
+          output/
+          logs/
+          automation.log
+        retention-days: 3
+
+    - name: Extract video information
+      if: success()
+      id: video_info
+      run: |
+        # Extract video information from logs
+        VIDEO_TITLE=$(grep -E "^✅ Topic:" automation.log | head -1 | cut -d' ' -f3- 2>/dev/null || echo "Unknown")
+        VIDEO_ID=$(grep "Video uploaded with ID:" automation.log | tail -1 | awk '{print $NF}' 2>/dev/null || echo "")
+        VIDEO_CATEGORY=$(grep -E "^✅ Category:" automation.log | head -1 | cut -d' ' -f3- 2>/dev/null || echo "Unknown")
+        
+        # Clean up extracted values
+        VIDEO_TITLE=$(echo "$VIDEO_TITLE" | sed 's/[^a-zA-Z0-9 .,!?-]//g' | head -c 100)
+        VIDEO_ID=$(echo "$VIDEO_ID" | grep -E '^[a-zA-Z0-9_-]{11}$' || echo "")
+        
+        echo "video_title=$VIDEO_TITLE" >> $GITHUB_OUTPUT
+        echo "video_id=$VIDEO_ID" >> $GITHUB_OUTPUT
+        echo "video_category=$VIDEO_CATEGORY" >> $GITHUB_OUTPUT
+        
+        echo "📺 Extracted video info:"
+        echo "   Title: $VIDEO_TITLE"
+        echo "   ID: $VIDEO_ID"
+        echo "   Category: $VIDEO_CATEGORY"
 
     - name: Send success notification
       if: success() && env.DISCORD_WEBHOOK_URL != ''
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        VIDEO_TITLE=$(grep -E "^✅ Topic:" automation.log | head -1 | cut -d' ' -f3- 2>/dev/null || echo "Unknown")
-        VIDEO_ID=$(grep "Video uploaded with ID:" automation.log | tail -1 | awk '{print $NF}' 2>/dev/null || echo "")
-        if [ ! -z "$VIDEO_ID" ] && [ "$VIDEO_ID" != "" ]; then
+        VIDEO_TITLE="${{ steps.video_info.outputs.video_title }}"
+        VIDEO_ID="${{ steps.video_info.outputs.video_id }}"
+        VIDEO_CATEGORY="${{ steps.video_info.outputs.video_category }}"
+        
+        if [ -n "$VIDEO_ID" ] && [ "$VIDEO_ID" != "" ]; then
+          # Create JSON payload with proper escaping
+          PAYLOAD=$(cat << EOF
+        {
+          "embeds": [{
+            "title": "✅ YouTube Video Published Successfully!",
+            "description": "**Title:** ${VIDEO_TITLE}\n**Category:** ${VIDEO_CATEGORY}\n**Video ID:** ${VIDEO_ID}\n**URL:** https://www.youtube.com/watch?v=${VIDEO_ID}\n**Shorts:** https://youtube.com/shorts/${VIDEO_ID}",
+            "color": 5763719,
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
+            "footer": {
+              "text": "YouTube Automation • Run #${{ github.run_number }}"
+            }
+          }]
+        }
+        EOF
+          )
+          
           curl -H "Content-Type: application/json" \
                -X POST \
-               -d "{
-                 \"embeds\": [{
-                   \"title\": \"✅ YouTube Video Published Successfully!\",
-                   \"description\": \"**Title:** $VIDEO_TITLE\\n**Video ID:** $VIDEO_ID\\n**URL:** https://www.youtube.com/watch?v=$VIDEO_ID\\n**Shorts:** https://youtube.com/shorts/$VIDEO_ID\",
-                   \"color\": 5763719,
-                   \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
-                 }]
-               }" \
-               "$DISCORD_WEBHOOK_URL" || echo "Failed to send Discord notification"
+               -d "$PAYLOAD" \
+               "$DISCORD_WEBHOOK_URL" || echo "⚠️ Failed to send Discord notification"
         else
           echo "⚠️ Could not extract video ID for notification"
+          
+          # Send basic success notification without video details
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "{\"embeds\":[{\"title\":\"✅ YouTube Automation Completed\",\"description\":\"Video processing completed successfully, but video ID could not be extracted.\",\"color\":5763719,\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}]}" \
+               "$DISCORD_WEBHOOK_URL" || echo "⚠️ Failed to send Discord notification"
         fi
 
-    - name: Send failure notification  
+    - name: Send failure notification
       if: failure() && env.DISCORD_WEBHOOK_URL != ''
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        ERROR_MSG=$(tail -10 automation.log 2>/dev/null | tr '\n' ' ' | sed 's/"/\\"/g' | head -c 500 || echo "Unknown error - check logs")
+        # Extract error information
+        ERROR_MSG=$(tail -10 automation.log 2>/dev/null | tr '\n' ' ' | sed 's/"/\\"/g' | head -c 400 || echo "Unknown error - check logs")
+        STEP_NAME=$(echo "${{ github.workflow }}" | head -c 50)
+        
+        # Create failure notification
+        PAYLOAD=$(cat << EOF
+        {
+          "embeds": [{
+            "title": "❌ YouTube Automation Failed",
+            "description": "**Error:** ${ERROR_MSG}\n**Run:** #${{ github.run_number }}\n**Workflow:** ${STEP_NAME}\n**Branch:** ${{ github.ref_name }}\n**Commit:** ${{ github.sha }}",
+            "color": 15158332,
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
+            "footer": {
+              "text": "Check the Actions tab for detailed logs"
+            }
+          }]
+        }
+        EOF
+        )
+        
         curl -H "Content-Type: application/json" \
              -X POST \
-             -d "{
-               \"embeds\": [{
-                 \"title\": \"❌ YouTube Automation Failed\",
-                 \"description\": \"**Error:** $ERROR_MSG\\n**Run:** ${{ github.run_number }}\\n**Workflow:** ${{ github.workflow }}\\n**Branch:** ${{ github.ref_name }}\",
-                 \"color\": 15158332,
-                 \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
-               }]
-             }" \
-             "$DISCORD_WEBHOOK_URL" || echo "Failed to send Discord notification"
+             -d "$PAYLOAD" \
+             "$DISCORD_WEBHOOK_URL" || echo "⚠️ Failed to send Discord failure notification"
 
   cleanup:
     runs-on: ubuntu-latest
     needs: create-and-upload-video
     if: always()
+    
     steps:
     - name: Cleanup old artifacts
       uses: actions/github-script@v7
       with:
         script: |
           try {
-            const { data: artifacts } = await github.rest.actions.listWorkflowRunArtifacts({
+            console.log('🧹 Starting artifact cleanup...');
+            
+            // Get all artifacts for this repository
+            const { data: artifacts } = await github.rest.actions.listArtifactsForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              run_id: context.runId
+              per_page: 100
             });
+            
+            console.log(`Found ${artifacts.artifacts.length} total artifacts`);
+            
+            // Filter and sort artifacts by creation date (newest first)
             const oldArtifacts = artifacts.artifacts
+              .filter(artifact => artifact.name.includes('automation-'))
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-              .slice(5);
+              .slice(10); // Keep only the 10 most recent
+            
+            console.log(`Found ${oldArtifacts.length} old artifacts to delete`);
+            
+            // Delete old artifacts
             for (const artifact of oldArtifacts) {
               try {
                 await github.rest.actions.deleteArtifact({
@@ -240,11 +357,24 @@ jobs:
                   repo: context.repo.repo,
                   artifact_id: artifact.id
                 });
-                console.log(`Deleted artifact: ${artifact.name}`);
+                console.log(`✅ Deleted artifact: ${artifact.name} (${artifact.created_at})`);
               } catch (error) {
-                console.log(`Failed to delete artifact ${artifact.name}: ${error.message}`);
+                console.log(`⚠️ Failed to delete artifact ${artifact.name}: ${error.message}`);
               }
             }
+            
+            console.log('✅ Artifact cleanup completed');
+            
           } catch (error) {
-            console.log(`Cleanup failed: ${error.message}`);
+            console.log(`❌ Cleanup failed: ${error.message}`);
+            // Don't fail the workflow if cleanup fails
           }
+
+    - name: Cleanup summary
+      run: |
+        echo "🧹 Artifact cleanup job completed"
+        echo "📊 Workflow summary:"
+        echo "   - Run number: ${{ github.run_number }}"
+        echo "   - Triggered by: ${{ github.event_name }}"
+        echo "   - Branch: ${{ github.ref_name }}"
+        echo "   - Commit: ${{ github.sha }}"

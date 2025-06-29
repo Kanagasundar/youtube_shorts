@@ -1,43 +1,72 @@
 # YouTube Automation Requirements
-# Fixed version with proper dependency resolution
+# Dependencies in installation order for better compatibility
 
-# Core dependencies - install in order
+# Base dependencies
+setuptools>=65.0.0
+wheel>=0.37.0
+pip>=22.0.0
+
+# Core Python packages
+six>=1.16.0
+certifi>=2022.12.7
+charset-normalizer>=3.0.0
+idna>=3.4
+urllib3>=1.26.0,<3.0.0
+requests>=2.28.0,<3.0.0
+
+# Math and data processing
 numpy>=1.21.0,<2.0.0
 decorator>=4.4.0
 
-# Google Auth packages - install in specific order
+# Google Authentication (install in order)
 cachetools>=4.0.0,<6.0.0
 pyasn1>=0.4.6,<0.6.0
 pyasn1-modules>=0.2.1,<0.4.0
 rsa>=3.1.4,<5.0.0
 google-auth>=2.0.0,<3.0.0
+requests-oauthlib>=1.3.0,<2.0.0
 google-auth-oauthlib>=0.5.0,<2.0.0
+httplib2>=0.20.0,<1.0.0
 google-auth-httplib2>=0.1.0,<1.0.0
+google-api-core>=2.0.0,<3.0.0
+googleapis-common-protos>=1.56.0,<2.0.0
+protobuf>=3.19.0,<5.0.0
 google-api-python-client>=2.0.0,<3.0.0
 
 # OpenAI
+aiohttp>=3.8.0,<4.0.0
+aiosignal>=1.2.0
+frozenlist>=1.3.0
+multidict>=6.0.0
+yarl>=1.8.0
 openai>=1.0.0,<2.0.0
 
 # Image processing
 Pillow>=9.0.0,<11.0.0
 
 # Audio processing
-gtts>=2.3.0,<3.0.0
+click>=8.0.0
+gTTS>=2.3.0,<3.0.0
 pydub>=0.25.1,<1.0.0
 
-# Video processing - install dependencies first
+# Video processing dependencies (order matters)
 imageio>=2.25.0,<3.0.0
 imageio-ffmpeg>=0.4.8,<1.0.0
 proglog>=0.1.10,<1.0.0
 tqdm>=4.62.0,<5.0.0
+
+# MoviePy and its dependencies
 moviepy>=1.0.3,<2.0.0
 
 # Web utilities
 python-dotenv>=0.19.0,<2.0.0
-requests>=2.28.0,<3.0.0
 beautifulsoup4>=4.11.0,<5.0.0
+soupsieve>=2.3.0
 lxml>=4.9.0,<5.0.0
-urllib3>=1.26.0,<3.0.0
 
-# Optional - for scheduling (not used in GitHub Actions)
+# Optional utilities
 schedule>=1.1.0,<2.0.0
+colorama>=0.4.4
+
+# Fix for potential conflicts
+typing-extensions>=4.0.0
