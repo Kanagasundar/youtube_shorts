@@ -148,6 +148,23 @@ def create_gradient_background(width, height):
     
     return image
 
+def get_pillow_resample_filter():
+    """Get the appropriate resampling filter based on Pillow version"""
+    try:
+        # For Pillow >= 10.0.0
+        return Image.Resampling.LANCZOS
+    except AttributeError:
+        try:
+            # For Pillow 9.x
+            return Image.LANCZOS
+        except AttributeError:
+            try:
+                # For older Pillow versions that still have ANTIALIAS
+                return Image.ANTIALIAS
+            except AttributeError:
+                # Last resort - use a numeric constant that should work
+                return 1  # This is the value of LANCZOS/ANTIALIAS
+
 def resize_and_crop(image, target_width, target_height):
     """Resize and crop image to target dimensions"""
     
@@ -155,17 +172,8 @@ def resize_and_crop(image, target_width, target_height):
     img_ratio = image.width / image.height
     target_ratio = target_width / target_height
     
-    # Get the appropriate resampling filter based on Pillow version
-    try:
-        # For Pillow >= 10.0.0
-        resample_filter = Image.Resampling.LANCZOS
-    except AttributeError:
-        try:
-            # For Pillow 9.x
-            resample_filter = Image.LANCZOS
-        except AttributeError:
-            # For older versions
-            resample_filter = Image.ANTIALIAS
+    # Get the appropriate resampling filter
+    resample_filter = get_pillow_resample_filter()
     
     if img_ratio > target_ratio:
         # Image is wider than target, crop width
@@ -188,6 +196,32 @@ def resize_and_crop(image, target_width, target_height):
     
     return image
 
+def get_text_dimensions(draw, text, font):
+    """Get text dimensions with fallback for different Pillow versions"""
+    try:
+        # For newer Pillow versions (8.0.0+)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+    except AttributeError:
+        try:
+            # For older Pillow versions
+            return draw.textsize(text, font=font)
+        except AttributeError:
+            # Fallback estimation
+            lines = text.split('\n')
+            max_line_length = max(len(line) for line in lines) if lines else 0
+            # Rough estimation: 10 pixels per character, 20 pixels per line
+            return max_line_length * 10, len(lines) * 20
+
+def draw_rounded_rectangle_fallback(draw, coords, radius, fill):
+    """Draw rounded rectangle with fallback for older Pillow versions"""
+    try:
+        # For newer Pillow versions
+        draw.rounded_rectangle(coords, radius=radius, fill=fill)
+    except AttributeError:
+        # Fallback: draw regular rectangle
+        draw.rectangle(coords, fill=fill)
+
 def add_text_overlay(image, title, script):
     """Add text overlay to image"""
     
@@ -205,7 +239,9 @@ def add_text_overlay(image, title, script):
                 "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
                 "/System/Library/Fonts/Arial.ttf",  # macOS
                 "C:/Windows/Fonts/arial.ttf",  # Windows
-                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+                "/usr/share/fonts/truetype/ubuntu/Ubuntu-Bold.ttf",
+                "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"
             ]
             
             title_font = None
@@ -215,7 +251,12 @@ def add_text_overlay(image, title, script):
                 if os.path.exists(font_path):
                     try:
                         title_font = ImageFont.truetype(font_path, 60)
-                        text_font = ImageFont.truetype(font_path.replace('Bold', ''), 40)
+                        # Try to find regular version of the font
+                        regular_font_path = font_path.replace('Bold', '').replace('-Bold', '')
+                        if os.path.exists(regular_font_path):
+                            text_font = ImageFont.truetype(regular_font_path, 40)
+                        else:
+                            text_font = ImageFont.truetype(font_path, 40)
                         break
                     except (OSError, IOError):
                         continue
@@ -227,7 +268,7 @@ def add_text_overlay(image, title, script):
                     text_font = ImageFont.load_default()
                     print("⚠️ Using default fonts (may appear smaller)")
                 except:
-                    # Last resort - create fonts with specific sizes
+                    # Create minimal fallback fonts
                     title_font = ImageFont.load_default()
                     text_font = ImageFont.load_default()
                     
@@ -239,15 +280,8 @@ def add_text_overlay(image, title, script):
         # Add title at top with background
         title_wrapped = textwrap.fill(title, width=25)
         
-        # Calculate title position using textbbox (newer method) or fallback
-        try:
-            title_bbox = draw.textbbox((0, 0), title_wrapped, font=title_font)
-            title_width = title_bbox[2] - title_bbox[0]
-            title_height = title_bbox[3] - title_bbox[1]
-        except AttributeError:
-            # Fallback for older Pillow versions
-            title_size = draw.textsize(title_wrapped, font=title_font)
-            title_width, title_height = title_size
+        # Calculate title position using compatible method
+        title_width, title_height = get_text_dimensions(draw, title_wrapped, title_font)
         
         title_x = (width - title_width) // 2
         title_y = 150
@@ -263,19 +297,13 @@ def add_text_overlay(image, title, script):
         overlay = Image.new('RGBA', (width, height), (0, 0, 0, 0))
         overlay_draw = ImageDraw.Draw(overlay)
         
-        # Draw rounded rectangle background (with fallback for older Pillow)
-        try:
-            overlay_draw.rounded_rectangle(
-                [bg_left, bg_top, bg_right, bg_bottom],
-                radius=20,
-                fill=(0, 0, 0, 128)  # Semi-transparent black
-            )
-        except AttributeError:
-            # Fallback for older Pillow versions
-            overlay_draw.rectangle(
-                [bg_left, bg_top, bg_right, bg_bottom],
-                fill=(0, 0, 0, 128)
-            )
+        # Draw rounded rectangle background with fallback
+        draw_rounded_rectangle_fallback(
+            overlay_draw,
+            [bg_left, bg_top, bg_right, bg_bottom],
+            20,
+            (0, 0, 0, 128)  # Semi-transparent black
+        )
         
         # Composite overlay onto image
         img_copy = Image.alpha_composite(img_copy.convert('RGBA'), overlay).convert('RGB')
@@ -289,14 +317,7 @@ def add_text_overlay(image, title, script):
         script_text = '\n'.join(script_lines)
         
         # Calculate script position
-        try:
-            script_bbox = draw.textbbox((0, 0), script_text, font=text_font)
-            script_width = script_bbox[2] - script_bbox[0]
-            script_height = script_bbox[3] - script_bbox[1]
-        except AttributeError:
-            # Fallback for older Pillow versions
-            script_size = draw.textsize(script_text, font=text_font)
-            script_width, script_height = script_size
+        script_width, script_height = get_text_dimensions(draw, script_text, text_font)
         
         script_x = (width - script_width) // 2
         script_y = height - script_height - 200
@@ -311,18 +332,12 @@ def add_text_overlay(image, title, script):
         overlay2 = Image.new('RGBA', (width, height), (0, 0, 0, 0))
         overlay2_draw = ImageDraw.Draw(overlay2)
         
-        try:
-            overlay2_draw.rounded_rectangle(
-                [script_bg_left, script_bg_top, script_bg_right, script_bg_bottom],
-                radius=15,
-                fill=(0, 0, 0, 100)  # Semi-transparent black
-            )
-        except AttributeError:
-            # Fallback for older Pillow versions
-            overlay2_draw.rectangle(
-                [script_bg_left, script_bg_top, script_bg_right, script_bg_bottom],
-                fill=(0, 0, 0, 100)
-            )
+        draw_rounded_rectangle_fallback(
+            overlay2_draw,
+            [script_bg_left, script_bg_top, script_bg_right, script_bg_bottom],
+            15,
+            (0, 0, 0, 100)  # Semi-transparent black
+        )
         
         # Composite second overlay
         img_copy = Image.alpha_composite(img_copy.convert('RGBA'), overlay2).convert('RGB')

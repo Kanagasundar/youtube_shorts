@@ -1,22 +1,22 @@
 # YouTube Automation Requirements
-# Dependencies in installation order for better compatibility
+# Fixed versions to prevent compatibility issues
 
 # Base dependencies
-setuptools>=65.0.0
-wheel>=0.37.0
+setuptools>=65.0.0,<70.0.0
+wheel>=0.37.0,<1.0.0
 pip>=22.0.0
 
 # Core Python packages
-six>=1.16.0
+six>=1.16.0,<2.0.0
 certifi>=2022.12.7
-charset-normalizer>=3.0.0
-idna>=3.4
+charset-normalizer>=3.0.0,<4.0.0
+idna>=3.4,<4.0.0
 urllib3>=1.26.0,<3.0.0
 requests>=2.28.0,<3.0.0
 
 # Math and data processing
 numpy>=1.21.0,<2.0.0
-decorator>=4.4.0
+decorator>=4.4.0,<6.0.0
 
 # Google Authentication (install in order)
 cachetools>=4.0.0,<6.0.0
@@ -41,8 +41,8 @@ multidict>=6.0.0
 yarl>=1.8.0
 openai>=1.0.0,<2.0.0
 
-# Image processing
-Pillow>=9.0.0,<11.0.0
+# Image processing - FIXED VERSION TO AVOID ANTIALIAS ISSUE
+Pillow>=9.0.0,<10.0.0
 
 # Audio processing
 click>=8.0.0
