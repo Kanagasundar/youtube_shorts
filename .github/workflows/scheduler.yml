@@ -17,6 +17,7 @@ on:
 jobs:
   create-and-upload-video:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - name: Checkout repository
@@ -26,6 +27,7 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
+        cache: 'pip'
 
     - name: Install system dependencies
       run: |
@@ -33,80 +35,49 @@ jobs:
         sudo apt-get install -y ffmpeg espeak espeak-data libespeak1 libespeak-dev
         sudo apt-get install -y python3-dev python3-pip python3-venv
         sudo apt-get install -y libffi-dev libssl-dev libxml2-dev libxslt-dev
+        sudo apt-get install -y build-essential
         ffmpeg -version
         echo "✅ System dependencies installed"
 
-    - name: Install Python dependencies
+    - name: Upgrade pip and setuptools
       run: |
-        # Upgrade pip first
         python -m pip install --upgrade pip setuptools wheel
+        echo "✅ Pip upgraded"
+
+    - name: Install Python dependencies from requirements.txt
+      run: |
+        # Use requirements.txt for better dependency management
+        python -m pip install --no-cache-dir -r requirements.txt
+        echo "✅ Requirements installed from requirements.txt"
+
+    - name: Verify critical installations
+      run: |
+        echo "🔍 Verifying installations..."
         
-        # Install core dependencies first
-        python -m pip install --no-cache-dir numpy>=1.21.0
+        # Test core packages
+        python -c "import numpy; print(f'✅ NumPy {numpy.__version__}')"
+        python -c "import PIL; print(f'✅ Pillow {PIL.__version__}')"
+        python -c "import openai; print(f'✅ OpenAI {openai.__version__}')"
+        python -c "import gtts; print(f'✅ gTTS {gtts.__version__}')" 
         
-        # Install moviepy dependencies in correct order
-        python -m pip install --no-cache-dir imageio>=2.25.0
-        python -m pip install --no-cache-dir imageio-ffmpeg>=0.4.8
-        python -m pip install --no-cache-dir decorator>=4.4.0
-        python -m pip install --no-cache-dir proglog>=0.1.10
-        python -m pip install --no-cache-dir tqdm>=4.62.0
+        # Test Google Auth packages
+        python -c "import google.auth; print('✅ google-auth imported')"
+        python -c "import google_auth_oauthlib; print('✅ google-auth-oauthlib imported')"
+        python -c "import googleapiclient; print('✅ google-api-python-client imported')"
         
-        # Install moviepy with all dependencies (don't use --no-deps)
-        python -m pip install --no-cache-dir moviepy==1.0.3
-        
-        # Install Google Auth packages in correct order
-        python -m pip install --no-cache-dir cachetools>=4.0.0
-        python -m pip install --no-cache-dir pyasn1>=0.4.6
-        python -m pip install --no-cache-dir pyasn1-modules>=0.2.1
-        python -m pip install --no-cache-dir rsa>=3.1.4
-        python -m pip install --no-cache-dir google-auth>=2.0.0
-        python -m pip install --no-cache-dir google-auth-oauthlib>=0.5.0
-        python -m pip install --no-cache-dir google-auth-httplib2>=0.1.0
-        python -m pip install --no-cache-dir google-api-python-client>=2.0.0
-        
-        # Install remaining dependencies
-        python -m pip install --no-cache-dir \
-          "openai>=1.0.0" \
-          "Pillow>=9.0.0" \
-          "gtts>=2.3.0" \
-          "pydub>=0.25.1" \
-          "python-dotenv>=0.19.0" \
-          "requests>=2.28.0" \
-          "beautifulsoup4>=4.11.0" \
-          "lxml>=4.9.0" \
-          "schedule>=1.1.0" \
-          "urllib3>=1.26.0"
-        
-        # Verify critical installations
-        python -c "import PIL; print(f'✅ Pillow version {PIL.__version__} installed')"
-        python -c "import google.auth; print('✅ google-auth installed successfully')"
-        python -c "import googleapiclient; print('✅ google-api-python-client installed successfully')"
-        python -c "import gtts; print(f'✅ gTTS version {gtts.__version__} installed')"
-        python -c "import openai; print(f'✅ OpenAI version {openai.__version__} installed')"
-        
-        # Test moviepy with better error handling
+        # Test MoviePy with better error handling
         python -c "
-        import sys
         try:
             import moviepy
-            print(f'✅ moviepy version {moviepy.__version__} installed')
+            print(f'✅ MoviePy {moviepy.__version__}')
             from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip, TextClip
-            print('✅ moviepy.editor imported successfully')
-            # Test basic functionality
-            print('✅ moviepy functionality verified')
-        except ImportError as e:
-            print(f'❌ moviepy import failed: {e}')
-            print('Available moviepy modules:')
-            import pkgutil
-            for importer, modname, ispkg in pkgutil.walk_packages(moviepy.__path__, moviepy.__name__ + '.'):
-                print(f'  - {modname}')
-            sys.exit(1)
+            print('✅ MoviePy editor components imported')
         except Exception as e:
-            print(f'❌ moviepy error: {e}')
-            sys.exit(1)
+            print(f'❌ MoviePy error: {e}')
+            exit(1)
         "
         
-        echo "✅ All Python dependencies installed and verified"
+        echo "✅ All critical packages verified"
 
     - name: Create output directory
       run: mkdir -p output
@@ -116,11 +87,17 @@ jobs:
         YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
       run: |
-        echo "$YOUTUBE_CREDENTIALS" > credentials.json
+        if [ -z "$YOUTUBE_CREDENTIALS" ]; then
+          echo "⚠️ YOUTUBE_CREDENTIALS not set - upload will be disabled"
+        else
+          echo "$YOUTUBE_CREDENTIALS" > credentials.json
+          echo "✅ YouTube credentials.json created"
+        fi
+        
         if [ ! -z "$YOUTUBE_TOKEN" ]; then
           echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle
+          echo "✅ YouTube token restored"
         fi
-        echo "✅ YouTube credentials set up"
 
     - name: Create environment file
       env:
@@ -130,79 +107,60 @@ jobs:
         ENABLE_UPLOAD: ${{ vars.ENABLE_UPLOAD || 'true' }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        # Create .env file with proper formatting
-        echo "OPENAI_API_KEY=$OPENAI_API_KEY" > .env
-        echo "VIDEO_PRIVACY=$VIDEO_PRIVACY" >> .env
-        echo "VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID" >> .env
-        echo "ENABLE_UPLOAD=$ENABLE_UPLOAD" >> .env
-        echo "UPLOAD_TO_YOUTUBE=$ENABLE_UPLOAD" >> .env
+        # Validate required secrets
+        if [ -z "$OPENAI_API_KEY" ]; then
+          echo "❌ OPENAI_API_KEY is not set"
+          exit 1
+        fi
+        
+        # Create .env file
+        cat > .env << EOF
+        OPENAI_API_KEY=$OPENAI_API_KEY
+        VIDEO_PRIVACY=$VIDEO_PRIVACY
+        VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID
+        ENABLE_UPLOAD=$ENABLE_UPLOAD
+        UPLOAD_TO_YOUTUBE=$ENABLE_UPLOAD
+        EOF
+        
+        # Add Discord webhook if provided
         if [ ! -z "$DISCORD_WEBHOOK_URL" ]; then
           echo "DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL" >> .env
         fi
         
-        # Debug: Show environment file contents (hide sensitive values)
-        echo "✅ Environment file created with contents:"
-        sed 's/\(.*=\).*/\1[HIDDEN]/' .env
+        # Add overrides if provided
+        if [ ! -z "${{ github.event.inputs.topic_override }}" ]; then
+          echo "TOPIC_OVERRIDE=${{ github.event.inputs.topic_override }}" >> .env
+        fi
+        if [ ! -z "${{ github.event.inputs.category_override }}" ]; then
+          echo "CATEGORY_OVERRIDE=${{ github.event.inputs.category_override }}" >> .env
+        fi
         
-        # Also set as GitHub Actions environment variables for the Python script
-        echo "OPENAI_API_KEY=$OPENAI_API_KEY" >> $GITHUB_ENV
-        echo "VIDEO_PRIVACY=$VIDEO_PRIVACY" >> $GITHUB_ENV
-        echo "VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID" >> $GITHUB_ENV
-        echo "ENABLE_UPLOAD=$ENABLE_UPLOAD" >> $GITHUB_ENV
-        echo "UPLOAD_TO_YOUTUBE=$ENABLE_UPLOAD" >> $GITHUB_ENV
-
-    - name: Debug Python environment
-      run: |
-        echo "Python version:"
-        python --version
-        echo "Pip version:"
-        python -m pip --version
-        echo "Critical packages:"
-        python -m pip show moviepy google-auth google-api-python-client openai
-        echo "Python path:"
-        python -c "import sys; print('\n'.join(sys.path))"
+        # Debug: Show environment file (hide sensitive values)
+        echo "✅ Environment file created:"
+        sed 's/\(.*API_KEY=\).*/\1[HIDDEN]/' .env
+        sed 's/\(.*WEBHOOK_URL=\).*/\1[HIDDEN]/' .env
 
     - name: Run YouTube automation
       id: automation
-      env:
-        TOPIC_OVERRIDE: ${{ github.event.inputs.topic_override }}
-        CATEGORY_OVERRIDE: ${{ github.event.inputs.category_override }}
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        VIDEO_PRIVACY: ${{ vars.VIDEO_PRIVACY || 'public' }}
-        VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
-        ENABLE_UPLOAD: ${{ vars.ENABLE_UPLOAD || 'true' }}
-        UPLOAD_TO_YOUTUBE: ${{ vars.ENABLE_UPLOAD || 'true' }}
       run: |
-        # Add topic and category overrides to .env if provided
-        if [ ! -z "$TOPIC_OVERRIDE" ]; then
-          echo "TOPIC_OVERRIDE=$TOPIC_OVERRIDE" >> .env
-        fi
-        if [ ! -z "$CATEGORY_OVERRIDE" ]; then
-          echo "CATEGORY_OVERRIDE=$CATEGORY_OVERRIDE" >> .env
-        fi
-        
-        # Debug: Verify environment variables are set
-        echo "🔍 Checking environment variables:"
-        if [ ! -z "$OPENAI_API_KEY" ]; then
-          echo "✅ OPENAI_API_KEY is set (length: ${#OPENAI_API_KEY})"
-        else
-          echo "❌ OPENAI_API_KEY is not set"
-        fi
-        
-        # Load .env file and run automation
-        set -a  # Export all variables
-        source .env
-        set +a
-        
+        echo "🚀 Starting YouTube automation..."
         python main.py 2>&1 | tee automation.log
-        echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+        
+        # Capture exit code
+        EXIT_CODE=${PIPESTATUS[0]}
+        echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+        
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "❌ Automation failed with code $EXIT_CODE"
+          exit $EXIT_CODE
+        fi
 
     - name: Save updated token
       if: always()
       run: |
         if [ -f token.pickle ]; then
           base64 -w 0 token.pickle > token_updated.txt
-          echo "✅ Updated token prepared"
+          echo "✅ Updated token prepared for storage"
         fi
 
     - name: Upload artifacts on failure
@@ -213,6 +171,8 @@ jobs:
         path: |
           automation.log
           output/
+          *.json
+          *.txt
         retention-days: 7
 
     - name: Send success notification
@@ -220,20 +180,24 @@ jobs:
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        VIDEO_TITLE=$(grep "Topic:" automation.log | head -1 | cut -d' ' -f3- || echo "Unknown")
-        VIDEO_ID=$(grep "Video uploaded with ID:" automation.log | tail -1 | awk '{print $NF}' || echo "")
-        if [ ! -z "$VIDEO_ID" ]; then
+        # Extract video information from logs
+        VIDEO_TITLE=$(grep -E "^✅ Topic:" automation.log | head -1 | cut -d' ' -f3- 2>/dev/null || echo "Unknown")
+        VIDEO_ID=$(grep "Video uploaded with ID:" automation.log | tail -1 | awk '{print $NF}' 2>/dev/null || echo "")
+        
+        if [ ! -z "$VIDEO_ID" ] && [ "$VIDEO_ID" != "" ]; then
           curl -H "Content-Type: application/json" \
                -X POST \
                -d "{
                  \"embeds\": [{
                    \"title\": \"✅ YouTube Video Published Successfully!\",
-                   \"description\": \"**Title:** $VIDEO_TITLE\\n**Video ID:** $VIDEO_ID\\n**URL:** https://www.youtube.com/watch?v=$VIDEO_ID\",
+                   \"description\": \"**Title:** $VIDEO_TITLE\\n**Video ID:** $VIDEO_ID\\n**URL:** https://www.youtube.com/watch?v=$VIDEO_ID\\n**Shorts:** https://youtube.com/shorts/$VIDEO_ID\",
                    \"color\": 5763719,
                    \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
                  }]
                }" \
-               $DISCORD_WEBHOOK_URL
+               "$DISCORD_WEBHOOK_URL" || echo "Failed to send Discord notification"
+        else
+          echo "⚠️ Could not extract video ID for notification"
         fi
 
     - name: Send failure notification  
@@ -241,18 +205,18 @@ jobs:
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        ERROR_MSG=$(tail -10 automation.log 2>/dev/null | tr '\n' ' ' | sed 's/"/\\"/g' || echo "Unknown error")
+        ERROR_MSG=$(tail -10 automation.log 2>/dev/null | tr '\n' ' ' | sed 's/"/\\"/g' | head -c 500 || echo "Unknown error - check logs")
         curl -H "Content-Type: application/json" \
              -X POST \
              -d "{
                \"embeds\": [{
                  \"title\": \"❌ YouTube Automation Failed\",
-                 \"description\": \"**Error:** $ERROR_MSG\\n**Run:** ${{ github.run_number }}\\n**Workflow:** ${{ github.workflow }}\",
+                 \"description\": \"**Error:** $ERROR_MSG\\n**Run:** ${{ github.run_number }}\\n**Workflow:** ${{ github.workflow }}\\n**Branch:** ${{ github.ref_name }}\",
                  \"color\": 15158332,
                  \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
                }]
              }" \
-             $DISCORD_WEBHOOK_URL
+             "$DISCORD_WEBHOOK_URL" || echo "Failed to send Discord notification"
 
   cleanup:
     runs-on: ubuntu-latest
@@ -263,18 +227,31 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            run_id: context.runId
-          });
-          const oldArtifacts = artifacts.data.artifacts
-            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-            .slice(5);
-          for (const artifact of oldArtifacts) {
-            await github.rest.actions.deleteArtifact({
+          try {
+            const { data: artifacts } = await github.rest.actions.listWorkflowRunArtifacts({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              artifact_id: artifact.id
+              run_id: context.runId
             });
+            
+            // Keep only the 5 most recent artifacts
+            const oldArtifacts = artifacts.artifacts
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+              .slice(5);
+            
+            for (const artifact of oldArtifacts) {
+              try {
+                await github.rest.actions.deleteArtifact({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  artifact_id: artifact.id
+                });
+                console.log(`Deleted artifact: ${artifact.name}`);
+              } catch (error) {
+                console.log(`Failed to delete artifact ${artifact.name}: ${error.message}`);
+              }
+            }
+          } catch (error) {
+            console.log(`Cleanup failed: ${error.message}`);
           }
+            
