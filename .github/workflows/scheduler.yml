@@ -55,82 +55,78 @@ jobs:
         # Install base dependencies first
         echo "🔧 Installing base dependencies..."
         pip install --no-cache-dir --upgrade \
-          setuptools==69.5.1 \
-          wheel==0.43.0 \
-          pip==24.0
+          setuptools \
+          wheel \
+          pip
         
         # Install core utilities
         echo "🔧 Installing core utilities..."
         pip install --no-cache-dir \
-          six==1.16.0 \
-          certifi==2024.2.2 \
-          charset-normalizer==3.3.2 \
-          idna==3.7 \
-          urllib3==2.2.1 \
-          requests==2.31.0
+          six \
+          certifi \
+          charset-normalizer \
+          idna \
+          urllib3 \
+          requests
         
         # Install numpy first (many packages depend on it)
         echo "🔧 Installing numpy..."
-        pip install --no-cache-dir numpy==1.26.4
+        pip install --no-cache-dir numpy
         
-        # Install Google Auth dependencies in correct order - FIXED
-        echo "🔧 Installing Google Auth stack..."
+        # Install Google dependencies in correct order
+        echo "🔧 Installing Google dependencies..."
         pip install --no-cache-dir \
-          cachetools==5.3.3 \
-          pyasn1==0.6.0 \
-          pyasn1-modules==0.4.0 \
-          rsa==4.9
+          cachetools \
+          pyasn1 \
+          pyasn1-modules \
+          rsa
         
-        # Install google-auth package properly
-        pip install --no-cache-dir google-auth==2.29.0
-        pip install --no-cache-dir google-auth-oauthlib==1.2.0
+        # Install google-auth separately to ensure proper installation
+        pip install --no-cache-dir google-auth
+        
+        # Install remaining Google packages
         pip install --no-cache-dir \
-          google-auth-httplib2==0.2.0 \
-          googleapis-common-protos==1.63.0 \
-          google-api-core==2.19.0
-        
-        pip install --no-cache-dir google-api-python-client==2.129.0
+          google-auth-oauthlib \
+          google-auth-httplib2 \
+          googleapis-common-protos \
+          google-api-core \
+          google-api-python-client
         
         # Install image processing
         echo "🔧 Installing image processing..."
-        pip install --no-cache-dir Pillow==10.3.0
+        pip install --no-cache-dir Pillow
         
         # Install video processing dependencies
         echo "🔧 Installing video processing dependencies..."
         pip install --no-cache-dir \
-          decorator==5.1.1 \
-          imageio==2.34.1 \
-          imageio-ffmpeg==0.5.1 \
-          proglog==0.1.10 \
-          tqdm==4.66.4
+          decorator \
+          imageio \
+          imageio-ffmpeg \
+          proglog \
+          tqdm
         
-        # Install MoviePy - FIXED VERSION
+        # Install MoviePy with specific version that works
         echo "🔧 Installing MoviePy..."
-        pip install --no-cache-dir "moviepy>=1.0.3,<2.0.0"
+        pip install --no-cache-dir moviepy==1.0.3
         
         # Install audio processing
         echo "🔧 Installing audio processing..."
         pip install --no-cache-dir \
-          gTTS==2.5.1 \
-          pydub==0.25.1
+          gTTS \
+          pydub
         
         # Install OpenAI
         echo "🔧 Installing OpenAI..."
         pip install --no-cache-dir \
-          openai==1.30.1 \
-          python-dotenv==1.0.1
+          openai \
+          python-dotenv
         
         # Install additional utilities
         echo "🔧 Installing additional utilities..."
         pip install --no-cache-dir \
-          colorama==0.4.6 \
-          python-dateutil==2.9.0.post0 \
-          pytz==2024.1
-        
-        # Force reinstall problematic packages
-        echo "🔧 Force reinstalling problematic packages..."
-        pip install --no-cache-dir --force-reinstall google-auth==2.29.0
-        pip install --no-cache-dir --force-reinstall "moviepy>=1.0.3,<2.0.0"
+          colorama \
+          python-dateutil \
+          pytz
         
         echo "✅ All dependencies installed successfully"
 
@@ -139,7 +135,7 @@ jobs:
         echo "🔍 Verifying critical package installations..."
         python -c "
         import sys
-        import importlib.util
+        import subprocess
         
         print('🐍 Python version:', sys.version)
         
@@ -178,16 +174,30 @@ jobs:
         test_import('openai')
         test_import('gtts', display_name='gTTS')
         test_import('pydub')
+        test_import('requests')
         
         # Special handling for moviepy
         try:
             import moviepy
-            import moviepy.editor
+            import moviepy.editor as mpe
             print(f'✅ MoviePy: {getattr(moviepy, \"__version__\", \"unknown\")} (with editor)')
             test_results.append(('MoviePy', True, 'OK'))
         except Exception as e:
             print(f'❌ MoviePy: {str(e)}')
             test_results.append(('MoviePy', False, str(e)))
+            
+            # Try to fix MoviePy if it failed
+            print('🔧 Attempting to fix MoviePy...')
+            try:
+                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], 
+                             capture_output=True, check=False)
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                              'moviepy==1.0.3'], capture_output=True, check=True)
+                import moviepy.editor as mpe
+                print('✅ MoviePy fixed and working!')
+                test_results.append(('MoviePy Fixed', True, 'OK'))
+            except Exception as fix_error:
+                print(f'❌ MoviePy fix failed: {fix_error}')
         
         # Special handling for google.auth
         try:
@@ -199,40 +209,24 @@ jobs:
         except Exception as e:
             print(f'❌ Google Auth: {str(e)}')
             test_results.append(('Google Auth', False, str(e)))
-        
-        test_import('requests')
+            
+            # Try to fix Google Auth if it failed
+            print('🔧 Attempting to fix Google Auth...')
+            try:
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                              '--force-reinstall', 'google-auth'], capture_output=True, check=True)
+                import google.auth
+                print('✅ Google Auth fixed and working!')
+                test_results.append(('Google Auth Fixed', True, 'OK'))
+            except Exception as fix_error:
+                print(f'❌ Google Auth fix failed: {fix_error}')
         
         # Summary
         failed = [name for name, success, _ in test_results if not success]
         if failed:
             print(f'\\n❌ Failed imports: {failed}')
-            print('\\n🔧 Attempting to fix failed imports...')
-            
-            # Try to fix common issues
-            import subprocess
-            import os
-            
-            if 'MoviePy' in failed:
-                print('🔧 Fixing MoviePy installation...')
-                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], 
-                             capture_output=True)
-                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              '--force-reinstall', 'moviepy==1.0.3'], capture_output=True)
-                try:
-                    import moviepy.editor
-                    print('✅ MoviePy fixed!')
-                except:
-                    print('❌ MoviePy still failing')
-            
-            if 'Google Auth' in failed:
-                print('🔧 Fixing Google Auth installation...')
-                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              '--force-reinstall', 'google-auth==2.29.0'], capture_output=True)
-                try:
-                    import google.auth
-                    print('✅ Google Auth fixed!')
-                except:
-                    print('❌ Google Auth still failing')
+            # Don't exit with error, let the main script handle missing packages
+            print('\\n⚠️ Some packages failed to import, but continuing...')
         else:
             print('\\n✅ All critical packages verified successfully!')
         "
@@ -368,6 +362,39 @@ jobs:
         fi
         
         echo "✅ Environment file created"
+
+    - name: Final dependency check and fix
+      run: |
+        echo "🔧 Final dependency check and emergency fixes..."
+        python -c "
+        import sys
+        import subprocess
+        
+        # Check and fix MoviePy
+        try:
+            import moviepy.editor
+            print('✅ MoviePy is working')
+        except Exception as e:
+            print(f'❌ MoviePy failed: {e}')
+            print('🔧 Attempting emergency MoviePy fix...')
+            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], check=False)
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '--force-reinstall', 'moviepy==1.0.3'], check=True)
+            import moviepy.editor
+            print('✅ MoviePy emergency fix successful')
+        
+        # Check and fix Google Auth
+        try:
+            import google.auth
+            print('✅ Google Auth is working')
+        except Exception as e:
+            print(f'❌ Google Auth failed: {e}')
+            print('🔧 Attempting emergency Google Auth fix...')
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '--force-reinstall', 'google-auth'], check=True)
+            import google.auth
+            print('✅ Google Auth emergency fix successful')
+        
+        print('✅ All critical dependencies verified')
+        "
 
     - name: Run YouTube automation
       id: automation
