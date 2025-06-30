@@ -79,156 +79,20 @@ jobs:
           cat utils/scripting.py || echo "❌ utils/scripting.py not found"
           echo "✅ Script contents logged"
 
-      - name: Fix namespace packages and verify installations
+      - name: Verify Python dependencies
         run: |
-          echo "🔧 Fixing namespace packages and verifying installations..."
+          echo "🔧 Verifying Python dependencies..."
           python -c "
           import sys
-          import subprocess
-          import importlib
-          import os
-          import shutil
-
-          print('🐍 Python version:', sys.version)
-          print('🔍 Python executable:', sys.executable)
-          print('📁 Python path:')
-          for path in sys.path:
-              print(f'   {path}')
-
-          print('\n🔧 Fixing Google namespace packages...')
-          site_packages_dirs = [p for p in sys.path if 'site-packages' in p and os.path.exists(p)]
-          print(f'Found site-packages directories: {site_packages_dirs}')
-
-          google_packages = []
-          for site_dir in site_packages_dirs:
+          packages = ['numpy', 'PIL.Image', 'openai', 'gtts', 'pydub', 'requests', 'moviepy.editor', 'google.auth']
+          for pkg in packages:
               try:
-                  packages = [pkg for pkg in os.listdir(site_dir) if pkg.startswith('google') and os.path.isdir(os.path.join(site_dir, pkg))]
-                  google_packages.extend(packages)
-              except (OSError, PermissionError) as e:
-                  print(f'Could not list {site_dir}: {e}')
-          print(f'Found Google packages: {list(set(google_packages))}')
-
-          for site_packages in site_packages_dirs:
-              google_dir = os.path.join(site_packages, 'google')
-              if os.path.exists(google_dir):
-                  pycache_dir = os.path.join(google_dir, '__pycache__')
-                  if os.path.exists(pycache_dir):
-                      try:
-                          shutil.rmtree(pycache_dir)
-                          print(f'✅ Removed {pycache_dir}')
-                      except Exception as e:
-                          print(f'⚠️ Could not remove {pycache_dir}: {e}')
-
-          test_results = []
-          def test_import(module_name, import_statement, display_name=None):
-              if display_name is None:
-                  display_name = module_name
-              try:
-                  if module_name in sys.modules:
-                      del sys.modules[module_name]
-                  if module_name == 'moviepy':
-                      modules_to_clear = [mod for mod in sys.modules.keys() if 'moviepy' in mod]
-                      for mod in modules_to_clear:
-                          del sys.modules[mod]
-                  elif module_name.startswith('google'):
-                      modules_to_clear = [mod for mod in sys.modules.keys() if mod.startswith('google')]
-                      for mod in modules_to_clear:
-                          del sys.modules[mod]
-                  elif module_name == 'openai':
-                      modules_to_clear = [mod for mod in sys.modules.keys() if 'openai' in mod]
-                      for mod in modules_to_clear:
-                          del sys.modules[mod]
-                  exec(import_statement)
-                  print(f'✅ {display_name}: Import successful')
-                  test_results.append((display_name, True, 'OK'))
-                  return True
+                  __import__(pkg)
+                  print(f'✅ {pkg}: Import successful')
               except Exception as e:
-                  print(f'❌ {display_name}: {str(e)}')
-                  test_results.append((display_name, False, str(e)))
-                  return False
-
-          print('\n🔍 Testing imports...')
-          test_import('numpy', 'import numpy')
-          test_import('PIL', 'from PIL import Image')
-          test_import('openai', 'import openai')
-          test_import('gtts', 'from gtts import gTTS')
-          test_import('pydub', 'from pydub import AudioSegment')
-          test_import('requests', 'import requests')
-
-          print('\n🎬 Testing MoviePy...')
-          moviepy_success = False
-          try:
-              import moviepy.editor as mpe
-              print('✅ MoviePy: Success')
-              moviepy_success = True
-          except Exception as e:
-              print(f'❌ MoviePy failed: {e}')
-              try:
-                  print('🔧 Reinstalling MoviePy...')
-                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'moviepy==1.0.2'], check=True)
-                  for mod in list(sys.modules.keys()):
-                      if 'moviepy' in mod:
-                          del sys.modules[mod]
-                  import moviepy.editor as mpe
-                  print('✅ MoviePy reinstalled: Success')
-                  moviepy_success = True
-              except Exception as e2:
-                  print(f'❌ MoviePy reinstall failed: {e2}')
-          test_results.append(('MoviePy', moviepy_success, 'OK' if moviepy_success else 'Failed'))
-
-          print('\n🔍 Testing Google Auth...')
-          google_success = False
-          try:
-              import google.auth
-              print('✅ Google Auth: Success')
-              google_success = True
-          except Exception as e:
-              print(f'❌ Google Auth failed: {e}')
-              try:
-                  print('🔧 Reinstalling Google Auth...')
-                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'google-auth', 'google-auth-oauthlib', 'google-api-python-client'], check=True)
-                  for mod in list(sys.modules.keys()):
-                      if mod.startswith('google'):
-                          del sys.modules[mod]
-                  import google.auth
-                  print('✅ Google Auth reinstalled: Success')
-                  google_success = True
-              except Exception as e2:
-                  print(f'❌ Google Auth reinstall failed: {e2}')
-          test_results.append(('Google Auth', google_success, 'OK' if google_success else 'Failed'))
-
-          print('\n🔍 Testing OpenAI...')
-          openai_success = False
-          try:
-              import openai
-              print('✅ OpenAI: Success')
-              openai_success = True
-          except Exception as e:
-              print(f'❌ OpenAI failed: {e}')
-              try:
-                  print('🔧 Reinstalling OpenAI...')
-                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'openai==1.40.6'], check=True)
-                  for mod in list(sys.modules.keys()):
-                      if 'openai' in mod:
-                          del sys.modules[mod]
-                  import openai
-                  print('✅ OpenAI reinstalled: Success')
-                  openai_success = True
-              except Exception as e2:
-                  print(f'❌ OpenAI reinstall failed: {e2}')
-          test_results.append(('OpenAI', openai_success, 'OK' if openai_success else 'Failed'))
-
-          failed = [name for name, success, _ in test_results if not success]
-          if failed:
-              print(f'\n❌ Failed imports: {failed}')
-              print('\nDiagnostic information:')
-              result = subprocess.run([sys.executable, '-m', 'pip', 'list'], capture_output=True, text=True)
-              if result.returncode == 0:
-                  for line in result.stdout.split('\n'):
-                      if any(pkg in line.lower() for pkg in ['moviepy', 'google', 'openai']):
-                          print(f'   {line}')
-          else:
-              print('\n✅ All critical packages verified successfully!')
+                  print(f'❌ {pkg}: {str(e)}')
+                  sys.exit(1)
+          print('✅ All critical packages verified successfully')
           "
 
       - name: Clear Python module cache
@@ -294,8 +158,9 @@ jobs:
           VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
+          echo "🔍 Checking environment variables..."
           if [ -z "$OPENAI_API_KEY" ]; then
-            echo "❌ OPENAI_API_KEY is not set"
+            echo "❌ OPENAI_API_KEY is not set in repository secrets"
             exit 1
           fi
           cat > .env << EOF
@@ -326,14 +191,14 @@ jobs:
           unset HTTP_PROXY HTTPS_PROXY NO_PROXY
           python -c "import os; print('Environment variables:', {k: '***' if 'KEY' in k or 'TOKEN' in k else v for k, v in sorted(os.environ.items())})"
           python main.py 2>&1 | tee automation.log
-          EXIT_CODE=$PIPESTATUS[0]
+          EXIT_CODE=${PIPESTATUS[0]}
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
           if [ $EXIT_CODE -ne 0 ]; then
             echo "❌ Automation failed with exit code $EXIT_CODE"
             tail -20 automation.log
             exit $EXIT_CODE
           fi
-          echo "✅ Automation completed"
+          echo "✅ Automation completed successfully"
 
       - name: Debug environment on failure
         if: failure()
