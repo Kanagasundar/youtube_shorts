@@ -488,7 +488,8 @@ def generate_content_with_retry(topic: str, category: str) -> Tuple[str, str, st
         except ImportError:
             logger.warning("⚠️ OpenAI module not imported")
         
-        script = generate_script(topic)
+        # Pass both topic and category to generate_script
+        script = generate_script(topic, category)
         if not script or len(script.strip()) < 50:
             logger.error(f"❌ Generated script is too short or empty ({len(script.strip()) if script else 0} characters)")
             logger.debug(f"Script content: {script!r}")
