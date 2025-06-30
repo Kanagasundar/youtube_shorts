@@ -58,8 +58,10 @@ jobs:
       run: |
         echo "📦 Installing Python dependencies..."
         python -m pip cache purge
-        python -m pip install --upgrade pip setuptools wheel
+        python -m pip install --upgrade pip==24.2 setuptools==70.3.0 wheel==0.43.0
         pip install --no-cache-dir -r requirements.txt
+        pip install --no-cache-dir openai==1.40.6  # Ensure correct OpenAI version
+        pip list  # Log installed packages for debugging
         echo "✅ All dependencies installed successfully"
 
     - name: Fix namespace packages and verify installations
@@ -78,7 +80,7 @@ jobs:
             print(f'   {path}')
         
         # Fix Google namespace package issue
-        print('\\n🔧 Fixing Google namespace packages...')
+        print('\n🔧 Fixing Google namespace packages...')
         
         # Find site-packages directories safely
         site_packages_dirs = []
@@ -134,6 +136,10 @@ jobs:
                     modules_to_clear = [mod for mod in sys.modules.keys() if mod.startswith('google')]
                     for mod in modules_to_clear:
                         del sys.modules[mod]
+                elif module_name == 'openai':
+                    modules_to_clear = [mod for mod in sys.modules.keys() if 'openai' in mod]
+                    for mod in modules_to_clear:
+                        del sys.modules[mod]
                 
                 # Execute the import statement
                 exec(import_statement)
@@ -146,7 +152,7 @@ jobs:
                 return False
         
         # Test all critical packages with proper import statements
-        print('\\n🔍 Testing imports with advanced verification...')
+        print('\n🔍 Testing imports with advanced verification...')
         test_import_advanced('numpy', 'import numpy')
         test_import_advanced('PIL', 'from PIL import Image')
         test_import_advanced('openai', 'import openai')
@@ -155,7 +161,7 @@ jobs:
         test_import_advanced('requests', 'import requests')
         
         # Special handling for moviepy with multiple fallback strategies
-        print('\\n🎬 Testing MoviePy with fallback strategies...')
+        print('\n🎬 Testing MoviePy with fallback strategies...')
         moviepy_success = False
         
         # Strategy 1: Direct import
@@ -208,7 +214,7 @@ jobs:
         test_results.append(('MoviePy', moviepy_success, 'OK' if moviepy_success else 'Failed'))
         
         # Special handling for google.auth with namespace fixes
-        print('\\n🔍 Testing Google Auth with namespace fixes...')
+        print('\n🔍 Testing Google Auth with namespace fixes...')
         google_success = False
         
         # Strategy 1: Direct import
@@ -250,21 +256,54 @@ jobs:
         
         test_results.append(('Google Auth', google_success, 'OK' if google_success else 'Failed'))
         
+        # Special handling for OpenAI
+        print('\n🔍 Testing OpenAI with fallback strategies...')
+        openai_success = False
+        
+        # Strategy 1: Direct import
+        try:
+            import openai
+            print('✅ OpenAI Strategy 1 (direct): Success')
+            openai_success = True
+        except Exception as e:
+            print(f'❌ OpenAI Strategy 1 failed: {e}')
+            
+            # Strategy 2: Reinstall and retry
+            try:
+                print('🔧 OpenAI Strategy 2: Reinstalling...')
+                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai'], 
+                             capture_output=True, check=False)
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                              'openai==1.40.6'], capture_output=True, check=True)
+                
+                # Clear module cache
+                for mod in list(sys.modules.keys()):
+                    if 'openai' in mod:
+                        del sys.modules[mod]
+                
+                import openai
+                print('✅ OpenAI Strategy 2 (reinstall): Success')
+                openai_success = True
+            except Exception as e2:
+                print(f'❌ OpenAI Strategy 2 failed: {e2}')
+        
+        test_results.append(('OpenAI', openai_success, 'OK' if openai_success else 'Failed'))
+        
         # Summary
         failed = [name for name, success, _ in test_results if not success]
         if failed:
-            print(f'\\n❌ Failed imports: {failed}')
-            print('\\n⚠️ Some packages failed to import. The script will attempt to continue...')
-            print('\\nDiagnostic information:')
+            print(f'\n❌ Failed imports: {failed}')
+            print('\n⚠️ Some packages failed to import. The script will attempt to continue...')
+            print('\nDiagnostic information:')
             print('Available packages:')
             result = subprocess.run([sys.executable, '-m', 'pip', 'list'], 
                                   capture_output=True, text=True)
             if result.returncode == 0:
-                for line in result.stdout.split('\\n'):
-                    if any(pkg in line.lower() for pkg in ['moviepy', 'google']):
+                for line in result.stdout.split('\n'):
+                    if any(pkg in line.lower() for pkg in ['moviepy', 'google', 'openai']):
                         print(f'   {line}')
         else:
-            print('\\n✅ All critical packages verified successfully!')
+            print('\n✅ All critical packages verified successfully!')
         "
 
     - name: Create output directories
@@ -416,6 +455,10 @@ jobs:
         PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/utils
         PYTHONDONTWRITEBYTECODE: "1"
         PYTHONIOENCODING: "utf-8"
+        # Explicitly unset proxy variables to prevent OpenAI client issues
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
+        NO_PROXY: "*"
       run: |
         echo "🚀 Starting YouTube automation..."
         echo "📅 Timestamp: $(date)"
@@ -468,6 +511,24 @@ jobs:
                 print('✅ Google Auth installed successfully')
             except Exception as e2:
                 print(f'❌ Google Auth installation failed: {e2}')
+        
+        # Clear and fix OpenAI
+        for mod in list(sys.modules.keys()):
+            if 'openai' in mod:
+                del sys.modules[mod]
+        
+        try:
+            import openai
+            print('✅ OpenAI ready')
+        except Exception as e:
+            print(f'🔧 Final OpenAI fix attempt... Error: {e}')
+            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai'], check=False)
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'openai==1.40.6'], check=False)
+            try:
+                import openai
+                print('✅ OpenAI installed successfully')
+            except Exception as e2:
+                print(f'❌ OpenAI installation failed: {e2}')
         
         print('🚀 Ready to execute main script')
         "
@@ -628,6 +689,9 @@ jobs:
     if: always()
     
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
     - name: Cleanup old artifacts
       uses: actions/github-script@v7
       with:
