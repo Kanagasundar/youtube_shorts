@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 YouTube Automation Main Script - Enhanced Version
@@ -103,35 +102,33 @@ def check_dependencies() -> bool:
     logger.info("🔍 Checking dependencies...")
     
     required_packages = {
-        'openai': 'openai',
-        'gtts': 'gtts',
-        'pydub': 'pydub',
-        'Pillow': 'PIL.Image',
-        'moviepy': 'moviepy.editor',
-        'numpy': 'numpy',
-        'google-auth': 'google.auth',
-        'google-auth-oauthlib': 'google_auth_oauthlib',
-        'google-api-python-client': 'googleapiclient.discovery',
-        'requests': 'requests'
+        'openai': ('import openai', 'openai'),
+        'gtts': ('from gtts import gTTS', 'gTTS'),
+        'pydub': ('from pydub import AudioSegment', 'AudioSegment'),
+        'Pillow': ('from PIL import Image', 'Image'),
+        'moviepy': ('from moviepy.editor import VideoFileClip', 'VideoFileClip'),
+        'numpy': ('import numpy', 'numpy'),
+        'google-auth': ('import google.auth', 'google.auth'),
+        'google-auth-oauthlib': ('import google_auth_oauthlib', 'google_auth_oauthlib'),
+        'google-api-python-client': ('from googleapiclient import discovery', 'discovery'),
+        'requests': ('import requests', 'requests')
     }
     
     missing_packages = []
     
-    for package_name, import_name in required_packages.items():
+    for package_name, (import_statement, check_name) in required_packages.items():
         try:
             # Clear module cache for this package
+            base_module = import_statement.split()[1].split('.')[0]
             for mod in list(sys.modules.keys()):
-                if import_name.split('.')[0] in mod:
+                if base_module in mod:
                     del sys.modules[mod]
             
-            # Import the module
-            if '.' in import_name:
-                parts = import_name.split('.')
-                module = __import__(parts[0])
-                for part in parts[1:]:
-                    module = getattr(module, part)
-            else:
-                module = __import__(import_name)
+            # Execute the import statement
+            exec(import_statement)
+            
+            # Check if the module or attribute exists
+            module = eval(check_name)
             
             # Get version info
             version = getattr(module, '__version__', 
@@ -139,11 +136,262 @@ def check_dependencies() -> bool:
                                   getattr(module, 'version', 'unknown')))
             
             # Log module path for debugging
-            spec = importlib.util.find_spec(import_name.split('.')[0])
-            logger.debug(f"✅ {package_name} ({import_name}) - v{version} from {spec.origin if spec else 'unknown'}")
+            spec = importlib.util.find_spec(base_module)
+            logger.debug(f"✅ {package_name} ({check_name}) - v{version} from {spec.origin if spec else 'unknown'}")
             
         except (ImportError, AttributeError) as e:
-            logger.error(f"❌ {package_name} ({import_name}) - Failed: {str(e)}")
+            logger.error(f"❌ {package_name} ({check_name}) - Failed: {str(e)}")
+            missing_packages.append(package_name)
+    
+    if missing_packages:
+        logger.error(f"❌ Missing {len(missing_packages)} required packages:")
+        for package in missing_packages:
+            logger.error(f"   - {package}")
+        
+        print("\n💡 Install missing packages with:")
+        print(f"   pip install {' '.join(missing_packages)}")
+        
+        # Additional debugging info
+        print("\n🔍 Python environment info:")
+        print(f"   Python version: {sys.version}")
+        print(f"   Python executable: {sys.executable}")
+        site_packages = [p for p in sys.path if 'site-packages' in p]
+        if site_packages:
+            print(f"   Site packages: {site_packages[0]}")
+        
+        return False
+    
+    logger.info("✅ All required dependencies are available")
+    return True
+
+def validate_credentials_file() -> bool:
+    """Validate the credentials.json file with improved error handling"""
+    credentials_path = SCRIPT_DIR / 'credentials.json'
+    
+    if not credentials_path.exists():
+        logger.warning("⚠️ credentials.json not found in script directory")
+        return False
+    
+    try:
+        with open(credentials_path, 'r', encoding='utf-8') as f:
+            creds_data = json.load(f)
+        
+        logger.debug(f"📝 Credentials file structure: {list(creds_data.keys())}")
+        
+        # Handle different credential formats
+        if 'installed' in creds_data:
+            return _validate_oauth_credentials(creds_data['installed'], 'installed')
+        elif 'web' in creds_data:
+            return _validate_oauth_credentials(creds_data['web'], 'web')
+        elif creds_data.get('type') == 'service_account':
+            return _validate_service_account_credentials(creds_data)
+        else:
+            logger.error("❌ Unknown credentials format. Expected 'installed', 'web', or service account format")
+            logger.error(f"Available keys: {list(creds_data.keys())}")
+            return False
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ credentials.json is not valid JSON: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Error validating credentials.json: {e}")
+        return False
+
+def _validate_oauth_credentials(creds_data: dict, cred_type: str) -> bool:
+    """Validate OAuth2 credentials"""
+    required_fields = ['client_id', 'client_secret', 'auth_uri', 'token_uri']
+    
+    logger.debug(f"📝 Detected {cred_type} application credentials (OAuth2)")
+    
+    missing_fields = [field for field in required_fields if field not in creds_data]
+    
+    if missing_fields:
+        logger.error(f"❌ credentials.json missing required fields in '{cred_type}' section: {missing_fields}")
+        return False
+    
+    # Validate URLs
+    for uri_field in ['auth_uri', 'token_uri']:
+        uri = creds_data.get(uri_field, '')
+        if not uri.startswith('https://'):
+            logger.error(f"❌ Invalid {uri_field} in credentials: {uri}")
+            return False
+    
+    logger.info(f"✅ OAuth2 {cred_type} application credentials validation passed")
+    return True
+
+def _validate_service_account_credentials(creds_data: dict) -> bool:
+    """Validate service account credentials"""
+    required_fields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email']
+    
+    logger.debug("📝 Detected service account credentials")
+    
+    missing_fields = [field for field in required_fields if field not in creds_data]
+    
+    if missing_fields:
+        logger.error(fにな
+
+System: The provided `main.py` script has been analyzed, and the issue lies in the `check_dependencies` function, which uses incorrect import paths for several packages, causing the `AttributeError` exceptions observed in the GitHub Actions log. The errors are:
+
+```
+2025-06-30 05:53:11,416 - ERROR - ❌ Pillow (PIL.Image) - Failed: module 'PIL' has no attribute 'Image'
+2025-06-30 05:53:11,416 - ERROR - ❌ moviepy (moviepy.editor) - Failed: module 'moviepy' has no attribute 'editor'
+2025-06-30 05:53:11,477 - ERROR - ❌ google-auth (google.auth) - Failed: module 'google' has no attribute 'auth'
+2025-06-30 05:53:11,556 - ERROR - ❌ google-api-python-client (googleapiclient.discovery) - Failed: module 'googleapiclient' has no attribute 'discovery'
+```
+
+These errors occur because the `check_dependencies` function in `main.py` attempts to access modules using dotted notation (e.g., `PIL.Image`, `moviepy.editor`) in a way that assumes attributes exist directly on the imported module, which is incorrect. The `Fix namespace packages and verify installations` step in the workflow confirms that these packages are installed correctly, so the issue is specific to the import logic in `main.py`.
+
+### **Solution**
+
+The `check_dependencies` function needs to be updated to use correct import statements and attribute checks for `Pillow`, `moviepy`, `google-auth`, and `google-api-python-client`. The rest of the `main.py` script is robust, with proper logging, error handling, and cleanup logic, so we will only modify the `check_dependencies` function to fix the import errors while preserving the existing functionality.
+
+Below is the updated `main.py` with the corrected `check_dependencies` function. The changes ensure that imports align with the standard module structures for the affected packages, matching the successful imports seen in the workflow’s verification step.
+
+<xaiArtifact artifact_id="a3349aac-a856-4c57-b9b7-b9bbe4ce6db6" artifact_version_id="e84cc6f2-c3f4-4659-bb2b-987fdb211d31" title="main.py" contentType="text/python">
+```python
+#!/usr/bin/env python3
+"""
+YouTube Automation Main Script - Enhanced Version
+Generates and uploads daily YouTube Shorts content with improved error handling,
+logging, configuration management, and cleanup features.
+"""
+
+import os
+import sys
+import traceback
+import shutil
+import signal
+from datetime import datetime, timedelta
+from pathlib import Path
+import logging
+import json
+import time
+from typing import Optional, Tuple, Dict, Any
+import importlib.util
+
+# Configure logging with both file and console output
+def setup_logging():
+    """Set up comprehensive logging configuration"""
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    
+    # Create formatters
+    detailed_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
+    )
+    simple_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    
+    # File handler for detailed logs
+    file_handler = logging.FileHandler(
+        log_dir / f"automation_{datetime.now().strftime('%Y%m%d')}.log",
+        encoding='utf-8'
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(detailed_formatter)
+    
+    # Console handler for user-friendly output
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(simple_formatter)
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    
+    return logging.getLogger(__name__)
+
+# Initialize logger
+logger = setup_logging()
+
+# Ensure the utils directory is in sys.path
+SCRIPT_DIR = Path(__file__).parent.absolute()
+UTILS_DIR = SCRIPT_DIR / 'utils'
+OUTPUT_DIR = SCRIPT_DIR / 'output'
+LOGS_DIR = SCRIPT_DIR / 'logs'
+
+if str(UTILS_DIR) not in sys.path:
+    sys.path.insert(0, str(UTILS_DIR))
+
+# Global cleanup list for graceful shutdown
+cleanup_files = []
+
+def signal_handler(signum, frame):
+    """Handle graceful shutdown on SIGINT/SIGTERM"""
+    logger.warning(f"Received signal {signum}. Initiating graceful shutdown...")
+    cleanup_temporary_files()
+    sys.exit(1)
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
+def cleanup_temporary_files():
+    """Clean up temporary files created during execution"""
+    global cleanup_files
+    
+    logger.info("🧹 Cleaning up temporary files...")
+    cleaned_count = 0
+    
+    for file_path in cleanup_files:
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logger.debug(f"Removed temporary file: {file_path}")
+                cleaned_count += 1
+        except Exception as e:
+            logger.warning(f"Could not remove temporary file {file_path}: {e}")
+    
+    if cleaned_count > 0:
+        logger.info(f"✅ Cleaned up {cleaned_count} temporary files")
+    
+    cleanup_files.clear()
+
+def check_dependencies() -> bool:
+    """Check if required dependencies are installed with robust detection"""
+    logger.info("🔍 Checking dependencies...")
+    
+    required_packages = {
+        'openai': ('import openai', 'openai'),
+        'gtts': ('from gtts import gTTS', 'gTTS'),
+        'pydub': ('from pydub import AudioSegment', 'AudioSegment'),
+        'Pillow': ('from PIL import Image', 'Image'),
+        'moviepy': ('from moviepy.editor import VideoFileClip', 'VideoFileClip'),
+        'numpy': ('import numpy', 'numpy'),
+        'google-auth': ('import google.auth', 'google.auth'),
+        'google-auth-oauthlib': ('import google_auth_oauthlib', 'google_auth_oauthlib'),
+        'google-api-python-client': ('from googleapiclient import discovery', 'discovery'),
+        'requests': ('import requests', 'requests')
+    }
+    
+    missing_packages = []
+    
+    for package_name, (import_statement, check_name) in required_packages.items():
+        try:
+            # Clear module cache for this package
+            base_module = import_statement.split()[1].split('.')[0]
+            for mod in list(sys.modules.keys()):
+                if base_module in mod:
+                    del sys.modules[mod]
+            
+            # Execute the import statement
+            exec(import_statement)
+            
+            # Check if the module or attribute exists
+            module = eval(check_name)
+            
+            # Get version info
+            version = getattr(module, '__version__', 
+                           getattr(module, 'VERSION', 
+                                  getattr(module, 'version', 'unknown')))
+            
+            # Log module path for debugging
+            spec = importlib.util.find_spec(base_module)
+            logger.debug(f"✅ {package_name} ({check_name}) - v{version} from {spec.origin if spec else 'unknown'}")
+            
+        except (ImportError, AttributeError) as e:
+            logger.error(f"❌ {package_name} ({check_name}) - Failed: {str(e)}")
             missing_packages.append(package_name)
     
     if missing_packages:
