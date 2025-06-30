@@ -49,8 +49,8 @@ def generate_script(topic, max_length=500):
     
     except Exception as e:
         logger.error(f"❌ Failed to generate script: {str(e)}", exc_info=True)
-        return None
-
+        return get_fallback_script(topic)
+        
 def get_fallback_script(topic):
     """
     Provide a fallback script if OpenAI generation fails.
