@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 YouTube Automation Main Script - Enhanced Version
@@ -16,6 +17,7 @@ import logging
 import json
 import time
 from typing import Optional, Tuple, Dict, Any
+import importlib.util
 
 # Configure logging with both file and console output
 def setup_logging():
@@ -104,12 +106,12 @@ def check_dependencies() -> bool:
         'openai': 'openai',
         'gtts': 'gtts',
         'pydub': 'pydub',
-        'Pillow': 'PIL',
+        'Pillow': 'PIL.Image',
         'moviepy': 'moviepy.editor',
         'numpy': 'numpy',
         'google-auth': 'google.auth',
         'google-auth-oauthlib': 'google_auth_oauthlib',
-        'google-api-python-client': 'googleapiclient',
+        'google-api-python-client': 'googleapiclient.discovery',
         'requests': 'requests'
     }
     
@@ -117,6 +119,11 @@ def check_dependencies() -> bool:
     
     for package_name, import_name in required_packages.items():
         try:
+            # Clear module cache for this package
+            for mod in list(sys.modules.keys()):
+                if import_name.split('.')[0] in mod:
+                    del sys.modules[mod]
+            
             # Import the module
             if '.' in import_name:
                 parts = import_name.split('.')
@@ -128,10 +135,12 @@ def check_dependencies() -> bool:
             
             # Get version info
             version = getattr(module, '__version__', 
-                            getattr(module, 'VERSION', 
-                                   getattr(module, 'version', 'unknown')))
+                           getattr(module, 'VERSION', 
+                                  getattr(module, 'version', 'unknown')))
             
-            logger.debug(f"✅ {package_name} ({import_name}) - v{version}")
+            # Log module path for debugging
+            spec = importlib.util.find_spec(import_name.split('.')[0])
+            logger.debug(f"✅ {package_name} ({import_name}) - v{version} from {spec.origin if spec else 'unknown'}")
             
         except (ImportError, AttributeError) as e:
             logger.error(f"❌ {package_name} ({import_name}) - Failed: {str(e)}")

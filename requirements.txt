@@ -1,55 +1,35 @@
-# YouTube Automation Requirements
-# Optimized for GitHub Actions Ubuntu environment
-# Specific versions to prevent dependency conflicts
 
-# Base Python packages
-setuptools==69.5.1
+setuptools==70.3.0
 wheel==0.43.0
+pip==24.2
 six==1.16.0
-certifi==2024.2.2
+certifi==2024.8.30
 charset-normalizer==3.3.2
 idna==3.7
-urllib3==2.2.1
-requests==2.31.0
-
-# Core data processing
+urllib3==2.2.2
+requests==2.32.3
 numpy==1.26.4
-python-dotenv==1.0.1
-python-dateutil==2.9.0.post0
-pytz==2024.1
-
-# Google API authentication stack (in dependency order)
-cachetools==5.3.3
+cachetools==5.4.0
 pyasn1==0.6.0
 pyasn1-modules==0.4.0
 rsa==4.9
-google-auth==2.29.0
-google-auth-oauthlib==1.2.0
+google-auth==2.34.0
+google-auth-oauthlib==1.2.1
 google-auth-httplib2==0.2.0
-googleapis-common-protos==1.63.0
-google-api-core==2.19.0
-google-api-python-client==2.129.0
-
-# Image processing
-Pillow==10.3.0
-
-# Video processing dependencies (in order)
+googleapis-common-protos==1.65.0
+google-api-core==2.19.1
+google-api-python-client==2.140.0
+Pillow==10.4.0
 decorator==5.1.1
-imageio==2.34.1
+imageio==2.34.2
 imageio-ffmpeg==0.5.1
 proglog==0.1.10
-tqdm==4.66.4
+tqdm==4.66.5
 moviepy==1.0.3
-
-# Audio processing and TTS
-gTTS==2.5.1
+gTTS==2.5.3
 pydub==0.25.1
-
-# OpenAI API
-openai==1.30.1
-
-# Utilities
+openai==1.40.6
+python-dotenv==1.0.1
 colorama==0.4.6
-
-# Optional Discord notifications
-discord-webhook==1.3.1
+python-dateutil==2.9.0.post0
+pytz==2024.1

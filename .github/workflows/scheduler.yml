@@ -42,95 +42,24 @@ jobs:
         ffmpeg -version
         echo "✅ System dependencies installed"
 
-    - name: Clean pip cache and upgrade pip
+    - name: Verify system dependencies
       run: |
+        echo "🔍 Verifying system dependencies..."
+        ffmpeg -version || { echo "❌ FFmpeg not installed correctly"; exit 1; }
+        echo "✅ FFmpeg verified"
+
+    - name: Check disk space
+      run: |
+        echo "🔍 Checking available disk space..."
+        df -h
+        echo "✅ Disk space check completed"
+
+    - name: Install Python dependencies
+      run: |
+        echo "📦 Installing Python dependencies..."
         python -m pip cache purge
         python -m pip install --upgrade pip setuptools wheel
-        pip --version
-
-    - name: Install Python dependencies in correct order
-      run: |
-        echo "📦 Installing Python dependencies in optimized order..."
-        
-        # Install base dependencies first
-        echo "🔧 Installing base dependencies..."
-        pip install --no-cache-dir --upgrade \
-          setuptools \
-          wheel \
-          pip
-        
-        # Install core utilities
-        echo "🔧 Installing core utilities..."
-        pip install --no-cache-dir \
-          six \
-          certifi \
-          charset-normalizer \
-          idna \
-          urllib3 \
-          requests
-        
-        # Install numpy first (many packages depend on it)
-        echo "🔧 Installing numpy..."
-        pip install --no-cache-dir numpy
-        
-        # Install Google dependencies in correct order - FIXED
-        echo "🔧 Installing Google dependencies..."
-        pip install --no-cache-dir \
-          cachetools \
-          pyasn1 \
-          pyasn1-modules \
-          rsa
-        
-        # Install google-auth with proper namespace handling
-        pip install --no-cache-dir google-auth
-        
-        # Force reinstall google-auth to fix namespace issues
-        pip install --no-cache-dir --force-reinstall google-auth
-        
-        # Install remaining Google packages
-        pip install --no-cache-dir \
-          google-auth-oauthlib \
-          google-auth-httplib2 \
-          googleapis-common-protos \
-          google-api-core \
-          google-api-python-client
-        
-        # Install image processing
-        echo "🔧 Installing image processing..."
-        pip install --no-cache-dir Pillow
-        
-        # Install video processing dependencies
-        echo "🔧 Installing video processing dependencies..."
-        pip install --no-cache-dir \
-          decorator \
-          imageio \
-          imageio-ffmpeg \
-          proglog \
-          tqdm
-        
-        # Install MoviePy with specific working version - FIXED
-        echo "🔧 Installing MoviePy..."
-        pip install --no-cache-dir --force-reinstall moviepy==1.0.3
-        
-        # Install audio processing
-        echo "🔧 Installing audio processing..."
-        pip install --no-cache-dir \
-          gTTS \
-          pydub
-        
-        # Install OpenAI
-        echo "🔧 Installing OpenAI..."
-        pip install --no-cache-dir \
-          openai \
-          python-dotenv
-        
-        # Install additional utilities
-        echo "🔧 Installing additional utilities..."
-        pip install --no-cache-dir \
-          colorama \
-          python-dateutil \
-          pytz
-        
+        pip install --no-cache-dir -r requirements.txt
         echo "✅ All dependencies installed successfully"
 
     - name: Fix namespace packages and verify installations
@@ -148,7 +77,92 @@ jobs:
         for path in sys.path:
             print(f'   {path}')
         
-        # Fix Google namespace package issue - FIXED
+        # Fix Google namespace package issue
+        print('\\n🔧 Fixing Google namespace packages...')
+        
+        # Find site-packages directories safely
+        site_packages_dirs = []
+        for path in sys.path:
+            if path and 'site-packages' in path and GLenum: YouTube Automation
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # Daily at 9:00 AM UTC
+  workflow_dispatch:
+    inputs:
+      topic_override:
+        description: 'Override today''s topic (optional)'
+        required: false
+        type: string
+      category_override:
+        description: 'Override category (optional)'
+        required: false
+        type: string
+
+jobs:
+  create-and-upload-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg espeak espeak-data libespeak1 libespeak-dev
+        sudo apt-get install -y python3-dev python3-pip python3-venv
+        sudo apt-get install -y libffi-dev libssl-dev libxml2-dev libxslt-dev
+        sudo apt-get install -y build-essential libasound2-dev portaudio19-dev
+        sudo apt-get install -y jq
+        sudo apt-get install -y libavcodec-dev libavformat-dev libavdevice-dev
+        sudo apt-get install -y libavfilter-dev libswscale-dev libswresample-dev
+        ffmpeg -version
+        echo "✅ System dependencies installed"
+
+    - name: Verify system dependencies
+      run: |
+        echo "🔍 Verifying system dependencies..."
+        ffmpeg -version || { echo "❌ FFmpeg not installed correctly"; exit 1; }
+        echo "✅ FFmpeg verified"
+
+    - name: Check disk space
+      run: |
+        echo "🔍 Checking available disk space..."
+        df -h
+        echo "✅ Disk space check completed"
+
+    - name: Install Python dependencies
+      run: |
+        echo "📦 Installing Python dependencies..."
+        python -m pip cache purge
+        python -m pip install --upgrade pip setuptools wheel
+        pip install --no-cache-dir -r requirements.txt
+        echo "✅ All dependencies installed successfully"
+
+    - name: Fix namespace packages and verify installations
+      run: |
+        echo "🔧 Fixing namespace packages and performing comprehensive verification..."
+        python -c "
+        import sys
+        import subprocess
+        import importlib
+        import os
+        
+        print('🐍 Python version:', sys.version)
+        print('🔍 Python executable:', sys.executable)
+        print('📁 Python path:')
+        for path in sys.path:
+            print(f'   {path}')
+        
+        # Fix Google namespace package issue
         print('\\n🔧 Fixing Google namespace packages...')
         
         # Find site-packages directories safely
@@ -183,14 +197,6 @@ jobs:
                         print(f'✅ Removed {pycache_dir}')
                     except Exception as e:
                         print(f'⚠️ Could not remove {pycache_dir}: {e}')
-        
-        # Force reinstall google-auth
-        print('\\n🔧 Force reinstalling google-auth...')
-        subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'google-auth'], 
-                       capture_output=True, check=False)
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                       '--force-reinstall', 'google-auth'], 
-                       capture_output=True, check=True)
         
         # Test packages with enhanced error handling
         test_results = []
@@ -493,7 +499,6 @@ jobs:
         CATEGORY_OVERRIDE: ${{ github.event.inputs.category_override }}
         PYTHONUNBUFFERED: "1"
         PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/utils
-        # Add environment variables to help with package loading
         PYTHONDONTWRITEBYTECODE: "1"
         PYTHONIOENCODING: "utf-8"
       run: |
@@ -511,23 +516,43 @@ jobs:
         import sys
         import subprocess
         
-        # Last resort fixes
         print('🔧 Final pre-execution checks...')
         
-        # Try to import critical packages and fix if needed
+        # Clear and fix MoviePy
+        for mod in list(sys.modules.keys()):
+            if 'moviepy' in mod:
+                del sys.modules[mod]
+        
         try:
             import moviepy.editor
             print('✅ MoviePy ready')
-        except:
-            print('🔧 Final MoviePy fix attempt...')
-            subprocess.run([sys.executable, '-m', 'pip', 'install', '--force-reinstall', '--no-deps', 'moviepy==1.0.3'], check=False)
+        except Exception as e:
+            print(f'🔧 Final MoviePy fix attempt... Error: {e}')
+            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], check=False)
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'moviepy==1.0.3'], check=False)
+            try:
+                import moviepy.editor
+                print('✅ MoviePy installed successfully')
+            except Exception as e2:
+                print(f'❌ MoviePy installation failed: {e2}')
+        
+        # Clear and fix Google Auth
+        for mod in list(sys.modules.keys()):
+            if mod.startswith('google'):
+                del sys.modules[mod]
         
         try:
             import google.auth
             print('✅ Google Auth ready')
-        except:
-            print('🔧 Final Google Auth fix attempt...')
-            subprocess.run([sys.executable, '-m', 'pip', 'install', '--force-reinstall', 'google-auth'], check=False)
+        except Exception as e:
+            print(f'🔧 Final Google Auth fix attempt... Error: {e}')
+            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'google-auth', 'google-auth-oauthlib', 'google-api-python-client'], check=False)
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'google-auth', 'google-auth-oauthlib', 'google-api-python-client'], check=False)
+            try:
+                import google.auth
+                print('✅ Google Auth installed successfully')
+            except Exception as e2:
+                print(f'❌ Google Auth installation failed: {e2}')
         
         print('🚀 Ready to execute main script')
         "
@@ -547,6 +572,14 @@ jobs:
         
         echo "✅ Automation completed successfully"
 
+    - name: Debug environment on failure
+      if: failure()
+      run: |
+        echo "🔍 Debugging environment..."
+        pip list
+        python -m site
+        echo "✅ Environment debug info collected"
+
     - name: Save updated YouTube token
       if: always() && env.YOUTUBE_CREDENTIALS_VALID == 'true'
       id: save_token
@@ -559,8 +592,8 @@ jobs:
           echo "ℹ️ No token.pickle file found to save"
         fi
 
-    - name: Upload artifacts on failure
-      if: failure()
+    - name: Upload artifacts on failure or partial success
+      if: failure() || steps.automation.outputs.exit_code == '2'
       uses: actions/upload-artifact@v4
       with:
         name: automation-failure-logs-${{ github.run_number }}
@@ -672,7 +705,7 @@ jobs:
         curl -H "Content-Type: application/json" \
              -X POST \
              -d "$PAYLOAD" \
-             "$DISCORD_WEBHOOK_URL" || echo "⚠️ Failed to send Discord failure notification"
+             "$DISCORD_WEBHOOK_URL" || echo "⚠️ failed to send Discord failure notification"
 
   cleanup:
     runs-on: ubuntu-latest
@@ -733,7 +766,6 @@ jobs:
             
           } catch (error) {
             console.error('❌ Artifact cleanup failed:', error.message);
-            // Don't fail the workflow if cleanup fails
             console.log('⚠️ Continuing despite cleanup failure...');
           }
 
