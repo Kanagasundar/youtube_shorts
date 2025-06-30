@@ -41,12 +41,38 @@ jobs:
         sudo apt-get install -y libavfilter-dev libswscale-dev libswresample-dev
         sudo apt-get install -y imagemagick
         # Modify ImageMagick policy to allow text operations
-        if [ -f /etc/ImageMagick-6/policy.xml ]; then
-          sudo sed -i 's/<policy domain="path" rights="none" pattern="@*" \/>/<policy domain="path" rights="read|write" pattern="@*" \/>/' /etc/ImageMagick-6/policy.xml
-        elif [ -f /etc/ImageMagick/policy.xml ]; then
-          sudo sed -i 's/<policy domain="path" rights="none" pattern="@*" \/>/<policy domain="path" rights="read|write" pattern="@*" \/>/' /etc/ImageMagick/policy.xml
-        else
-          echo "⚠️ ImageMagick policy file not found"
+        POLICY_UPDATED=false
+        for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml; do
+          if [ -f "$POLICY_FILE" ]; then
+            sudo sed -i 's/<policy domain="path" rights="none" pattern="@*" \/>/<policy domain="path" rights="read|write" pattern="@*" \/>/' "$POLICY_FILE" || {
+              echo "❌ Failed to modify $POLICY_FILE"
+              exit 1
+            }
+            echo "✅ Modified ImageMagick policy at $POLICY_FILE"
+            POLICY_UPDATED=true
+          fi
+        done
+        if [ "$POLICY_UPDATED" = "false" ]; then
+          echo "⚠️ No ImageMagick policy file found at expected locations"
+          # Create a minimal policy file if none exists
+          sudo mkdir -p /etc/ImageMagick-6
+          sudo bash -c 'cat > /etc/ImageMagick-6/policy.xml << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policymap [
+  <!ELEMENT policymap (policy)+>
+  <!ELEMENT policy EMPTY>
+  <!ATTLIST policy domain CDATA #REQUIRED>
+  <!ATTLIST policy name CDATA #IMPLIED>
+  <!ATTLIST policy pattern CDATA #IMPLIED>
+  <!ATTLIST policy rights CDATA #IMPLIED>
+  <!ATTLIST policy value CDATA #IMPLIED>
+]>
+<policymap>
+  <policy domain="path" rights="read|write" pattern="@*"/>
+</policymap>
+EOF'
+          echo "✅ Created minimal ImageMagick policy file at /etc/ImageMagick-6/policy.xml"
+          POLICY_UPDATED=true
         fi
         ffmpeg -version
         convert -version
@@ -57,12 +83,17 @@ jobs:
         echo "🔍 Verifying system dependencies..."
         ffmpeg -version || { echo "❌ FFmpeg not installed correctly"; exit 1; }
         convert -version || { echo "❌ ImageMagick not installed correctly"; exit 1; }
-        if [ -f /etc/ImageMagick-6/policy.xml ]; then
-          grep 'path.*@.*read|write' /etc/ImageMagick-6/policy.xml && echo "✅ ImageMagick policy updated"
-        elif [ -f /etc/ImageMagick/policy.xml ]; then
-          grep 'path.*@.*read|write' /etc/ImageMagick/policy.xml && echo "✅ ImageMagick policy updated"
-        else
-          echo "⚠️ ImageMagick policy file not found"
+        POLICY_VERIFIED=false
+        for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml; do
+          if [ -f "$POLICY_FILE" ] && grep -q 'path.*@.*read|write' "$POLICY_FILE"; then
+            echo "✅ ImageMagick policy verified at $POLICY_FILE"
+            POLICY_VERIFIED=true
+            break
+          fi
+        done
+        if [ "$POLICY_VERIFIED" = "false" ]; then
+          echo "❌ ImageMagick policy not correctly configured"
+          exit 1
         fi
         echo "✅ FFmpeg and ImageMagick verified"
 
@@ -212,7 +243,7 @@ jobs:
                 subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], 
                              capture_output=True, check=False)
                 subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              '--no-deps', 'moviepy==1.0.3'], 
+                              '--no-deps', 'moviepy==1.0.2'], 
                              capture_output=True, check=True)
                 
                 # Clear module cache
@@ -823,7 +854,7 @@ jobs:
             let failedRunCount = 0;
             
             for (const run of oldRuns) {
-              try {
+              try:
                 # Only delete runs older than 30 days
                 const runDate = new Date(run.created_at);
                 const thirtyDaysAgo = new Date();
@@ -841,7 +872,7 @@ jobs:
                   
                   # Add a small delay to avoid rate limiting
                   await new Promise(resolve => setTimeout(resolve, 200));
-                }
+                
               } catch (deleteError) {
                 console.error(`❌ Failed to delete workflow run #${run.run_number}: ${deleteError.message}`);
                 failedRunCount++;
