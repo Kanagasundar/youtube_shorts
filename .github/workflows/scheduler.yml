@@ -59,6 +59,7 @@ jobs:
           echo "📦 Installing Python dependencies..."
           python -m pip cache purge
           python -m pip install --upgrade pip==24.2 setuptools==70.3.0 wheel==0.43.0
+          pip install --no-cache-dir --force-reinstall numpy==1.26.4
           pip install --no-cache-dir -r requirements.txt
           pip install --no-cache-dir --force-reinstall moviepy==1.0.2 openai==1.40.6
           pip list
@@ -161,7 +162,10 @@ jobs:
           echo "🔍 Checking environment variables..."
           if [ -z "$OPENAI_API_KEY" ]; then
             echo "❌ OPENAI_API_KEY is not set in repository secrets"
+            echo "💡 Please add OPENAI_API_KEY to GitHub Actions secrets at https://github.com/Kanagasundar/youtube_shorts/settings/secrets/actions"
             exit 1
+          else
+            echo "✅ OPENAI_API_KEY is set"
           fi
           cat > .env << EOF
           OPENAI_API_KEY=$OPENAI_API_KEY
