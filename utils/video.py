@@ -1,10 +1,8 @@
 import os
 import logging
+import shutil
 from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip, TextClip, concatenate_videoclips
 from moviepy.config import change_settings
-
-# Configure ImageMagick for MoviePy
-change_settings({"IMAGEMAGICK_BINARY": "/usr/bin/convert"})
 
 # Configure logging
 logging.basicConfig(
@@ -12,6 +10,22 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Dynamically detect ImageMagick binary
+def find_imagemagick_binary():
+    """Find the ImageMagick binary path."""
+    possible_paths = ['/usr/bin/magick', '/usr/bin/convert', '/usr/local/bin/magick', '/usr/local/bin/convert']
+    for path in possible_paths:
+        if shutil.which(path):
+            logger.info(f"Found ImageMagick binary at: {path}")
+            return path
+    logger.error("❌ ImageMagick binary not found. Text rendering will fail.")
+    return None
+
+# Configure ImageMagick for MoviePy
+IMAGEMAGICK_BINARY = find_imagemagick_binary()
+if IMAGEMAGICK_BINARY:
+    change_settings({"IMAGEMAGICK_BINARY": IMAGEMAGICK_BINARY})
 
 def create_video(script, audio_path, thumbnail_path, topic, output_dir="output"):
     """
@@ -64,6 +78,10 @@ def create_video(script, audio_path, thumbnail_path, topic, output_dir="output")
         duration_per_word = audio.duration / len(words)
         for i, word in enumerate(words):
             try:
+                if not IMAGEMAGICK_BINARY:
+                    logger.error("❌ ImageMagick not available. Skipping text clip creation.")
+                    audio.close()
+                    return None
                 text_clip = TextClip(
                     word,
                     fontsize=70,
@@ -77,6 +95,8 @@ def create_video(script, audio_path, thumbnail_path, topic, output_dir="output")
             except Exception as e:
                 logger.error(f"❌ Failed to create text clip for word '{word}': {str(e)}")
                 audio.close()
+                for clip in text_clips:
+                    clip.close()
                 return None
 
         # Load thumbnail as background
@@ -87,6 +107,8 @@ def create_video(script, audio_path, thumbnail_path, topic, output_dir="output")
         except Exception as e:
             logger.error(f"❌ Failed to load thumbnail: {str(e)}")
             audio.close()
+            for clip in text_clips:
+                clip.close()
             return None
 
         # Combine video and audio
@@ -101,6 +123,8 @@ def create_video(script, audio_path, thumbnail_path, topic, output_dir="output")
             video.close()
             audio.close()
             background.close()
+            for clip in text_clips:
+                clip.close()
             return None
 
         # Clean up
