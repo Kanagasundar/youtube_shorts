@@ -148,24 +148,41 @@ jobs:
         for path in sys.path:
             print(f'   {path}')
         
-        # Fix Google namespace package issue
+        # Fix Google namespace package issue - FIXED
         print('\\n🔧 Fixing Google namespace packages...')
-        google_packages = [pkg for pkg in os.listdir(sys.path[0]) if pkg.startswith('google') and os.path.isdir(os.path.join(sys.path[0], pkg))]
-        print(f'Found Google packages: {google_packages}')
+        
+        # Find site-packages directories safely
+        site_packages_dirs = []
+        for path in sys.path:
+            if path and 'site-packages' in path and os.path.exists(path):
+                site_packages_dirs.append(path)
+        
+        print(f'Found site-packages directories: {site_packages_dirs}')
+        
+        # Look for Google packages in site-packages directories
+        google_packages = []
+        for site_dir in site_packages_dirs:
+            try:
+                packages = [pkg for pkg in os.listdir(site_dir) 
+                           if pkg.startswith('google') and os.path.isdir(os.path.join(site_dir, pkg))]
+                google_packages.extend(packages)
+            except (OSError, PermissionError) as e:
+                print(f'Could not list {site_dir}: {e}')
+        
+        print(f'Found Google packages: {list(set(google_packages))}')
         
         # Remove any conflicting __pycache__ directories
         import shutil
-        for site_packages in sys.path:
-            if 'site-packages' in site_packages and os.path.exists(site_packages):
-                google_dir = os.path.join(site_packages, 'google')
-                if os.path.exists(google_dir):
-                    pycache_dir = os.path.join(google_dir, '__pycache__')
-                    if os.path.exists(pycache_dir):
-                        try:
-                            shutil.rmtree(pycache_dir)
-                            print(f'✅ Removed {pycache_dir}')
-                        except Exception as e:
-                            print(f'⚠️ Could not remove {pycache_dir}: {e}')
+        for site_packages in site_packages_dirs:
+            google_dir = os.path.join(site_packages, 'google')
+            if os.path.exists(google_dir):
+                pycache_dir = os.path.join(google_dir, '__pycache__')
+                if os.path.exists(pycache_dir):
+                    try:
+                        shutil.rmtree(pycache_dir)
+                        print(f'✅ Removed {pycache_dir}')
+                    except Exception as e:
+                        print(f'⚠️ Could not remove {pycache_dir}: {e}')
         
         # Force reinstall google-auth
         print('\\n🔧 Force reinstalling google-auth...')
@@ -186,6 +203,16 @@ jobs:
                 # Clear any cached imports
                 if module_name in sys.modules:
                     del sys.modules[module_name]
+                
+                # Clear related modules for complex packages
+                if module_name == 'moviepy':
+                    modules_to_clear = [mod for mod in sys.modules.keys() if 'moviepy' in mod]
+                    for mod in modules_to_clear:
+                        del sys.modules[mod]
+                elif module_name.startswith('google'):
+                    modules_to_clear = [mod for mod in sys.modules.keys() if mod.startswith('google')]
+                    for mod in modules_to_clear:
+                        del sys.modules[mod]
                 
                 # Execute the import statement
                 exec(import_statement)
@@ -671,9 +698,12 @@ jobs:
             const oldArtifacts = artifacts.artifacts
               .filter(artifact => artifact.name.includes('automation-'))
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-              .slice(10);
+              .slice(10); // Keep only the 10 most recent automation artifacts
             
             console.log(`Found ${oldArtifacts.length} old artifacts to delete`);
+            
+            let deletedCount = 0;
+            let failedCount = 0;
             
             for (const artifact of oldArtifacts) {
               try {
@@ -682,21 +712,112 @@ jobs:
                   repo: context.repo.repo,
                   artifact_id: artifact.id
                 });
-                console.log(`✅ Deleted artifact: ${artifact.name}`);
-              } catch (error) {
-                console.log(`⚠️ Failed to delete artifact ${artifact.name}: ${error.message}`);
+                
+                console.log(`✅ Deleted artifact: ${artifact.name} (ID: ${artifact.id})`);
+                deletedCount++;
+                
+                // Add a small delay to avoid rate limiting
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+              } catch (deleteError) {
+                console.error(`❌ Failed to delete artifact ${artifact.name}: ${deleteError.message}`);
+                failedCount++;
               }
             }
             
-            console.log('✅ Artifact cleanup completed');
+            console.log(`✅ Cleanup completed: ${deletedCount} deleted, ${failedCount} failed`);
+            
+            if (deletedCount > 0) {
+              console.log('🎉 Successfully cleaned up old automation artifacts');
+            }
             
           } catch (error) {
-            console.log(`❌ Cleanup failed: ${error.message}`);
+            console.error('❌ Artifact cleanup failed:', error.message);
+            // Don't fail the workflow if cleanup fails
+            console.log('⚠️ Continuing despite cleanup failure...');
           }
 
-    - name: Cleanup summary
-      run: |
-        echo "🧹 Artifact cleanup job completed"
-        echo "📊 Workflow summary:"
-        echo "   - Run number: ${{ github.run_number }}"
-        echo "   - Triggered by: ${{ github.event_name }}"
+    - name: Cleanup old workflow runs
+      uses: actions/github-script@v7
+      with:
+        script: |
+          try {
+            console.log('🧹 Starting workflow run cleanup...');
+            
+            const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+              status: 'completed'
+            });
+            
+            console.log(`Found ${runs.workflow_runs.length} completed workflow runs`);
+            
+            // Keep only the 20 most recent completed runs
+            const oldRuns = runs.workflow_runs
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+              .slice(20);
+            
+            console.log(`Found ${oldRuns.length} old workflow runs to delete`);
+            
+            let deletedRunCount = 0;
+            let failedRunCount = 0;
+            
+            for (const run of oldRuns) {
+              try {
+                // Only delete runs older than 30 days
+                const runDate = new Date(run.created_at);
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                
+                if (runDate < thirtyDaysAgo) {
+                  await github.rest.actions.deleteWorkflowRun({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: run.id
+                  });
+                  
+                  console.log(`✅ Deleted workflow run: #${run.run_number} (ID: ${run.id})`);
+                  deletedRunCount++;
+                  
+                  // Add a small delay to avoid rate limiting
+                  await new Promise(resolve => setTimeout(resolve, 200));
+                }
+                
+              } catch (deleteError) {
+                console.error(`❌ Failed to delete workflow run #${run.run_number}: ${deleteError.message}`);
+                failedRunCount++;
+              }
+            }
+            
+            console.log(`✅ Workflow cleanup completed: ${deletedRunCount} deleted, ${failedRunCount} failed`);
+            
+          } catch (error) {
+            console.error('❌ Workflow run cleanup failed:', error.message);
+            console.log('⚠️ Continuing despite workflow cleanup failure...');
+          }
+
+    - name: Report cleanup summary
+      uses: actions/github-script@v7
+      with:
+        script: |
+          console.log('📊 Cleanup Summary:');
+          console.log('==================');
+          console.log('✅ Artifact cleanup: Completed');
+          console.log('✅ Workflow run cleanup: Completed');
+          console.log('🎯 Repository maintenance finished successfully');
+          
+          // Optional: Create a summary for the workflow
+          const summary = `
+          ## 🧹 Cleanup Summary
+          
+          - **Artifacts**: Cleaned up old automation artifacts (keeping 10 most recent)
+          - **Workflow Runs**: Cleaned up runs older than 30 days (keeping 20 most recent)
+          - **Status**: Maintenance completed successfully
+          
+          > This cleanup job helps maintain repository storage and performance.
+          `;
+          
+          await core.summary
+            .addRaw(summary)
+            .write();
