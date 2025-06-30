@@ -1,44 +1,76 @@
 import os
 import logging
 from openai import OpenAI
+from dotenv import load_dotenv
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-def generate_script(topic: str) -> str:
-    """Generate a short video script for the given topic using OpenAI"""
-    logger.info(f"✍️ Generating script for topic: {topic}")
-    try:
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Load environment variables
+load_dotenv()
+
+def generate_script(topic, category):
+    """
+    Generate a short script for a YouTube Short video using OpenAI's API.
+    
+    Args:
+        topic (str): The topic for the video
+        category (str): The category of the video
         
+    Returns:
+        str: Generated script text
+    """
+    logger.info(f"✍️ Generating script for topic: {topic}")
+    
+    try:
+        # Initialize OpenAI client
+        client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        
+        # Create prompt
         prompt = (
-            f"Create a concise YouTube Shorts script (150-200 characters) for the topic '{topic}'. "
-            "Include a hook, a brief fact or insight, and a call to action. "
-            "Format as: Hook: [hook]. Fact: [fact]. Call to Action: [CTA]."
+            f"Create a concise script (150-250 characters) for a YouTube Short video "
+            f"about '{topic}' in the {category} category. Make it engaging, clear, and "
+            f"suitable for a 15-60 second video."
         )
         
+        # Generate script using OpenAI
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a creative scriptwriter for YouTube Shorts."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=100,
+            max_tokens=60,
             temperature=0.7
         )
         
         script = response.choices[0].message.content.strip()
-        logger.info(f"✅ Script generated successfully ({len(script)} characters)")
+        
+        if len(script) < 100:
+            logger.warning(f"Script too short ({len(script)} characters), retrying...")
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a creative scriptwriter for YouTube Shorts."},
+                    {"role": "user", "content": prompt + " Ensure the script is at least 100 characters."}
+                ],
+                max_tokens=60,
+                temperature=0.8
+            )
+            script = response.choices[0].message.content.strip()
+        
+        logger.info(f"✅ Script generated ({len(script)} characters)")
         return script
     
     except Exception as e:
         logger.error(f"❌ Failed to generate script: {str(e)}")
-        logger.debug("Stack trace:", exc_info=True)
         # Fallback script
-        fallback = (
-            f"Hook: Did you know about {topic.lower()}? "
-            f"Fact: It's a fascinating topic with surprising details! "
-            f"Learn more about {topic.lower()} and why it matters. "
-            "Call to Action: Subscribe for more! #Shorts"
+        fallback_script = (
+            f"Did you know about {topic}? It's fascinating! Learn more in this quick {category} Short!"
         )
-        logger.info(f"✅ Using fallback script ({len(fallback)} characters)")
-        return fallback
+        logger.info(f"✅ Using fallback script ({len(fallback_script)} characters)")
+        return fallback_script

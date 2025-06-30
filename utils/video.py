@@ -4,6 +4,17 @@ from datetime import datetime
 from pathlib import Path
 import moviepy.editor as mpe
 from moviepy.config import change_settings
+import time
+
+# PIL compatibility fix
+try:
+    from PIL import Image
+    # For newer Pillow versions (10.0.0+), ANTIALIAS was removed
+    if not hasattr(Image, 'ANTIALIAS'):
+        Image.ANTIALIAS = Image.LANCZOS
+        logging.info("Applied PIL compatibility fix: Image.ANTIALIAS -> Image.LANCZOS")
+except ImportError:
+    pass
 
 # Configure logging
 logging.basicConfig(
@@ -58,7 +69,17 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
         
         # Load and resize thumbnail to YouTube Shorts resolution (1080x1920)
         logger.info(f"🖼️ Loading thumbnail: {thumbnail_path}")
-        thumbnail = mpe.ImageClip(thumbnail_path).set_duration(duration).resize((1080, 1920))
+        try:
+            # Try using resize with method parameter for better compatibility
+            thumbnail = (mpe.ImageClip(thumbnail_path)
+                        .set_duration(duration)
+                        .resize((1080, 1920), resample='lanczos'))
+        except Exception as resize_error:
+            logger.warning(f"⚠️ Resize with lanczos failed: {resize_error}")
+            # Fallback to basic resize
+            thumbnail = (mpe.ImageClip(thumbnail_path)
+                        .set_duration(duration)
+                        .resize((1080, 1920)))
         
         # Split script into words for text overlays
         words = script_text.split()
