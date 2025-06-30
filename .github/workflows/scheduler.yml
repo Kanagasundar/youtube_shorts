@@ -60,7 +60,7 @@ jobs:
         python -m pip cache purge
         python -m pip install --upgrade pip==24.2 setuptools==70.3.0 wheel==0.43.0
         pip install --no-cache-dir -r requirements.txt
-        pip install --no-cache-dir openai==1.40.6  # Ensure correct OpenAI version
+        pip install --no-cache-dir --force-reinstall openai==1.40.6  # Force reinstall OpenAI
         pip list  # Log installed packages for debugging
         echo "✅ All dependencies installed successfully"
 
@@ -468,11 +468,21 @@ jobs:
         echo "   - YouTube credentials valid: ${{ env.YOUTUBE_CREDENTIALS_VALID }}"
         echo "   - Upload enabled: ${{ env.UPLOAD_TO_YOUTUBE }}"
         echo "   - Video privacy: $VIDEO_PRIVACY"
+        echo "🔍 Environment variables (sensitive values masked):"
+        python -c "
+        import os
+        for key, value in sorted(os.environ.items()):
+            if key in ['OPENAI_API_KEY', 'YOUTUBE_CREDENTIALS', 'YOUTUBE_TOKEN', 'DISCORD_WEBHOOK_URL']:
+                print(f'   - {key}: ***')
+            else:
+                print(f'   - {key}: {value}')
+        "
         
         # Final check and potential fix before running main script
         python -c "
         import sys
         import subprocess
+        import traceback
         
         print('🔧 Final pre-execution checks...')
         
@@ -534,7 +544,18 @@ jobs:
         "
         
         set -o pipefail
-        python main.py 2>&1 | tee automation.log
+        python -c "
+        import sys
+        import traceback
+        try:
+            import main
+            main.main()
+        except Exception as e:
+            print('❌ Main script failed with error:', str(e))
+            print('🔍 Stack trace:')
+            traceback.print_exc()
+            sys.exit(1)
+        " 2>&1 | tee automation.log
         EXIT_CODE=${PIPESTATUS[0]}
         
         echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
