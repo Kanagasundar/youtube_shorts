@@ -34,7 +34,7 @@ def generate_script(topic: str, length: str = "short", max_retries: int = int(os
         logger.info(f"Python version: {sys.version}")
         logger.info(f"Python executable: {sys.executable}")
         logger.debug(f"Environment variables: { {k: '***' if k == 'OPENAI_API_KEY' else v for k, v in os.environ.items()} }")
-        client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))  # Removed proxies parameter
         logger.info(f"OpenAI client initialized: {client}")
         
         prompt = f"""

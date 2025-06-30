@@ -16,7 +16,6 @@ google-auth==2.34.0
 google-auth-oauthlib==1.2.1
 google-auth-httplib2==0.2.0
 googleapis-common-protos==1.65.0
-google-api-core==2.19.1
 google-api-python-client==2.140.0
 Pillow==10.4.0
 decorator==4.4.2
@@ -24,7 +23,7 @@ imageio==2.34.2
 imageio-ffmpeg==0.5.1
 proglog==0.1.10
 tqdm==4.66.5
-moviepy==1.0.3
+moviepy==1.0.2
 gTTS==2.5.3
 pydub==0.25.1
 openai==1.40.6
