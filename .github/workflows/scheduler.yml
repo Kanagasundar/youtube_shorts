@@ -57,20 +57,20 @@ jobs:
           # Create a minimal policy file if none exists
           sudo mkdir -p /etc/ImageMagick-6
           sudo bash -c 'cat > /etc/ImageMagick-6/policy.xml << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE policymap [
-  <!ELEMENT policymap (policy)+>
-  <!ELEMENT policy EMPTY>
-  <!ATTLIST policy domain CDATA #REQUIRED>
-  <!ATTLIST policy name CDATA #IMPLIED>
-  <!ATTLIST policy pattern CDATA #IMPLIED>
-  <!ATTLIST policy rights CDATA #IMPLIED>
-  <!ATTLIST policy value CDATA #IMPLIED>
-]>
-<policymap>
-  <policy domain="path" rights="read|write" pattern="@*"/>
-</policymap>
-EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE policymap [
+            <!ELEMENT policymap (policy)+>
+            <!ELEMENT policy EMPTY>
+            <!ATTLIST policy domain CDATA #REQUIRED>
+            <!ATTLIST policy name CDATA #IMPLIED>
+            <!ATTLIST policy pattern CDATA #IMPLIED>
+            <!ATTLIST policy rights CDATA #IMPLIED>
+            <!ATTLIST policy value CDATA #IMPLIED>
+          ]>
+          <policymap>
+            <policy domain="path" rights="read|write" pattern="@*"/>
+          </policymap>
+          EOF'
           echo "✅ Created minimal ImageMagick policy file at /etc/ImageMagick-6/policy.xml"
           POLICY_UPDATED=true
         fi
