@@ -31,10 +31,20 @@ def create_video(script: str, audio_path: str, thumbnail_path: str, topic: str) 
     video_path = os.path.join(output_dir, f'youtube_short_{timestamp}.mp4')
     simple_video_path = os.path.join(output_dir, f'youtube_short_simple_{timestamp}.mp4')
 
-    # Load audio and get duration outside try block
+    # Validate input paths
+    if not os.path.exists(audio_path):
+        logger.error(f"❌ Audio file not found: {audio_path}")
+        return None
+    if not os.path.exists(thumbnail_path):
+        logger.error(f"❌ Thumbnail file not found: {thumbnail_path}")
+        return None
+
+    # Load audio and get duration
     try:
+        logger.info(f"Loading audio file: {audio_path}")
         audio = VideoFileClip(audio_path)
         duration = audio.duration
+        logger.info(f"✅ Audio loaded, duration: {duration:.1f} seconds")
     except Exception as e:
         logger.error(f"❌ Failed to load audio: {str(e)}")
         logger.debug("Stack trace:", exc_info=True)
