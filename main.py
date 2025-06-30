@@ -519,8 +519,9 @@ Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()
     
     def create_video_step(script, audio_path, thumbnail_path):
         logger.info("🎬 Creating video...")
-        video_path = create_video(script, audio_path, thumbnail_path, topic)
-        if not os.path.exists(video_path):
+        output_dir = str(OUTPUT_DIR)
+        video_path = create_video(audio_path, thumbnail_path, output_dir, script)
+        if not video_path or not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not created: {video_path}")
         cleanup_files.append(video_path)
         return video_path
@@ -572,7 +573,7 @@ def upload_to_youtube(video_path: str, thumbnail_path: str, script: str, topic: 
             )
             
             if not video_id:
-                raise RuntimeError("Video upload returned no video ID")
+                raise RuntimeError("Video upload returned no ID")
             
             return video_id, title
         

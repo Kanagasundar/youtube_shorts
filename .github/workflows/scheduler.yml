@@ -1,3 +1,4 @@
+```yaml
 name: YouTube Automation
 
 on:
@@ -131,11 +132,21 @@ jobs:
 
     - name: Log script contents for debugging
       run: |
-        echo "🔍 Logging contents of main.py and utils/scripting.py..."
+        echo "🔍 Logging contents of main.py and utils/*.py..."
         echo "📄 main.py:"
         cat main.py || echo "❌ main.py not found"
         echo "📄 utils/scripting.py:"
         cat utils/scripting.py || echo "❌ utils/scripting.py not found"
+        echo "📄 utils/video.py:"
+        cat utils/video.py || echo "❌ utils/video.py not found"
+        echo "📄 utils/youtube_uploader.py:"
+        cat utils/youtube_uploader.py || echo "❌ utils/youtube_uploader.py not found"
+        echo "📄 utils/voice.py:"
+        cat utils/voice.py || echo "❌ utils/voice.py not found"
+        echo "📄 utils/thumbnail_generator.py:"
+        cat utils/thumbnail_generator.py || echo "❌ utils/thumbnail_generator.py not found"
+        echo "📄 utils/topic_rotator.py:"
+        cat utils/topic_rotator.py || echo "❌ utils/topic_rotator.py not found"
         echo "✅ Script contents logged"
 
     - name: Fix namespace packages and verify installations
@@ -417,6 +428,8 @@ jobs:
         EOL
         else
           echo "❌ YOUTUBE_CREDENTIALS not available through either method"
+          echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
+          exit 1
         fi
         
         if [ -f credentials.json ]; then
@@ -427,45 +440,47 @@ jobs:
             if jq empty credentials.json > /dev/null 2>&1; then
               echo "✅ credentials.json is valid JSON"
               
-              if jq -e '.installed.type, .installed.project_id, .installed.client_id' credentials.json > /dev/null 2>&1; then
-                echo "✅ credentials.json contains required Google API fields (installed app format)"
-                echo "YOUTUBE_CREDENTIALS_VALID=true" >> $GITHUB_ENV
-              elif jq -e '.type, .project_id, .client_id' credentials.json > /dev/null 2>&1; then
-                echo "✅ credentials.json contains required Google API fields (service account format)"
+              if jq -e '.installed.type // .web.type // .type' credentials.json > /dev/null 2>&1; then
+                echo "✅ credentials.json contains required Google API fields"
                 echo "YOUTUBE_CREDENTIALS_VALID=true" >> $GITHUB_ENV
               else
                 echo "❌ credentials.json missing required Google API fields"
                 echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
+                exit 1
               fi
             else
               echo "❌ credentials.json is not valid JSON"
               echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
+              exit 1
             fi
           else
             echo "❌ credentials.json file is too small (likely empty)"
             echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
+            exit 1
           fi
         else
           echo "❌ credentials.json file was not created"
           echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
+          exit 1
         fi
         
         if [ -n "$YOUTUBE_TOKEN" ] && [ "$YOUTUBE_TOKEN" != "" ]; then
           echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle 2>/dev/null
           if [ -f token.pickle ] && [ -s token.pickle ]; then
-            echo "✅ YouTube token restored successfully"
+            echo "✅ YouTube token restored successfully (size: $(wc -c < token.pickle) bytes)"
+            ls -l token.pickle
+            file token.pickle
+            echo "YOUTUBE_TOKEN_VALID=true" >> $GITHUB_ENV
           else
-            echo "⚠️ YouTube token restoration failed"
-          fi
-        elif [ "${{ secrets.YOUTUBE_TOKEN }}" != "" ]; then
-          echo "${{ secrets.YOUTUBE_TOKEN }}" | base64 -d > token.pickle 2>/dev/null
-          if [ -f token.pickle ] && [ -s token.pickle ]; then
-            echo "✅ YouTube token restored via direct secret"
-          else
-            echo "⚠️ YouTube token restoration failed via direct secret"
+            echo "❌ YouTube token restoration failed"
+            echo "🔍 YOUTUBE_TOKEN content (first 100 chars): ${YOUTUBE_TOKEN:0:100}"
+            echo "YOUTUBE_TOKEN_VALID=false" >> $GITHUB_ENV
+            exit 1
           fi
         else
-          echo "ℹ️ No YouTube token found (normal for first run)"
+          echo "❌ No YOUTUBE_TOKEN secret found"
+          echo "YOUTUBE_TOKEN_VALID=false" >> $GITHUB_ENV
+          exit 1
         fi
         
         echo "✅ YouTube credentials setup completed"
@@ -476,9 +491,10 @@ jobs:
         ENABLE_UPLOAD_VAR="${{ vars.ENABLE_UPLOAD || 'true' }}"
         echo "📋 Configuration check:"
         echo "   - YOUTUBE_CREDENTIALS_VALID: ${{ env.YOUTUBE_CREDENTIALS_VALID }}"
+        echo "   - YOUTUBE_TOKEN_VALID: ${{ env.YOUTUBE_TOKEN_VALID }}"
         echo "   - ENABLE_UPLOAD variable: $ENABLE_UPLOAD_VAR"
         
-        if [ "${{ env.YOUTUBE_CREDENTIALS_VALID }}" = "true" ] && [ "$ENABLE_UPLOAD_VAR" = "true" ]; then
+        if [ "${{ env.YOUTUBE_CREDENTIALS_VALID }}" = "true" ] && [ "${{ env.YOUTUBE_TOKEN_VALID }}" = "true" ] && [ "$ENABLE_UPLOAD_VAR" = "true" ]; then
           echo "✅ Upload will be enabled"
           echo "UPLOAD_TO_YOUTUBE=true" >> $GITHUB_ENV
         else
@@ -546,6 +562,7 @@ jobs:
         echo "📁 Working directory: $(pwd)"
         echo "📋 Final configuration:"
         echo "   - YouTube credentials valid: ${{ env.YOUTUBE_CREDENTIALS_VALID }}"
+        echo "   - YouTube token valid: ${{ env.YOUTUBE_TOKEN_VALID }}"
         echo "   - Upload enabled: ${{ env.UPLOAD_TO_YOUTUBE }}"
         echo "   - Video privacy: $VIDEO_PRIVACY"
         echo "🔍 Environment variables (sensitive values masked):"
@@ -694,229 +711,3 @@ jobs:
         VIDEO_ID=$(echo "$VIDEO_ID" | grep -E '^[a-zA-Z0-9_-]{11}$' || echo "")
         
         echo "video_title=$VIDEO_TITLE" >> $GITHUB_OUTPUT
-        echo "video_id=$VIDEO_ID" >> $GITHUB_OUTPUT
-        echo "video_category=$VIDEO_CATEGORY" >> $GITHUB_OUTPUT
-
-    - name: Send success notification
-      if: success() && env.DISCORD_NOTIFICATIONS_ENABLED == 'true'
-      env:
-        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      run: |
-        VIDEO_TITLE="${{ steps.video_info.outputs.video_title }}"
-        VIDEO_ID="${{ steps.video_info.outputs.video_id }}"
-        VIDEO_CATEGORY="${{ steps.video_info.outputs.video_category }}"
-        UPLOAD_STATUS="${{ env.UPLOAD_TO_YOUTUBE == 'true' && 'Uploaded' || 'Generated (Upload Disabled)' }}"
-        
-        if [ -n "$VIDEO_ID" ] && [ "$VIDEO_ID" != "" ]; then
-          PAYLOAD=$(cat << EOF
-        {
-          "embeds": [{
-            "title": "✅ YouTube Video Published Successfully!",
-            "description": "**Title:** ${VIDEO_TITLE}\n**Category:** ${VIDEO_CATEGORY}\n**Video ID:** ${VIDEO_ID}\n**URL:** https://www.youtube.com/watch?v=${VIDEO_ID}",
-            "color": 5763719,
-            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
-            "footer": {
-              "text": "YouTube Automation • Run #${{ github.run_number }}"
-            }
-          }]
-        }
-        EOF
-          )
-        else
-          PAYLOAD=$(cat << EOF
-        {
-          "embeds": [{
-            "title": "✅ YouTube Video Generated Successfully!",
-            "description": "**Title:** ${VIDEO_TITLE}\n**Category:** ${VIDEO_CATEGORY}\n**Status:** ${UPLOAD_STATUS}",
-            "color": 16776960,
-            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
-            "footer": {
-              "text": "YouTube Automation • Run #${{ github.run_number }}"
-            }
-          }]
-        }
-        EOF
-          )
-        fi
-        
-        curl -H "Content-Type: application/json" \
-             -X POST \
-             -d "$PAYLOAD" \
-             "$DISCORD_WEBHOOK_URL" || echo "⚠️ Failed to send Discord notification"
-
-    - name: Send failure notification
-      if: failure() && env.DISCORD_NOTIFICATIONS_ENABLED == 'true'
-      env:
-        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      run: |
-        ERROR_MSG=$(tail -10 automation.log 2>/dev/null | tr '\n' ' ' | sed 's/"/\\"/g' | head -c 400 || echo "Unknown error - check logs")
-        STEP_NAME=$(echo "${{ github.workflow }}" | head -c 50)
-        
-        PAYLOAD=$(cat << EOF
-        {
-          "embeds": [{
-            "title": "❌ YouTube Automation Failed",
-            "description": "**Error:** ${ERROR_MSG}\n**Run:** #${{ github.run_number }}\n**Workflow:** ${STEP_NAME}",
-            "color": 15158332,
-            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
-            "footer": {
-              "text": "Check the Actions tab for detailed logs"
-            }
-          }]
-        }
-        EOF
-        )
-        
-        curl -H "Content-Type: application/json" \
-             -X POST \
-             -d "$PAYLOAD" \
-             "$DISCORD_WEBHOOK_URL" || echo "⚠️ failed to send Discord failure notification"
-
-  cleanup:
-    runs-on: ubuntu-latest
-    needs: create-and-upload-video
-    if: always()
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Cleanup old artifacts
-      uses: actions/github-script@v7
-      with:
-        script: |
-          try {
-            console.log('🧹 Starting artifact cleanup...');
-            
-            const { data: artifacts } = await github.rest.actions.listArtifactsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100
-            });
-            
-            console.log(`Found ${artifacts.artifacts.length} total artifacts`);
-            
-            const oldArtifacts = artifacts.artifacts
-              .filter(artifact => artifact.name.includes('automation-'))
-              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-              .slice(10); # Keep only the 10 most recent automation artifacts
-            
-            console.log(`Found ${oldArtifacts.length} old artifacts to delete`);
-            
-            let deletedCount = 0;
-            let failedCount = 0;
-            
-            for (const artifact of oldArtifacts) {
-              try {
-                await github.rest.actions.deleteArtifact({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  artifact_id: artifact.id
-                });
-                
-                console.log(`✅ Deleted artifact: ${artifact.name} (ID: ${artifact.id})`);
-                deletedCount++;
-                
-                # Add a small delay to avoid rate limiting
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-              } catch (deleteError) {
-                console.error(`❌ Failed to delete artifact ${artifact.name}: ${deleteError.message}`);
-                failedCount++;
-              }
-            }
-            
-            console.log(`✅ Cleanup completed: ${deletedCount} deleted, ${failedCount} failed`);
-            
-            if (deletedCount > 0) {
-              console.log('🎉 Successfully cleaned up old automation artifacts');
-            }
-            
-          } catch (error) {
-            console.error('❌ Artifact cleanup failed:', error.message);
-            console.log('⚠️ Continuing despite cleanup failure...');
-          }
-
-    - name: Cleanup old workflow runs
-      uses: actions/github-script@v7
-      with:
-        script: |
-          try {
-            console.log('🧹 Starting workflow run cleanup...');
-            
-            const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100,
-              status: 'completed'
-            });
-            
-            console.log(`Found ${runs.workflow_runs.length} completed workflow runs`);
-            
-            # Keep only the 20 most recent completed runs
-            const oldRuns = runs.workflow_runs
-              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-              .slice(20);
-            
-            console.log(`Found ${oldRuns.length} old workflow runs to delete`);
-            
-            let deletedRunCount = 0;
-            let failedRunCount = 0;
-            
-            for (const run of oldRuns) {
-              try:
-                # Only delete runs older than 30 days
-                const runDate = new Date(run.created_at);
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                
-                if (runDate < thirtyDaysAgo) {
-                  await github.rest.actions.deleteWorkflowRun({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    run_id: run.id
-                  });
-                  
-                  console.log(`✅ Deleted workflow run: #${run.run_number} (ID: ${run.id})`);
-                  deletedRunCount++;
-                  
-                  # Add a small delay to avoid rate limiting
-                  await new Promise(resolve => setTimeout(resolve, 200));
-                
-              } catch (deleteError) {
-                console.error(`❌ Failed to delete workflow run #${run.run_number}: ${deleteError.message}`);
-                failedRunCount++;
-              }
-            }
-            
-            console.log(`✅ Workflow cleanup completed: ${deletedRunCount} deleted, ${failedRunCount} failed`);
-            
-          } catch (error) {
-            console.error('❌ Workflow run cleanup failed:', error.message);
-            console.log('⚠️ Continuing despite workflow cleanup failure...');
-          }
-
-    - name: Report cleanup summary
-      uses: actions/github-script@v7
-      with:
-        script: |
-          console.log('📊 Cleanup Summary:');
-          console.log('==================');
-          console.log('✅ Artifact cleanup: Completed');
-          console.log('✅ Workflow run cleanup: Completed');
-          console.log('🎯 Repository maintenance finished successfully');
-          
-          # Optional: Create a summary for the workflow
-          const summary = `
-          ## 🧹 Cleanup Summary
-          
-          - **Artifacts**: Cleaned up old automation artifacts (keeping 10 most recent)
-          - **Workflow Runs**: Cleaned up runs older than 30 days (keeping 20 most recent)
-          - **Status**: Maintenance completed successfully
-          
-          > This cleanup job helps maintain repository storage and performance.
-          `;
-          
-          await core.summary
-            .addRaw(summary)
-            .write();
