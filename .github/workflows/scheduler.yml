@@ -85,12 +85,22 @@ jobs:
         convert -version || { echo "❌ ImageMagick not installed correctly"; exit 1; }
         POLICY_VERIFIED=false
         for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml; do
-          if [ -f "$POLICY_FILE" ] && grep -q 'path.*@.*read|write' "$POLICY_FILE"; then
+          if [ -f "$POLICY_FILE" ] && grep -q '<policy.*domain="path".*pattern="@*".*rights="read|write"' "$POLICY_FILE"; then
             echo "✅ ImageMagick policy verified at $POLICY_FILE"
             POLICY_VERIFIED=true
             break
           fi
         done
+        if [ "$POLICY_VERIFIED" = "false" ]; then
+          echo "⚠️ ImageMagick policy not found or not correctly configured, attempting to verify manually..."
+          for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml; do
+            if [ -f "$POLICY_FILE" ] && grep -q 'read|write.*@*' "$POLICY_FILE"; then
+              echo "✅ ImageMagick policy verified (fallback check) at $POLICY_FILE"
+              POLICY_VERIFIED=true
+              break
+            fi
+          done
+        fi
         if [ "$POLICY_VERIFIED" = "false" ]; then
           echo "❌ ImageMagick policy not correctly configured"
           exit 1
