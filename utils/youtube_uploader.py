@@ -66,6 +66,51 @@ class YouTubeUploader:
             self.youtube = None
             raise RuntimeError("YouTube authentication failed")
     
+    def generate_video_metadata(self, topic: str, category: str) -> dict:
+        """Generate metadata for the YouTube video based on topic and category"""
+        logger.info(f"📝 Generating video metadata for topic: {topic}, category: {category}")
+        try:
+            title = f"{topic} | {category} Short"
+            if len(title) > 100:
+                title = title[:97] + "..."  # YouTube title limit is 100 characters
+            
+            description = (
+                f"Discover {topic.lower()} in this quick {category} Short! "
+                f"Learn something new and exciting about {topic.lower()}. "
+                "Subscribe and hit the bell for more fascinating content! "
+                f"#{category.lower()} #youtubeshorts #{topic.replace(' ', '').lower()}"
+            )
+            if len(description) > 5000:
+                description = description[:4997] + "..."  # YouTube description limit is 5000 characters
+            
+            tags = [
+                "youtube shorts",
+                category.lower(),
+                topic.lower().replace(" ", ""),
+                "short video",
+                f"{category.lower()} facts"
+            ]
+            
+            metadata = {
+                'title': title,
+                'description': description,
+                'tags': tags,
+                'category_id': '24'  # Entertainment, suitable for Science Shorts
+            }
+            
+            logger.info("✅ Video metadata generated successfully")
+            return metadata
+        
+        except Exception as e:
+            logger.error(f"❌ Failed to generate video metadata: {str(e)}")
+            logger.debug("Stack trace:", exc_info=True)
+            return {
+                'title': topic[:100],
+                'description': f"Explore {topic} in this YouTube Short! #{category.lower()} #youtubeshorts",
+                'tags': ['youtube shorts', category.lower()],
+                'category_id': '24'
+            }
+    
     def upload_video(self, video_path: str, title: str, description: str, category_id: str = '24', 
                     tags: list = None, privacy_status: str = 'public', max_retries: int = 5):
         """Upload a video to YouTube with retry logic"""
