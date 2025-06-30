@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       topic_override:
-        description: 'Override today''s topic (optional)'
+        description: 'Override topic (optional)'
         required: false
         type: string
       category_override:
@@ -15,923 +15,98 @@ on:
         type: string
 
 jobs:
-  create-and-upload-video:
+  youtube-automation:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
 
     steps:
-    - name: Checkout repository
+    - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Set up Python
+    - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         cache: 'pip'
 
-    - name: Install system dependencies
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y ffmpeg espeak espeak-data libespeak1 libespeak-dev
-        sudo apt-get install -y python3-dev python3-pip python3-venv
-        sudo apt-get install -y libffi-dev libssl-dev libxml2-dev libxslt-dev
-        sudo apt-get install -y build-essential libasound2-dev portaudio19-dev
-        sudo apt-get install -y jq
-        sudo apt-get install -y libavcodec-dev libavformat-dev libavdevice-dev
-        sudo apt-get install -y libavfilter-dev libswscale-dev libswresample-dev
-        sudo apt-get install -y imagemagick
-        # Debug: List possible policy file locations
-        echo "🔍 Searching for ImageMagick policy files..."
-        find /etc -name "policy.xml" -type f || echo "⚠️ No policy files found"
-        # Modify ImageMagick policy to allow text operations
-        POLICY_UPDATED=false
-        for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml /usr/local/etc/ImageMagick-6/policy.xml; do
-          if [ -f "$POLICY_FILE" ]; then
-            echo "📄 Policy file found at $POLICY_FILE"
-            echo "🔍 Current policy content:"
-            cat "$POLICY_FILE" || echo "⚠️ Could not read $POLICY_FILE"
-            # Backup original policy file
-            sudo cp "$POLICY_FILE" "${POLICY_FILE}.bak"
-            # Remove any existing restrictive @* policy
-            sudo sed -i '/<policy domain="path" rights="none" pattern="@*"/d' "$POLICY_FILE" || {
-              echo "❌ Failed to remove restrictive policy in $POLICY_FILE"
-              exit 1
-            }
-            # Add permissive policy
-            sudo bash -c "echo '<policy domain=\"path\" rights=\"read|write\" pattern=\"@*\"/>' >> \"$POLICY_FILE\"" || {
-              echo "❌ Failed to append permissive policy to $POLICY_FILE"
-              exit 1
-            }
-            echo "🔍 Updated policy content:"
-            cat "$POLICY_FILE" || echo "⚠️ Could not read updated $POLICY_FILE"
-            echo "✅ Modified ImageMagick policy at $POLICY_FILE"
-            POLICY_UPDATED=true
-            break
-          fi
-        done
-        if [ "$POLICY_UPDATED" = "false" ]; then
-          echo "⚠️ No ImageMagick policy file found at expected locations"
-          # Create a minimal policy file
-          sudo mkdir -p /etc/ImageMagick-6
-          sudo bash -c 'cat > /etc/ImageMagick-6/policy.xml << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE policymap [
-            <!ELEMENT policymap (policy)+>
-            <!ELEMENT policy EMPTY>
-            <!ATTLIST policy domain CDATA #REQUIRED>
-            <!ATTLIST policy name CDATA #IMPLIED>
-            <!ATTLIST policy pattern CDATA #IMPLIED>
-            <!ATTLIST policy rights CDATA #IMPLIED>
-            <!ATTLIST policy value CDATA #IMPLIED>
-          ]>
-          <policymap>
-            <policy domain="path" rights="read|write" pattern="@*"/>
-          </policymap>
-          EOF'
-          echo "🔍 Created policy file content:"
-          cat /etc/ImageMagick-6/policy.xml || echo "⚠️ Could not read created policy file"
-          echo "✅ Created minimal ImageMagick policy file at /etc/ImageMagick-6/policy.xml"
-          POLICY_UPDATED=true
-        fi
-        ffmpeg -version
-        convert -version
-        echo "✅ System dependencies installed"
+        sudo apt-get install -y ffmpeg imagemagick
+        pip install --upgrade pip
+        pip install -r requirements.txt
 
-    - name: Verify system dependencies
-      run: |
-        echo "🔍 Verifying system dependencies..."
-        ffmpeg -version || { echo "❌ FFmpeg not installed correctly"; exit 1; }
-        convert -version || { echo "❌ ImageMagick not installed correctly"; exit 1; }
-        POLICY_VERIFIED=false
-        for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml /usr/local/etc/ImageMagick-6/policy.xml; do
-          if [ -f "$POLICY_FILE" ]; then
-            echo "🔍 Verifying policy at $POLICY_FILE"
-            cat "$POLICY_FILE" || echo "⚠️ Could not read $POLICY_FILE"
-            if grep -q 'path.*@.*read|write' "$POLICY_FILE"; then
-              echo "✅ ImageMagick policy verified at $POLICY_FILE"
-              POLICY_VERIFIED=true
-              break
-            fi
-          fi
-        done
-        if [ "$POLICY_VERIFIED" = "false" ]; then
-          echo "❌ ImageMagick policy not correctly configured"
-          echo "🔍 Available policy files:"
-          find /etc -name "policy.xml" -type f || echo "⚠️ No policy files found"
-          exit 1
-        fi
-        echo "✅ FFmpeg and ImageMagick verified"
-
-    - name: Check disk space
-      run: |
-        echo "🔍 Checking available disk space..."
-        df -h
-        echo "✅ Disk space check completed"
-
-    - name: Install Python dependencies
-      run: |
-        echo "📦 Installing Python dependencies..."
-        python -m pip cache purge
-        python -m pip install --upgrade pip==24.2 setuptools==70.3.0 wheel==0.43.0
-        pip install --no-cache-dir -r requirements.txt
-        pip install --no-cache-dir --force-reinstall moviepy==1.0.2 openai==1.40.6 numpy==1.26.4 python-dotenv==1.0.1
-        pip list  # Log installed packages for debugging
-        echo "✅ All dependencies installed successfully"
-
-    - name: Check for proxies references
-      run: |
-        echo "🔍 Checking for 'proxies' in Python files..."
-        git grep -i "proxies" *.py utils/*.py || echo "No 'proxies' references found"
-        echo "✅ Proxies check completed"
-
-    - name: Log script contents for debugging
-      run: |
-        echo "🔍 Logging contents of main.py and utils/scripting.py..."
-        echo "📄 main.py:"
-        cat main.py || echo "❌ main.py not found"
-        echo "📄 utils/scripting.py:"
-        cat utils/scripting.py || echo "❌ utils/scripting.py not found"
-        echo "✅ Script contents logged"
-
-    - name: Fix namespace packages and verify installations
-      run: |
-        echo "🔧 Fixing namespace packages and performing comprehensive verification..."
-        python -c "
-        import sys
-        import subprocess
-        import importlib
-        import os
-        
-        print('🐍 Python version:', sys.version)
-        print('🔍 Python executable:', sys.executable)
-        print('📁 Python path:')
-        for path in sys.path:
-            print(f'   {path}')
-        
-        # Fix Google namespace package issue
-        print('\n🔧 Fixing Google namespace packages...')
-        
-        # Find site-packages directories safely
-        site_packages_dirs = []
-        for path in sys.path:
-            if path and 'site-packages' in path and os.path.exists(path):
-                site_packages_dirs.append(path)
-        
-        print(f'Found site-packages directories: {site_packages_dirs}')
-        
-        # Look for Google packages in site-packages directories
-        google_packages = []
-        for site_dir in site_packages_dirs:
-            try:
-                packages = [pkg for pkg in os.listdir(site_dir) 
-                           if pkg.startswith('google') and os.path.isdir(os.path.join(site_dir, pkg))]
-                google_packages.extend(packages)
-            except (OSError, PermissionError) as e:
-                print(f'Could not list {site_dir}: {e}')
-        
-        print(f'Found Google packages: {list(set(google_packages))}')
-        
-        # Remove any conflicting __pycache__ directories
-        import shutil
-        for site_packages in site_packages_dirs:
-            google_dir = os.path.join(site_packages, 'google')
-            if os.path.exists(google_dir):
-                pycache_dir = os.path.join(google_dir, '__pycache__')
-                if os.path.exists(pycache_dir):
-                    try:
-                        shutil.rmtree(pycache_dir)
-                        print(f'✅ Removed {pycache_dir}')
-                    except Exception as e:
-                        print(f'⚠️ Could not remove {pycache_dir}: {e}')
-        
-        # Test packages with enhanced error handling
-        test_results = []
-        
-        def test_import_advanced(module_name, import_statement, display_name=None):
-            if display_name is None:
-                display_name = module_name
-                
-            try:
-                # Clear any cached imports
-                if module_name in sys.modules:
-                    del sys.modules[module_name]
-                
-                # Clear related modules for complex packages
-                if module_name == 'moviepy':
-                    modules_to_clear = [mod for mod in sys.modules.keys() if 'moviepy' in mod]
-                    for mod in modules_to_clear:
-                        del sys.modules[mod]
-                elif module_name.startswith('google'):
-                    modules_to_clear = [mod for mod in sys.modules.keys() if mod.startswith('google')]
-                    for mod in modules_to_clear:
-                        del sys.modules[mod]
-                elif module_name == 'openai':
-                    modules_to_clear = [mod for mod in sys.modules.keys() if 'openai' in mod]
-                    for mod in modules_to_clear:
-                        del sys.modules[mod]
-                
-                # Execute the import statement
-                exec(import_statement)
-                print(f'✅ {display_name}: Import successful')
-                test_results.append((display_name, True, 'OK'))
-                return True
-            except Exception as e:
-                print(f'❌ {display_name}: {str(e)}')
-                test_results.append((display_name, False, str(e)))
-                return False
-        
-        # Test all critical packages with proper import statements
-        print('\n🔍 Testing imports with advanced verification...')
-        test_import_advanced('numpy', 'import numpy')
-        test_import_advanced('PIL', 'from PIL import Image')
-        test_import_advanced('openai', 'import openai')
-        test_import_advanced('gtts', 'from gtts import gTTS')
-        test_import_advanced('pydub', 'from pydub import AudioSegment')
-        test_import_advanced('requests', 'import requests')
-        
-        # Special handling for moviepy with multiple fallback strategies
-        print('\n🎬 Testing MoviePy with fallback strategies...')
-        moviepy_success = False
-        
-        # Strategy 1: Direct import
-        try:
-            import moviepy
-            import moviepy.editor as mpe
-            print(f'✅ MoviePy Strategy 1 (direct): Success')
-            moviepy_success = True
-        except Exception as e:
-            print(f'❌ MoviePy Strategy 1 failed: {e}')
-            
-            # Strategy 2: Reinstall and retry
-            try:
-                print('🔧 MoviePy Strategy 2: Reinstalling...')
-                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], 
-                             capture_output=True, check=False)
-                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              '--no-deps', 'moviepy==1.0.2'], 
-                             capture_output=True, check=True)
-                
-                # Clear module cache
-                for mod in list(sys.modules.keys()):
-                    if 'moviepy' in mod:
-                        del sys.modules[mod]
-                
-                import moviepy.editor as mpe
-                print('✅ MoviePy Strategy 2 (reinstall): Success')
-                moviepy_success = True
-            except Exception as e2:
-                print(f'❌ MoviePy Strategy 2 failed: {e2}')
-                
-                # Strategy 3: Install different version
-                try:
-                    print('🔧 MoviePy Strategy 3: Different version...')
-                    subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                                  '--force-reinstall', 'moviepy==1.0.2'], 
-                                 capture_output=True, check=True)
-                    
-                    # Clear module cache again
-                    for mod in list(sys.modules.keys()):
-                        if 'moviepy' in mod:
-                            del sys.modules[mod]
-                    
-                    import moviepy.editor as mpe
-                    print('✅ MoviePy Strategy 3 (v1.0.2): Success')
-                    moviepy_success = True
-                except Exception as e3:
-                    print(f'❌ MoviePy Strategy 3 failed: {e3}')
-        
-        test_results.append(('MoviePy', moviepy_success, 'OK' if moviepy_success else 'Failed'))
-        
-        # Special handling for google.auth with namespace fixes
-        print('\n🔍 Testing Google Auth with namespace fixes...')
-        google_success = False
-        
-        # Strategy 1: Direct import
-        try:
-            import google.auth
-            import google_auth_oauthlib
-            import googleapiclient.discovery
-            print('✅ Google Auth Strategy 1 (direct): Success')
-            google_success = True
-        except Exception as e:
-            print(f'❌ Google Auth Strategy 1 failed: {e}')
-            
-            # Strategy 2: Clear namespace and reinstall
-            try:
-                print('🔧 Google Auth Strategy 2: Namespace fix...')
-                
-                # Clear all google-related modules
-                for mod in list(sys.modules.keys()):
-                    if mod.startswith('google'):
-                        del sys.modules[mod]
-                
-                # Reinstall google packages in correct order
-                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 
-                              'google-auth', 'google-auth-oauthlib', 'google-api-python-client'], 
-                             capture_output=True, check=False)
-                
-                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              'google-auth'], capture_output=True, check=True)
-                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              'google-auth-oauthlib'], capture_output=True, check=True)
-                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              'google-api-python-client'], capture_output=True, check=True)
-                
-                import google.auth
-                print('✅ Google Auth Strategy 2 (namespace fix): Success')
-                google_success = True
-            except Exception as e2:
-                print(f'❌ Google Auth Strategy 2 failed: {e2}')
-        
-        test_results.append(('Google Auth', google_success, 'OK' if google_success else 'Failed'))
-        
-        # Special handling for OpenAI
-        print('\n🔍 Testing OpenAI with fallback strategies...')
-        openai_success = False
-        
-        # Strategy 1: Direct import
-        try:
-            import openai
-            print('✅ OpenAI Strategy 1 (direct): Success')
-            openai_success = True
-        except Exception as e:
-            print(f'❌ OpenAI Strategy 1 failed: {e}')
-            
-            # Strategy 2: Reinstall and retry
-            try:
-                print('🔧 OpenAI Strategy 2: Reinstalling...')
-                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai'], 
-                             capture_output=True, check=False)
-                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              'openai==1.40.6'], capture_output=True, check=True)
-                
-                # Clear module cache
-                for mod in list(sys.modules.keys()):
-                    if 'openai' in mod:
-                        del sys.modules[mod]
-                
-                import openai
-                print('✅ OpenAI Strategy 2 (reinstall): Success')
-                openai_success = True
-            except Exception as e2:
-                print(f'❌ OpenAI Strategy 2 failed: {e2}')
-        
-        test_results.append(('OpenAI', openai_success, 'OK' if openai_success else 'Failed'))
-        
-        # Summary
-        failed = [name for name, success, _ in test_results if not success]
-        if failed:
-            print(f'\n❌ Failed imports: {failed}')
-            print('\n⚠️ Some packages failed to import. The script will attempt to continue...')
-            print('\nDiagnostic information:')
-            print('Available packages:')
-            result = subprocess.run([sys.executable, '-m', 'pip', 'list'], 
-                                  capture_output=True, text=True)
-            if result.returncode == 0:
-                for line in result.stdout.split('\n'):
-                    if any(pkg in line.lower() for pkg in ['moviepy', 'google', 'openai']):
-                        print(f'   {line}')
-        else:
-            print('\n✅ All critical packages verified successfully!')
-        "
-
-    - name: Clear Python module cache
-      run: |
-        echo "🧹 Clearing Python module cache..."
-        find . -name "*.pyc" -delete
-        find . -name "__pycache__" -type d -exec rm -rf {} +
-        echo "✅ Module cache cleared"
-
-    - name: Create output directories
-      run: |
-        mkdir -p output
-        mkdir -p logs
-        echo "✅ Output directories created"
-
-    - name: Set up YouTube credentials
+    - name: Setup credentials
       env:
         YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
       run: |
-        echo "🔍 Setting up YouTube credentials..."
-        
-        CRED_SET="${{ secrets.YOUTUBE_CREDENTIALS != '' }}"
-        TOKEN_SET="${{ secrets.YOUTUBE_TOKEN != '' }}"
-        
-        echo "📋 Secret availability check:"
-        echo "   - YOUTUBE_CREDENTIALS: $CRED_SET"
-        echo "   - YOUTUBE_TOKEN: $TOKEN_SET"
-        
-        if [ -n "$YOUTUBE_CREDENTIALS" ] && [ "$YOUTUBE_CREDENTIALS" != "" ]; then
-          echo "✅ YOUTUBE_CREDENTIALS found via environment variable"
+        if [ -n "$YOUTUBE_CREDENTIALS" ]; then
           echo "$YOUTUBE_CREDENTIALS" > credentials.json
-        elif [ "${{ secrets.YOUTUBE_CREDENTIALS }}" != "" ]; then
-          echo "✅ YOUTUBE_CREDENTIALS found via direct secret"
-          cat > credentials.json << 'EOL'
-        ${{ secrets.YOUTUBE_CREDENTIALS }}
-        EOL
-        else
-          echo "❌ YOUTUBE_CREDENTIALS not available through either method"
+          echo "✅ YouTube credentials configured"
         fi
         
-        if [ -f credentials.json ]; then
-          FILE_SIZE=$(wc -c < credentials.json)
-          echo "✅ credentials.json created (size: $FILE_SIZE bytes)"
-          
-          if [ $FILE_SIZE -gt 10 ]; then
-            if jq empty credentials.json > /dev/null 2>&1; then
-              echo "✅ credentials.json is valid JSON"
-              
-              if jq -e '.installed.type, .installed.project_id, .installed.client_id' credentials.json > /dev/null 2>&1; then
-                echo "✅ credentials.json contains required Google API fields (installed app format)"
-                echo "YOUTUBE_CREDENTIALS_VALID=true" >> $GITHUB_ENV
-              elif jq -e '.type, .project_id, .client_id' credentials.json > /dev/null 2>&1; then
-                echo "✅ credentials.json contains required Google API fields (service account format)"
-                echo "YOUTUBE_CREDENTIALS_VALID=true" >> $GITHUB_ENV
-              else
-                echo "❌ credentials.json missing required Google API fields"
-                echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
-              fi
-            else
-              echo "❌ credentials.json is not valid JSON"
-              echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
-            fi
-          else
-            echo "❌ credentials.json file is too small (likely empty)"
-            echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
-          fi
-        else
-          echo "❌ credentials.json file was not created"
-          echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
-        fi
-        
-        if [ -n "$YOUTUBE_TOKEN" ] && [ "$YOUTUBE_TOKEN" != "" ]; then
-          echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle 2>/dev/null
-          if [ -f token.pickle ] && [ -s token.pickle ]; then
-            echo "✅ YouTube token restored successfully"
-          else
-            echo "⚠️ YouTube token restoration failed"
-          fi
-        elif [ "${{ secrets.YOUTUBE_TOKEN }}" != "" ]; then
-          echo "${{ secrets.YOUTUBE_TOKEN }}" | base64 -d > token.pickle 2>/dev/null
-          if [ -f token.pickle ] && [ -s token.pickle ]; then
-            echo "✅ YouTube token restored via direct secret"
-          else
-            echo "⚠️ YouTube token restoration failed via direct secret"
-          fi
-        else
-          echo "ℹ️ No YouTube token found (normal for first run)"
-        fi
-        
-        echo "✅ YouTube credentials setup completed"
-
-    - name: Set upload status
-      run: |
-        echo "🔧 Determining upload status..."
-        ENABLE_UPLOAD_VAR="${{ vars.ENABLE_UPLOAD || 'true' }}"
-        echo "📋 Configuration check:"
-        echo "   - YOUTUBE_CREDENTIALS_VALID: ${{ env.YOUTUBE_CREDENTIALS_VALID }}"
-        echo "   - ENABLE_UPLOAD variable: $ENABLE_UPLOAD_VAR"
-        
-        if [ "${{ env.YOUTUBE_CREDENTIALS_VALID }}" = "true" ] && [ "$ENABLE_UPLOAD_VAR" = "true" ]; then
-          echo "✅ Upload will be enabled"
-          echo "UPLOAD_TO_YOUTUBE=true" >> $GITHUB_ENV
-        else
-          echo "⚠️ Upload will be disabled"
-          echo "UPLOAD_TO_YOUTUBE=false" >> $GITHUB_ENV
+        if [ -n "$YOUTUBE_TOKEN" ]; then
+          echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle
+          echo "✅ YouTube token restored"
         fi
 
-    - name: Create environment file
+    - name: Create environment
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         VIDEO_PRIVACY: ${{ vars.VIDEO_PRIVACY || 'public' }}
         VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
-        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        UPLOAD_TO_YOUTUBE: ${{ vars.ENABLE_UPLOAD || 'true' }}
       run: |
-        if [ -z "$OPENAI_API_KEY" ]; then
-          echo "❌ OPENAI_API_KEY is not set in repository secrets"
-          exit 1
-        fi
-        
         cat > .env << EOF
         OPENAI_API_KEY=$OPENAI_API_KEY
         VIDEO_PRIVACY=$VIDEO_PRIVACY
         VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID
-        UPLOAD_TO_YOUTUBE=${{ env.UPLOAD_TO_YOUTUBE }}
+        UPLOAD_TO_YOUTUBE=$UPLOAD_TO_YOUTUBE
+        TOPIC_OVERRIDE=${{ github.event.inputs.topic_override }}
+        CATEGORY_OVERRIDE=${{ github.event.inputs.category_override }}
         EOF
-        
-        if [ -n "$DISCORD_WEBHOOK_URL" ]; then
-          echo "DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL" >> .env
-          echo "DISCORD_NOTIFICATIONS_ENABLED=true" >> $GITHUB_ENV
-        else
-          echo "DISCORD_NOTIFICATIONS_ENABLED=false" >> $GITHUB_ENV
-        fi
-        
-        if [ -n "${{ github.event.inputs.topic_override }}" ]; then
-          echo "TOPIC_OVERRIDE=${{ github.event.inputs.topic_override }}" >> .env
-        fi
-        
-        if [ -n "${{ github.event.inputs.category_override }}" ]; then
-          echo "CATEGORY_OVERRIDE=${{ github.event.inputs.category_override }}" >> .env
-        fi
-        
-        echo "✅ Environment file created"
 
-    - name: Run YouTube automation
-      id: automation
-      env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        VIDEO_PRIVACY: ${{ vars.VIDEO_PRIVACY || 'public' }}
-        VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
-        UPLOAD_TO_YOUTUBE: ${{ env.UPLOAD_TO_YOUTUBE }}
-        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        TOPIC_OVERRIDE: ${{ github.event.inputs.topic_override }}
-        CATEGORY_OVERRIDE: ${{ github.event.inputs.category_override }}
-        PYTHONUNBUFFERED: "1"
-        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/utils
-        PYTHONDONTWRITEBYTECODE: "1"
-        PYTHONIOENCODING: "utf-8"
-        HTTP_PROXY: ""
-        HTTPS_PROXY: ""
-        NO_PROXY: "*"
-      run: |
-        echo "🚀 Starting YouTube automation..."
-        echo "📅 Timestamp: $(date)"
-        echo "🐍 Python version: $(python --version)"
-        echo "📁 Working directory: $(pwd)"
-        echo "📋 Final configuration:"
-        echo "   - YouTube credentials valid: ${{ env.YOUTUBE_CREDENTIALS_VALID }}"
-        echo "   - Upload enabled: ${{ env.UPLOAD_TO_YOUTUBE }}"
-        echo "   - Video privacy: $VIDEO_PRIVACY"
-        echo "🔍 Environment variables (sensitive values masked):"
-        python -c "
-        import os
-        for key, value in sorted(os.environ.items()):
-            if key in ['OPENAI_API_KEY', 'YOUTUBE_CREDENTIALS', 'YOUTUBE_TOKEN', 'DISCORD_WEBHOOK_URL']:
-                print(f'   - {key}: ***')
-            else:
-                print(f'   - {key}: {value}')
-        "
-        
-        # Final check and potential fix before running main script
-        python -c "
-        import sys
-        import subprocess
-        
-        print('🔧 Final pre-execution checks...')
-        
-        # Clear and fix MoviePy
-        for mod in list(sys.modules.keys()):
-            if 'moviepy' in mod:
-                del sys.modules[mod]
-        
-        try:
-            import moviepy.editor
-            print('✅ MoviePy ready')
-        except Exception as e:
-            print(f'🔧 Final MoviePy fix attempt... Error: {e}')
-            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], check=False)
-            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'moviepy==1.0.2'], check=False)
-            try:
-                import moviepy.editor
-                print('✅ MoviePy installed successfully')
-            except Exception as e2:
-                print(f'❌ MoviePy installation failed: {e2}')
-        
-        # Clear and fix Google Auth
-        for mod in list(sys.modules.keys()):
-            if mod.startswith('google'):
-                del sys.modules[mod]
-        
-        try:
-            import google.auth
-            print('✅ Google Auth ready')
-        except Exception as e:
-            print(f'🔧 Final Google Auth fix attempt... Error: {e}')
-            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'google-auth', 'google-auth-oauthlib', 'google-api-python-client'], check=False)
-            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'google-auth', 'google-auth-oauthlib', 'google-api-python-client'], check=False)
-            try:
-                import google.auth
-                print('✅ Google Auth installed successfully')
-            except Exception as e2:
-                print(f'❌ Google Auth installation failed: {e2}')
-        
-        # Clear and fix OpenAI
-        for mod in list(sys.modules.keys()):
-            if 'openai' in mod:
-                del sys.modules[mod]
-        
-        try:
-            import openai
-            print('✅ OpenAI ready')
-        except Exception as e:
-            print(f'🔧 Final OpenAI fix attempt... Error: {e}')
-            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai'], check=False)
-            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'openai==1.40.6'], check=False)
-            try:
-                import openai
-                print('✅ OpenAI installed successfully')
-            except Exception as e2:
-                print(f'❌ OpenAI installation failed: {e2}')
-        
-        print('🚀 Ready to execute main script')
-        "
-        
-        set -o pipefail
-        python main.py 2>&1 | tee automation.log
-        EXIT_CODE=$PIPESTATUS[0]
-        
-        echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
-        
-        if [ $EXIT_CODE -ne 0 ]; then
-          echo "❌ Automation failed with exit code $EXIT_CODE"
-          echo "📋 Last 20 lines of output:"
-          tail -20 automation.log || echo "Could not read log file"
-          exit $EXIT_CODE
-        fi
-        
-        echo "✅ Automation completed successfully"
+    - name: Run automation
+      run: python main.py
 
-    - name: Debug environment on failure
-      if: failure()
-      run: |
-        echo "🔍 Debugging environment..."
-        pip list
-        python -m site
-        echo "✅ Environment debug info collected"
-
-    - name: Save updated YouTube token
-      if: always() && env.YOUTUBE_CREDENTIALS_VALID == 'true'
-      id: save_token
+    - name: Save token
+      if: always()
       run: |
         if [ -f token.pickle ]; then
-          base64 -w 0 token.pickle > token_updated.txt
-          echo "token_content=$(cat token_updated.txt)" >> $GITHUB_OUTPUT
-          echo "✅ Updated token prepared for storage"
-        else
-          echo "ℹ️ No token.pickle file found to save"
+          base64 -w 0 token.pickle > token_b64.txt
+          echo "TOKEN_UPDATED=true" >> $GITHUB_ENV
         fi
 
-    - name: Upload artifacts on failure or partial success
-      if: failure() || steps.automation.outputs.exit_code == '2'
+    - name: Upload artifacts
+      if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: automation-failure-logs-${{ github.run_number }}
+        name: automation-output-${{ github.run_number }}
         path: |
-          automation.log
           output/
-          logs/
-          *.json
-          *.txt
-          *.env
+          *.log
         retention-days: 7
 
-    - name: Upload successful artifacts
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: automation-success-${{ github.run_number }}
-        path: |
-          output/
-          logs/
-          automation.log
-        retention-days: 3
-
-    - name: Extract video information
-      if: success()
-      id: video_info
-      run: |
-        VIDEO_TITLE=$(grep -E "^✅ Topic:" automation.log | head -1 | cut -d' ' -f3- 2>/dev/null || echo "Unknown")
-        VIDEO_ID=$(grep "Video uploaded with ID:" automation.log | tail -1 | awk '{print $NF}' 2>/dev/null || echo "")
-        VIDEO_CATEGORY=$(grep -E "^✅ Category:" automation.log | head -1 | cut -d' ' -f3- 2>/dev/null || echo "Unknown")
-        
-        VIDEO_TITLE=$(echo "$VIDEO_TITLE" | sed 's/[^a-zA-Z0-9 .,!?-]//g' | head -c 100)
-        VIDEO_ID=$(echo "$VIDEO_ID" | grep -E '^[a-zA-Z0-9_-]{11}$' || echo "")
-        
-        echo "video_title=$VIDEO_TITLE" >> $GITHUB_OUTPUT
-        echo "video_id=$VIDEO_ID" >> $GITHUB_OUTPUT
-        echo "video_category=$VIDEO_CATEGORY" >> $GITHUB_OUTPUT
-
-    - name: Send success notification
-      if: success() && env.DISCORD_NOTIFICATIONS_ENABLED == 'true'
+    - name: Notification
+      if: always() && secrets.DISCORD_WEBHOOK_URL
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        VIDEO_TITLE="${{ steps.video_info.outputs.video_title }}"
-        VIDEO_ID="${{ steps.video_info.outputs.video_id }}"
-        VIDEO_CATEGORY="${{ steps.video_info.outputs.video_category }}"
-        UPLOAD_STATUS="${{ env.UPLOAD_TO_YOUTUBE == 'true' && 'Uploaded' || 'Generated (Upload Disabled)' }}"
-        
-        if [ -n "$VIDEO_ID" ] && [ "$VIDEO_ID" != "" ]; then
-          PAYLOAD=$(cat << EOF
-        {
-          "embeds": [{
-            "title": "✅ YouTube Video Published Successfully!",
-            "description": "**Title:** ${VIDEO_TITLE}\n**Category:** ${VIDEO_CATEGORY}\n**Video ID:** ${VIDEO_ID}\n**URL:** https://www.youtube.com/watch?v=${VIDEO_ID}",
-            "color": 5763719,
-            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
-            "footer": {
-              "text": "YouTube Automation • Run #${{ github.run_number }}"
-            }
-          }]
-        }
-        EOF
-          )
+        STATUS="${{ job.status }}"
+        if [ "$STATUS" = "success" ]; then
+          EMOJI="✅"
+          COLOR="5763719"
         else
-          PAYLOAD=$(cat << EOF
-        {
-          "embeds": [{
-            "title": "✅ YouTube Video Generated Successfully!",
-            "description": "**Title:** ${VIDEO_TITLE}\n**Category:** ${VIDEO_CATEGORY}\n**Status:** ${UPLOAD_STATUS}",
-            "color": 16776960,
-            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
-            "footer": {
-              "text": "YouTube Automation • Run #${{ github.run_number }}"
-            }
-          }]
-        }
-        EOF
-          )
+          EMOJI="❌"
+          COLOR="15158332"
         fi
         
-        curl -H "Content-Type: application/json" \
-             -X POST \
-             -d "$PAYLOAD" \
-             "$DISCORD_WEBHOOK_URL" || echo "⚠️ Failed to send Discord notification"
-
-    - name: Send failure notification
-      if: failure() && env.DISCORD_NOTIFICATIONS_ENABLED == 'true'
-      env:
-        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      run: |
-        ERROR_MSG=$(tail -10 automation.log 2>/dev/null | tr '\n' ' ' | sed 's/"/\\"/g' | head -c 400 || echo "Unknown error - check logs")
-        STEP_NAME=$(echo "${{ github.workflow }}" | head -c 50)
-        
-        PAYLOAD=$(cat << EOF
-        {
-          "embeds": [{
-            "title": "❌ YouTube Automation Failed",
-            "description": "**Error:** ${ERROR_MSG}\n**Run:** #${{ github.run_number }}\n**Workflow:** ${STEP_NAME}",
-            "color": 15158332,
-            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
-            "footer": {
-              "text": "Check the Actions tab for detailed logs"
-            }
+        curl -H "Content-Type: application/json" -X POST -d "{
+          \"embeds\": [{
+            \"title\": \"$EMOJI YouTube Automation $STATUS\",
+            \"description\": \"Run #${{ github.run_number }} completed\",
+            \"color\": $COLOR,
+            \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
           }]
-        }
-        EOF
-        )
-        
-        curl -H "Content-Type: application/json" \
-             -X POST \
-             -d "$PAYLOAD" \
-             "$DISCORD_WEBHOOK_URL" || echo "⚠️ failed to send Discord failure notification"
-
-  cleanup:
-    runs-on: ubuntu-latest
-    needs: create-and-upload-video
-    if: always()
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Cleanup old artifacts
-      uses: actions/github-script@v7
-      with:
-        script: |
-          try {
-            console.log('🧹 Starting artifact cleanup...');
-            
-            const { data: artifacts } = await github.rest.actions.listArtifactsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100
-            });
-            
-            console.log(`Found ${artifacts.artifacts.length} total artifacts`);
-            
-            const oldArtifacts = artifacts.artifacts
-              .filter(artifact => artifact.name.includes('automation-'))
-              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-              .slice(10); # Keep only the 10 most recent automation artifacts
-            
-            console.log(`Found ${oldArtifacts.length} old artifacts to delete`);
-            
-            let deletedCount = 0;
-            let failedCount = 0;
-            
-            for (const artifact of oldArtifacts) {
-              try {
-                await github.rest.actions.deleteArtifact({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  artifact_id: artifact.id
-                });
-                
-                console.log(`✅ Deleted artifact: ${artifact.name} (ID: ${artifact.id})`);
-                deletedCount++;
-                
-                # Add a small delay to avoid rate limiting
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-              } catch (deleteError) {
-                console.error(`❌ Failed to delete artifact ${artifact.name}: ${deleteError.message}`);
-                failedCount++;
-              }
-            }
-            
-            console.log(`✅ Cleanup completed: ${deletedCount} deleted, ${failedCount} failed`);
-            
-            if (deletedCount > 0) {
-              console.log('🎉 Successfully cleaned up old automation artifacts');
-            }
-            
-          } catch (error) {
-            console.error('❌ Artifact cleanup failed:', error.message);
-            console.log('⚠️ Continuing despite cleanup failure...');
-          }
-
-    - name: Cleanup old workflow runs
-      uses: actions/github-script@v7
-      with:
-        script: |
-          try {
-            console.log('🧹 Starting workflow run cleanup...');
-            
-            const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100,
-              status: 'completed'
-            });
-            
-            console.log(`Found ${runs.workflow_runs.length} completed workflow runs`);
-            
-            # Keep only the 20 most recent completed runs
-            const oldRuns = runs.workflow_runs
-              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-              .slice(20);
-            
-            console.log(`Found ${oldRuns.length} old workflow runs to delete`);
-            
-            let deletedRunCount = 0;
-            let failedRunCount = 0;
-            
-            for (const run of oldRuns) {
-              try:
-                # Only delete runs older than 30 days
-                const runDate = new Date(run.created_at);
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                
-                if (runDate < thirtyDaysAgo) {
-                  await github.rest.actions.deleteWorkflowRun({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    run_id: run.id
-                  });
-                  
-                  console.log(`✅ Deleted workflow run: #${run.run_number} (ID: ${run.id})`);
-                  deletedRunCount++;
-                  
-                  # Add a small delay to avoid rate limiting
-                  await new Promise(resolve => setTimeout(resolve, 200));
-                
-              } catch (deleteError) {
-                console.error(`❌ Failed to delete workflow run #${run.run_number}: ${deleteError.message}`);
-                failedRunCount++;
-              }
-            }
-            
-            console.log(`✅ Workflow cleanup completed: ${deletedRunCount} deleted, ${failedRunCount} failed`);
-            
-          } catch (error) {
-            console.error('❌ Workflow run cleanup failed:', error.message);
-            console.log('⚠️ Continuing despite workflow cleanup failure...');
-          }
-
-    - name: Report cleanup summary
-      uses: actions/github-script@v7
-      with:
-        script: |
-          console.log('📊 Cleanup Summary:');
-          console.log('==================');
-          console.log('✅ Artifact cleanup: Completed');
-          console.log('✅ Workflow run cleanup: Completed');
-          console.log('🎯 Repository maintenance finished successfully');
-          
-          # Optional: Create a summary for the workflow
-          const summary = `
-          ## 🧹 Cleanup Summary
-          
-          - **Artifacts**: Cleaned up old automation artifacts (keeping 10 most recent)
-          - **Workflow Runs**: Cleaned up runs older than 30 days (keeping 20 most recent)
-          - **Status**: Maintenance completed successfully
-          
-          > This cleanup job helps maintain repository storage and performance.
-          `;
-          
-          await core.summary
-            .addRaw(summary)
-            .write();
+        }" "$DISCORD_WEBHOOK_URL" || true

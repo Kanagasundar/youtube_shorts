@@ -1,97 +1,74 @@
 import os
-import logging
-import pickle
 import json
+import pickle
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
+from google.oauth2 import service_account
 from googleapiclient.http import MediaFileUpload
-from typing import Tuple, List, Optional
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+from typing import List, Optional, Tuple
 
 class YouTubeUploader:
     def __init__(self):
         self.youtube = None
         self.SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
-        self.credentials_path = 'credentials.json'
-        self.token_path = 'token.pickle'
         self._authenticate()
 
     def _authenticate(self):
-        """Authenticate with YouTube API using token.pickle or service account"""
-        try:
-            # Check for pre-existing token.pickle
-            credentials = None
-            if os.path.exists(self.token_path):
-                logger.info("🔍 Loading saved OAuth2 token from token.pickle")
-                with open(self.token_path, 'rb') as token:
-                    credentials = pickle.load(token)
+        """Authenticate with YouTube API"""
+        credentials = None
+        
+        # Try to load existing token
+        if os.path.exists('token.pickle'):
+            with open('token.pickle', 'rb') as token:
+                credentials = pickle.load(token)
 
-            # If no valid credentials, try service account or refresh token
-            if not credentials or not credentials.valid:
-                if credentials and credentials.expired and credentials.refresh_token:
-                    logger.info("🔄 Refreshing expired OAuth2 token")
-                    credentials.refresh(Request())
+        # Refresh or create new credentials
+        if not credentials or not credentials.valid:
+            if credentials and credentials.expired and credentials.refresh_token:
+                credentials.refresh(Request())
+            else:
+                # Load credentials from file
+                if not os.path.exists('credentials.json'):
+                    raise FileNotFoundError("credentials.json not found")
+                
+                with open('credentials.json', 'r') as f:
+                    creds_data = json.load(f)
+                
+                if creds_data.get('type') == 'service_account':
+                    # Service account flow
+                    credentials = service_account.Credentials.from_service_account_info(
+                        creds_data, scopes=self.SCOPES
+                    )
                 else:
-                    # Check for service account credentials
-                    with open(self.credentials_path, 'r', encoding='utf-8') as f:
-                        creds_data = json.load(f)
+                    # OAuth2 flow
+                    if os.getenv('CI'):
+                        raise RuntimeError("Interactive OAuth not supported in CI/CD")
                     
-                    if creds_data.get('type') == 'service_account':
-                        logger.info("📝 Detected service account credentials")
-                        from google.oauth2 import service_account
-                        credentials = service_account.Credentials.from_service_account_info(
-                            creds_data, scopes=self.SCOPES
-                        )
-                    else:
-                        logger.info("📝 Detected OAuth2 installed application credentials")
-                        if os.getenv('CI', 'false').lower() == 'true':
-                            logger.error("❌ Cannot perform interactive OAuth2 flow in CI/CD environment")
-                            logger.info("💡 For automated environments, consider using:")
-                            logger.info("   1. Service account credentials")
-                            logger.info("   2. Pre-generated OAuth2 token (token.pickle)")
-                            logger.info("   3. Environment-based token injection")
-                            raise RuntimeError("YouTube authentication failed")
-                        
-                        logger.info("🔐 Starting OAuth2 flow...")
-                        flow = InstalledAppFlow.from_client_secrets_file(
-                            self.credentials_path, self.SCOPES
-                        )
-                        credentials = flow.run_local_server(port=0)
-                    
-                    # Save the credentials for future runs
-                    with open(self.token_path, 'wb') as token:
-                        pickle.dump(credentials, token)
-                        logger.info(f"✅ Saved OAuth2 token to {self.token_path}")
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        'credentials.json', self.SCOPES
+                    )
+                    credentials = flow.run_local_server(port=0)
+            
+            # Save credentials for next run
+            with open('token.pickle', 'wb') as token:
+                pickle.dump(credentials, token)
 
-            self.youtube = build('youtube', 'v3', credentials=credentials)
-            logger.info("✅ YouTube API client initialized successfully")
+        self.youtube = build('youtube', 'v3', credentials=credentials)
 
-        except Exception as e:
-            logger.error(f"❌ Authentication failed: {str(e)}")
-            logger.debug("Stack trace:", exc_info=True)
-            self.youtube = None
-            raise RuntimeError("YouTube authentication failed")
-
-    def upload_video(self, video_path: str, thumbnail_path: str, title: str, description: str, tags: List[str]) -> Optional[str]:
-        """Upload a video to YouTube and set its thumbnail"""
+    def upload_video(self, video_path: str, thumbnail_path: str, title: str, 
+                    description: str, tags: List[str]) -> Optional[str]:
+        """Upload video to YouTube with thumbnail"""
         if not self.youtube:
-            logger.error("❌ YouTube client not initialized")
             return None
 
         try:
-            # Prepare video upload request
+            # Upload video
             body = {
                 'snippet': {
-                    'title': title,
+                    'title': title[:100],  # YouTube title limit
                     'description': description,
-                    'tags': tags,
+                    'tags': tags[:10],  # YouTube tag limit
                     'categoryId': os.getenv('VIDEO_CATEGORY_ID', '28')
                 },
                 'status': {
@@ -99,65 +76,48 @@ class YouTubeUploader:
                 }
             }
 
-            # Upload video
-            logger.info(f"📤 Uploading video: {video_path}")
-            media = MediaFileUpload(video_path)
+            media = MediaFileUpload(video_path, resumable=True)
             request = self.youtube.videos().insert(
                 part='snippet,status',
                 body=body,
                 media_body=media
             )
+            
             response = request.execute()
-
             video_id = response['id']
-            logger.info(f"✅ Video uploaded with ID: {video_id}")
-
-            # Upload thumbnail
-            logger.info(f"🖼️ Uploading thumbnail: {thumbnail_path}")
-            self.youtube.thumbnails().set(
-                videoId=video_id,
-                media_body=MediaFileUpload(thumbnail_path)
-            ).execute()
-            logger.info(f"✅ Thumbnail set for video ID: {video_id}")
-
+            
+            # Set thumbnail
+            if os.path.exists(thumbnail_path):
+                self.youtube.thumbnails().set(
+                    videoId=video_id,
+                    media_body=MediaFileUpload(thumbnail_path)
+                ).execute()
+            
             return video_id
-
+            
         except Exception as e:
-            logger.error(f"❌ Failed to upload video: {str(e)}")
-            logger.debug("Stack trace:", exc_info=True)
+            print(f"Upload failed: {e}")
             return None
 
-def generate_video_metadata(topic: str, category: str, script: str) -> Tuple[str, str, List[str]]:
-    """
-    Generate metadata for the YouTube video.
-    
-    Args:
-        topic (str): The video topic
-        category (str): The video category
-        script (str): The generated script
-    
-    Returns:
-        Tuple[str, str, List[str]]: Title, description, and tags
-    """
+def generate_video_metadata(topic: str, category: str) -> Tuple[str, str, List[str]]:
+    """Generate video metadata"""
     title = f"{topic} | YouTube Shorts #{category.lower()}"
     if len(title) > 100:
         title = title[:97] + "..."
     
-    description = f"""
-Discover {topic.lower()} in this engaging YouTube Short! 
-Category: {category}
-#Shorts #{category.lower()} #{topic.replace(' ', '').lower()}
-Subscribe for more exciting content!
-"""
+    description = f"""Discover {topic.lower()} in this engaging YouTube Short!
+
+#Shorts #{category.lower().replace(' ', '')} #{topic.replace(' ', '').lower()}
+
+Subscribe for more content!"""
     
     tags = [
         "YouTubeShorts",
-        category.lower(),
+        category.lower().replace(' ', ''),
         topic.replace(' ', '').lower(),
-        "shortvideo",
-        "learn",
-        "facts",
-        "education"
+        "shorts",
+        "viral",
+        "trending"
     ]
     
     return title, description, tags
