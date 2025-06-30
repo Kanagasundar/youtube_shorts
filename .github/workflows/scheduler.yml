@@ -455,7 +455,6 @@ jobs:
         PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/utils
         PYTHONDONTWRITEBYTECODE: "1"
         PYTHONIOENCODING: "utf-8"
-        # Explicitly unset proxy variables to prevent OpenAI client issues
         HTTP_PROXY: ""
         HTTPS_PROXY: ""
         NO_PROXY: "*"
@@ -482,7 +481,6 @@ jobs:
         python -c "
         import sys
         import subprocess
-        import traceback
         
         print('🔧 Final pre-execution checks...')
         
@@ -544,19 +542,8 @@ jobs:
         "
         
         set -o pipefail
-        python -c "
-        import sys
-        import traceback
-        try:
-            import main
-            main.main()
-        except Exception as e:
-            print('❌ Main script failed with error:', str(e))
-            print('🔍 Stack trace:')
-            traceback.print_exc()
-            sys.exit(1)
-        " 2>&1 | tee automation.log
-        EXIT_CODE=${PIPESTATUS[0]}
+        python main.py 2>&1 | tee automation.log
+        EXIT_CODE=$PIPESTATUS[0]
         
         echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
         
@@ -785,7 +772,7 @@ jobs:
             
             console.log(`Found ${runs.workflow_runs.length} completed workflow runs`);
             
-            // Keep only the 20 most recent completed runs
+            # Keep only the 20 most recent completed runs
             const oldRuns = runs.workflow_runs
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
               .slice(20);
@@ -796,8 +783,8 @@ jobs:
             let failedRunCount = 0;
             
             for (const run of oldRuns) {
-              try {
-                // Only delete runs older than 30 days
+              try:
+                # Only delete runs older than 30 days
                 const runDate = new Date(run.created_at);
                 const thirtyDaysAgo = new Date();
                 thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -812,7 +799,7 @@ jobs:
                   console.log(`✅ Deleted workflow run: #${run.run_number} (ID: ${run.id})`);
                   deletedRunCount++;
                   
-                  // Add a small delay to avoid rate limiting
+                  # Add a small delay to avoid rate limiting
                   await new Promise(resolve => setTimeout(resolve, 200));
                 }
                 
@@ -839,7 +826,7 @@ jobs:
           console.log('✅ Workflow run cleanup: Completed');
           console.log('🎯 Repository maintenance finished successfully');
           
-          // Optional: Create a summary for the workflow
+          # Optional: Create a summary for the workflow
           const summary = `
           ## 🧹 Cleanup Summary
           

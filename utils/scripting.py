@@ -1,9 +1,11 @@
 import os
 import logging
 import time
+import random
+from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
-from typing import Optional
+from typing import Optional, Tuple
 
 # Configure logging
 logging.basicConfig(
@@ -14,6 +16,42 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+
+# Predefined topics and categories (example list, adjust as needed)
+TOPICS = [
+    ("The Color That Doesn't Actually Exist", "Science"),
+    ("Why Time Travel Might Be Impossible", "Science"),
+    ("The Mystery of the Bermuda Triangle", "Mystery"),
+    ("How Black Holes Work", "Science"),
+    ("The Psychology of Dreams", "Psychology"),
+    ("Unsolved Mysteries of the Universe", "Science"),
+    ("The History of the Internet", "Technology"),
+    ("Why We Procrastinate", "Psychology"),
+    ("The Science of Happiness", "Psychology"),
+    ("Strange Ocean Phenomena", "Science")
+]
+
+def get_today_topic() -> Tuple[str, str]:
+    """
+    Select a topic and category for today's video based on the current date.
+    
+    Returns:
+        Tuple[str, str]: A tuple containing the selected topic and category.
+    """
+    try:
+        # Use date-based indexing for deterministic topic selection
+        day_of_year = datetime.now().timetuple().tm_yday
+        index = (day_of_year - 1) % len(TOPICS)  # Cycle through topics
+        topic, category = TOPICS[index]
+        logger.info(f"🗓️ Date: {datetime.now().strftime('%Y-%m-%d')}")
+        logger.info(f"🎯 Selected topic index: {index}")
+        logger.info(f"✅ Topic: {topic}")
+        logger.info(f"✅ Category: {category}")
+        return topic, category
+    except Exception as e:
+        logger.error(f"Failed to select topic: {str(e)}")
+        logger.debug("Stack trace:", exc_info=True)
+        return "Default Topic", "General"
 
 def generate_script(topic: str, length: str = "short", max_retries: int = 4) -> Optional[str]:
     """
