@@ -4,8 +4,11 @@ Script Generator - Uses OpenAI to generate engaging YouTube Shorts scripts
 """
 
 import os
-import openai
+import logging
 from openai import OpenAI
+
+# Configure logging to match main.py
+logger = logging.getLogger(__name__)
 
 def generate_script(topic, category, max_duration=45):
     """
@@ -24,6 +27,7 @@ def generate_script(topic, category, max_duration=45):
     client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
     
     if not client.api_key:
+        logger.error("OPENAI_API_KEY environment variable not set")
         raise ValueError("OPENAI_API_KEY environment variable not set")
     
     # Create the prompt for script generation
@@ -54,10 +58,10 @@ Make it sound natural when read aloud.
 """
 
     try:
-        print("🤖 Generating script with OpenAI...")
+        logger.info("🤖 Generating script with OpenAI...")
         
         response = client.chat.completions.create(
-            model="gpt-4o-mini",  # More cost-effective than gpt-4
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
@@ -69,7 +73,7 @@ Make it sound natural when read aloud.
                 }
             ],
             max_tokens=400,
-            temperature=0.8,  # Creative but not too random
+            temperature=0.8,
             presence_penalty=0.1,
             frequency_penalty=0.1
         )
@@ -79,11 +83,11 @@ Make it sound natural when read aloud.
         # Clean up the script
         script = clean_script(script)
         
-        print(f"✅ Script generated successfully ({len(script)} characters)")
+        logger.info(f"✅ Script generated successfully ({len(script)} characters)")
         return script
         
     except Exception as e:
-        print(f"❌ Error generating script: {e}")
+        logger.error(f"❌ Error generating script: {e}")
         # Fallback to template-based script
         return generate_fallback_script(topic, category)
 
@@ -120,7 +124,7 @@ def generate_fallback_script(topic, category):
     
     script = fallback_scripts.get(category, f"Here's something incredible about {topic}! This amazing fact will change how you see the world. The story goes like this... And the most surprising part is what happened next. This proves that our world is full of wonders waiting to be discovered. What do you think about this? Let me know below!")
     
-    print("⚠️ Using fallback script due to API error")
+    logger.info("⚠️ Using fallback script due to API error")
     return script
 
 def estimate_duration(script, words_per_minute=160):
@@ -137,9 +141,9 @@ if __name__ == "__main__":
     script = generate_script(test_topic, test_category)
     duration = estimate_duration(script)
     
-    print(f"\nGenerated Script:")
-    print("=" * 50)
-    print(script)
-    print("=" * 50)
-    print(f"Estimated duration: {duration} seconds")
-    print(f"Word count: {len(script.split())} words")
+    logger.info(f"\nGenerated Script:")
+    logger.info("=" * 50)
+    logger.info(script)
+    logger.info("=" * 50)
+    logger.info(f"Estimated duration: {duration} seconds")
+    logger.info(f"Word count: {len(script.split())} words")
