@@ -103,7 +103,7 @@ jobs:
         echo "🔍 ImageMagick policy file contents:"
         cat "$POLICY_FILE" || echo "❌ Failed to read $POLICY_FILE"
         if [ -f "$POLICY_FILE" ]; then
-          if grep -qE 'policy.*domain="path".*pattern="@[*]".*rights="read\|write"' "$POLICY_FILE"; then
+          if grep -qE 'policy.*domain="path".*pattern="@\*".*rights="read\|write"' "$POLICY_FILE"; then
             echo "✅ ImageMagick policy verified for @* read|write"
           else
             echo "❌ ImageMagick policy verification failed"
@@ -125,7 +125,7 @@ jobs:
         fi
         ffmpeg -version
         echo "✅ System dependencies installed"
-      
+
     - name: Verify system dependencies
       run: |
         echo "🔍 Verifying system dependencies..."
@@ -142,7 +142,7 @@ jobs:
         if [ "$POLICY_VERIFIED" = "false" ]; then
           echo "⚠️ ImageMagick policy not found or not correctly configured, attempting to verify manually..."
           for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml; do
-            if [ -f "$POLICY_FILE" ] && grep -q 'read|write.*@*' "$POLICY_FILE"; then
+            if [ -f "$POLICY_FILE" ] && grep -q 'read|write.*@\*' "$POLICY_FILE"; then
               echo "✅ ImageMagick policy verified (fallback check) at $POLICY_FILE"
               POLICY_VERIFIED=true
               break
