@@ -1,8 +1,9 @@
 import os
 import logging
+from datetime import datetime
+from pathlib import Path
 import moviepy.editor as mpe
 from moviepy.config import change_settings
-import time
 
 # Configure logging
 logging.basicConfig(
@@ -24,35 +25,47 @@ if IMAGEMAGICK_BINARY:
 else:
     logger.warning("ImageMagick binary not found, text rendering may fail")
 
-def create_video(audio_path, thumbnail_path, output_path, script_text, max_retries=5):
+def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_text: str, max_retries: int = 5) -> str:
     """
     Create a YouTube Shorts video with narration and text overlays.
     
     Args:
         audio_path (str): Path to the narration audio file.
         thumbnail_path (str): Path to the thumbnail image.
-        output_path (str): Path to save the output video.
+        output_dir (str): Directory to save the output video.
         script_text (str): Script text for text overlays.
         max_retries (int): Maximum number of retries for text clip creation.
     
     Returns:
-        bool: True if video creation succeeds, False otherwise.
+        str: Path to the created video file, or False if creation fails.
     """
     try:
         logger.info("🎬 Starting video creation...")
+        
+        # Validate inputs
+        if not os.path.exists(audio_path):
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+        if not os.path.exists(thumbnail_path):
+            raise FileNotFoundError(f"Thumbnail file not found: {thumbnail_path}")
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            logger.info(f"✅ Created output directory: {output_dir}")
+        
+        # Load audio
         logger.info(f"🔊 Loading audio: {audio_path}")
         audio = mpe.AudioFileClip(audio_path)
         duration = audio.duration
-
+        
+        # Load and resize thumbnail to YouTube Shorts resolution (1080x1920)
         logger.info(f"🖼️ Loading thumbnail: {thumbnail_path}")
-        thumbnail = mpe.ImageClip(thumbnail_path).set_duration(duration)
-
+        thumbnail = mpe.ImageClip(thumbnail_path).set_duration(duration).resize((1080, 1920))
+        
         # Split script into words for text overlays
         words = script_text.split()
         text_clips = []
         current_time = 0
-        time_per_word = duration / len(words)
-
+        time_per_word = duration / max(len(words), 1)  # Avoid division by zero
+        
         for i, word in enumerate(words):
             for attempt in range(max_retries):
                 try:
@@ -64,7 +77,7 @@ def create_video(audio_path, thumbnail_path, output_path, script_text, max_retri
                         stroke_color='black',
                         stroke_width=2,
                         font='Arial-Bold',
-                        size=(thumbnail.w, thumbnail.h // 4),
+                        size=(1080, 1920 // 4),
                         method='caption',
                         align='center'
                     ).set_position(('center', 'bottom')).set_start(current_time).set_duration(time_per_word)
@@ -78,39 +91,52 @@ def create_video(audio_path, thumbnail_path, output_path, script_text, max_retri
                         time.sleep(2 ** attempt)
                     else:
                         logger.error(f"❌ Failed after {max_retries} attempts for word '{word}'")
-                        # Fallback: Create a blank clip to avoid breaking the video
+                        # Fallback: Create a blank clip
                         text_clip = mpe.ColorClip(
-                            size=(thumbnail.w, thumbnail.h // 4),
-                            color=(0, 0, 0, 0),
+                            size=(1080, 1920 // 4),
+                            color=(0, 0, 0, 0),  # Transparent
                             duration=time_per_word
                         ).set_position(('center', 'bottom')).set_start(current_time)
                         text_clips.append(text_clip)
                         logger.info(f"✅ Fallback blank clip created for '{word}'")
                         break
             current_time += time_per_word
-
+        
         # Composite video with thumbnail and text overlays
+        logger.info("🎥 Compositing video...")
         video = mpe.CompositeVideoClip([thumbnail] + text_clips)
         video = video.set_audio(audio)
-
+        
+        # Generate sanitized output path
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = str(Path(output_dir) / f"video_{timestamp}.mp4")
+        
+        # Write video
         logger.info(f"💾 Writing video to {output_path}...")
         video.write_videofile(
             output_path,
             codec='libx264',
             audio_codec='aac',
-            temp_audiofile='temp-audio.m4a',
+            temp_audiofile=str(Path(output_dir) / f"temp-audio-{timestamp}.m4a"),
             remove_temp=True,
-            fps=24
+            fps=24,
+            preset='medium',
+            threads=4
         )
-        video.close()
-        audio.close()
-        thumbnail.close()
-        for clip in text_clips:
-            clip.close()
-
+        
+        # Clean up resources
+        try:
+            audio.close()
+            thumbnail.close()
+            for clip in text_clips:
+                clip.close()
+            video.close()
+        except Exception as e:
+            logger.warning(f"⚠️ Error during resource cleanup: {e}")
+        
         logger.info(f"✅ Video created successfully: {output_path}")
-        return True
-
+        return output_path
+    
     except Exception as e:
         logger.error(f"❌ Failed to create video: {str(e)}", exc_info=True)
         return False
