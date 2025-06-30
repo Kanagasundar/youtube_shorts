@@ -30,6 +30,7 @@ def generate_script(topic, max_length=500):
             "Include a hook to grab attention and a call-to-action at the end."
         )
         
+        
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[

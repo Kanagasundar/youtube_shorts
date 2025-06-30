@@ -40,21 +40,38 @@ jobs:
         sudo apt-get install -y libavcodec-dev libavformat-dev libavdevice-dev
         sudo apt-get install -y libavfilter-dev libswscale-dev libswresample-dev
         sudo apt-get install -y imagemagick
+        # Debug: List possible policy file locations
+        echo "🔍 Searching for ImageMagick policy files..."
+        find /etc -name "policy.xml" -type f || echo "⚠️ No policy files found"
         # Modify ImageMagick policy to allow text operations
         POLICY_UPDATED=false
-        for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml; do
+        for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml /usr/local/etc/ImageMagick-6/policy.xml; do
           if [ -f "$POLICY_FILE" ]; then
-            sudo sed -i 's/<policy domain="path" rights="none" pattern="@*" \/>/<policy domain="path" rights="read|write" pattern="@*" \/>/' "$POLICY_FILE" || {
-              echo "❌ Failed to modify $POLICY_FILE"
+            echo "📄 Policy file found at $POLICY_FILE"
+            echo "🔍 Current policy content:"
+            cat "$POLICY_FILE" || echo "⚠️ Could not read $POLICY_FILE"
+            # Backup original policy file
+            sudo cp "$POLICY_FILE" "${POLICY_FILE}.bak"
+            # Remove any existing restrictive @* policy
+            sudo sed -i '/<policy domain="path" rights="none" pattern="@*"/d' "$POLICY_FILE" || {
+              echo "❌ Failed to remove restrictive policy in $POLICY_FILE"
               exit 1
             }
+            # Add permissive policy
+            sudo bash -c "echo '<policy domain=\"path\" rights=\"read|write\" pattern=\"@*\"/>' >> \"$POLICY_FILE\"" || {
+              echo "❌ Failed to append permissive policy to $POLICY_FILE"
+              exit 1
+            }
+            echo "🔍 Updated policy content:"
+            cat "$POLICY_FILE" || echo "⚠️ Could not read updated $POLICY_FILE"
             echo "✅ Modified ImageMagick policy at $POLICY_FILE"
             POLICY_UPDATED=true
+            break
           fi
         done
         if [ "$POLICY_UPDATED" = "false" ]; then
           echo "⚠️ No ImageMagick policy file found at expected locations"
-          # Create a minimal policy file if none exists
+          # Create a minimal policy file
           sudo mkdir -p /etc/ImageMagick-6
           sudo bash -c 'cat > /etc/ImageMagick-6/policy.xml << EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -71,6 +88,8 @@ jobs:
             <policy domain="path" rights="read|write" pattern="@*"/>
           </policymap>
           EOF'
+          echo "🔍 Created policy file content:"
+          cat /etc/ImageMagick-6/policy.xml || echo "⚠️ Could not read created policy file"
           echo "✅ Created minimal ImageMagick policy file at /etc/ImageMagick-6/policy.xml"
           POLICY_UPDATED=true
         fi
@@ -84,15 +103,21 @@ jobs:
         ffmpeg -version || { echo "❌ FFmpeg not installed correctly"; exit 1; }
         convert -version || { echo "❌ ImageMagick not installed correctly"; exit 1; }
         POLICY_VERIFIED=false
-        for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml; do
-          if [ -f "$POLICY_FILE" ] && grep -q 'path.*@.*read|write' "$POLICY_FILE"; then
-            echo "✅ ImageMagick policy verified at $POLICY_FILE"
-            POLICY_VERIFIED=true
-            break
+        for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml /usr/local/etc/ImageMagick-6/policy.xml; do
+          if [ -f "$POLICY_FILE" ]; then
+            echo "🔍 Verifying policy at $POLICY_FILE"
+            cat "$POLICY_FILE" || echo "⚠️ Could not read $POLICY_FILE"
+            if grep -q 'path.*@.*read|write' "$POLICY_FILE"; then
+              echo "✅ ImageMagick policy verified at $POLICY_FILE"
+              POLICY_VERIFIED=true
+              break
+            fi
           fi
         done
         if [ "$POLICY_VERIFIED" = "false" ]; then
           echo "❌ ImageMagick policy not correctly configured"
+          echo "🔍 Available policy files:"
+          find /etc -name "policy.xml" -type f || echo "⚠️ No policy files found"
           exit 1
         fi
         echo "✅ FFmpeg and ImageMagick verified"
