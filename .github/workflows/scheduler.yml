@@ -409,95 +409,21 @@ jobs:
         YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
       run: |
         echo "🔍 Setting up YouTube credentials..."
-        
-        CRED_SET="${{ secrets.YOUTUBE_CREDENTIALS != '' }}"
-        TOKEN_SET="${{ secrets.YOUTUBE_TOKEN != '' }}"
-        
-        echo "📋 Secret availability check:"
-        echo "   - YOUTUBE_CREDENTIALS: $CRED_SET"
-        echo "   - YOUTUBE_TOKEN: $TOKEN_SET"
-        
-        if [ -n "$YOUTUBE_CREDENTIALS" ] && [ "$YOUTUBE_CREDENTIALS" != "" ]; then
-          echo "✅ YOUTUBE_CREDENTIALS found via environment variable"
-          echo "$YOUTUBE_CREDENTIALS" > credentials.json
-        elif [ "${{ secrets.YOUTUBE_CREDENTIALS }}" != "" ]; then
-          echo "✅ YOUTUBE_CREDENTIALS found via direct secret"
-          cat > credentials.json << 'EOL'
-        ${{ secrets.YOUTUBE_CREDENTIALS }}
-        EOL
+        echo "$YOUTUBE_CREDENTIALS" > credentials.json
+        if [ -n "$YOUTUBE_TOKEN" ]; then
+          echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle
+          echo "✅ YouTube token restored"
         else
-          echo "❌ YOUTUBE_CREDENTIALS not available through either method"
-          echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
-          exit 1
+          echo "⚠️ No YouTube token provided"
         fi
-        
-        if [ -f credentials.json ]; then
-          FILE_SIZE=$(wc -c < credentials.json)
-          echo "✅ credentials.json created (size: $FILE_SIZE bytes)"
-          
-          if [ $FILE_SIZE -gt 10 ]; then
-            if jq empty credentials.json > /dev/null 2>&1; then
-              echo "✅ credentials.json is valid JSON"
-              
-              if jq -e '.installed.type // .web.type // .type' credentials.json > /dev/null 2>&1; then
-                echo "✅ credentials.json contains required Google API fields"
-                echo "YOUTUBE_CREDENTIALS_VALID=true" >> $GITHUB_ENV
-              else
-                echo "❌ credentials.json missing required Google API fields"
-                echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
-                exit 1
-              fi
-            else
-              echo "❌ credentials.json is not valid JSON"
-              echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
-              exit 1
-            fi
-          else
-            echo "❌ credentials.json file is too small (likely empty)"
-            echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
-            exit 1
-          fi
-        else
-          echo "❌ credentials.json file was not created"
-          echo "YOUTUBE_CREDENTIALS_VALID=false" >> $GITHUB_ENV
-          exit 1
-        fi
-        
-        if [ -n "$YOUTUBE_TOKEN" ] && [ "$YOUTUBE_TOKEN" != "" ]; then
-          echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle 2>/dev/null
-          if [ -f token.pickle ] && [ -s token.pickle ]; then
-            echo "✅ YouTube token restored successfully (size: $(wc -c < token.pickle) bytes)"
-            ls -l token.pickle
-            file token.pickle
-            echo "YOUTUBE_TOKEN_VALID=true" >> $GITHUB_ENV
-          else
-            echo "❌ YouTube token restoration failed"
-            echo "🔍 YOUTUBE_TOKEN content (first 100 chars): ${YOUTUBE_TOKEN:0:100}"
-            echo "YOUTUBE_TOKEN_VALID=false" >> $GITHUB_ENV
-            exit 1
-          fi
-        else
-          echo "❌ No YOUTUBE_TOKEN secret found"
-          echo "YOUTUBE_TOKEN_VALID=false" >> $GITHUB_ENV
-          exit 1
-        fi
-        
         echo "✅ YouTube credentials setup completed"
 
     - name: Set upload status
       run: |
         echo "🔧 Determining upload status..."
-        ENABLE_UPLOAD_VAR="${{ vars.ENABLE_UPLOAD || 'true' }}"
-        echo "📋 Configuration check:"
-        echo "   - YOUTUBE_CREDENTIALS_VALID: ${{ env.YOUTUBE_CREDENTIALS_VALID }}"
-        echo "   - YOUTUBE_TOKEN_VALID: ${{ env.YOUTUBE_TOKEN_VALID }}"
-        echo "   - ENABLE_UPLOAD variable: $ENABLE_UPLOAD_VAR"
-        
-        if [ "${{ env.YOUTUBE_CREDENTIALS_VALID }}" = "true" ] && [ "${{ env.YOUTUBE_TOKEN_VALID }}" = "true" ] && [ "$ENABLE_UPLOAD_VAR" = "true" ]; then
-          echo "✅ Upload will be enabled"
+        if [ -f credentials.json ] && [ -f token.pickle ]; then
           echo "UPLOAD_TO_YOUTUBE=true" >> $GITHUB_ENV
         else
-          echo "⚠️ Upload will be disabled"
           echo "UPLOAD_TO_YOUTUBE=false" >> $GITHUB_ENV
         fi
 
@@ -560,8 +486,6 @@ jobs:
         echo "🐍 Python version: $(python --version)"
         echo "📁 Working directory: $(pwd)"
         echo "📋 Final configuration:"
-        echo "   - YouTube credentials valid: ${{ env.YOUTUBE_CREDENTIALS_VALID }}"
-        echo "   - YouTube token valid: ${{ env.YOUTUBE_TOKEN_VALID }}"
         echo "   - Upload enabled: ${{ env.UPLOAD_TO_YOUTUBE }}"
         echo "   - Video privacy: $VIDEO_PRIVACY"
         echo "🔍 Environment variables (sensitive values masked):"
@@ -662,7 +586,7 @@ jobs:
         echo "✅ Environment debug info collected"
 
     - name: Save updated YouTube token
-      if: always() && env.YOUTUBE_CREDENTIALS_VALID == 'true'
+      if: always() && env.UPLOAD_TO_YOUTUBE == 'true'
       id: save_token
       run: |
         if [ -f token.pickle ]; then
