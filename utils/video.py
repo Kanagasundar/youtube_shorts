@@ -1,9 +1,10 @@
 import os
 import logging
-from datetime import datetime
-from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, ColorClip
-from PIL import Image
-from typing import Optional
+from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip, TextClip, concatenate_videoclips
+from moviepy.config import change_settings
+
+# Configure ImageMagick for MoviePy
+change_settings({"IMAGEMAGICK_BINARY": "/usr/bin/convert"})
 
 # Configure logging
 logging.basicConfig(
@@ -12,407 +13,105 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def create_video(script: str, audio_path: str, thumbnail_path: str, topic: str) -> Optional[str]:
+def create_video(script, audio_path, thumbnail_path, topic, output_dir="output"):
     """
-    Create a YouTube Shorts video from script, audio, and thumbnail.
+    Create a video by combining script, audio, and thumbnail.
     
     Args:
-        script (str): The video script
-        audio_path (str): Path to the narration audio file
-        thumbnail_path (str): Path to the thumbnail image
-        topic (str): The video topic
+        script (str): The script text for the video.
+        audio_path (str): Path to the audio narration file.
+        thumbnail_path (str): Path to the thumbnail image.
+        topic (str): Topic of the video for naming.
+        output_dir (str): Directory to save the output video.
     
     Returns:
-        Optional[str]: Path to the generated video file or None if failed
+        str: Path to the created video file, or None if failed.
     """
-    output_dir = 'output'
-    os.makedirs(output_dir, exist_ok=True)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    video_path = os.path.join(output_dir, f'youtube_short_{timestamp}.mp4')
-    simple_video_path = os.path.join(output_dir, f'youtube_short_simple_{timestamp}.mp4')
-
-    # Validate input paths
-    if not os.path.exists(audio_path):
-        logger.error(f"❌ Audio file not found: {audio_path}")
-        return None
-    if not os.path.exists(thumbnail_path):
-        logger.error(f"❌ Thumbnail file not found: {thumbnail_path}")
-        return None
-
-    # Additional validation for audio file
     try:
-        with open(audio_path, 'rb') as f:
-            logger.info(f"✅ Audio file is accessible: {audio_path}")
-    except Exception as e:
-        logger.error(f"❌ Cannot access audio file {audio_path}: {str(e)}")
-        return None
+        logger.info("🎬 Starting video creation...")
 
-    # Load audio and get duration
-    try:
-        logger.info(f"Loading audio file: {audio_path}")
-        logger.debug(f"Audio path type: {type(audio_path)}, value: {audio_path}")
-        audio = VideoFileClip(audio_path, audio_fps=44100)  # Explicitly set audio_fps
-        duration = audio.duration
-        logger.info(f"✅ Audio loaded, duration: {duration:.1f} seconds")
-    except Exception as e:
-        logger.error(f"❌ Failed to load audio: {str(e)}")
-        logger.debug("Stack trace:", exc_info=True)
-        return None
-
-    try:
-        logger.info("🎬 Creating video...")
-        start_time = datetime.now()
-
-        # Load thumbnail and resize
-        with Image.open(thumbnail_path) as img:
-            # Convert to RGB if necessary
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-            
-            # Resize to 1080x1920 (YouTube Shorts resolution)
-            img = img.resize((1080, 1920), Image.LANCZOS)
-            thumbnail_temp = os.path.join(output_dir, f'temp_thumbnail_{timestamp}.jpg')
-            img.save(thumbnail_temp, 'JPEG')
-
-        # Create video from thumbnail
-        thumbnail_clip = VideoFileClip(thumbnail_temp).set_duration(duration)
-
-        # Add text overlay (script)
-        text_clip = TextClip(
-            script,
-            fontsize=40,
-            color='white',
-            font='Arial',
-            size=(1080, 1920),
-            method='caption',
-            align='south'
-        ).set_duration(duration)
-
-        # Combine clips
-        video = CompositeVideoClip([thumbnail_clip, text_clip.set_position('center')])
-
-        # Add audio
-        video = video.set_audio(audio)
-
-        # Write video
-        video.write_videofile(video_path, codec='libx264', audio_codec='aac', fps=24)
-        logger.info(f"✅ Video created: {video_path}")
-
-        # Clean up temporary files
-        for temp_file in [thumbnail_temp]:
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
-                logger.debug(f"🧹 Removed temporary file: {temp_file}")
-
-        duration_secs = (datetime.now() - start_time).total_seconds()
-        logger.info(f"⏱️ Video creation took: {duration_secs:.1f} seconds")
-
-        return video_path
-
-    except Exception as e:
-        logger.error(f"❌ Error creating video: {str(e)}")
-        logger.debug("Stack trace:", exc_info=True)
-        logger.info("🔄 Trying fallback video creation...")
-        
-        try:
-            logger.info("🎬 Creating simple fallback video...")
-            # Create a simple color background video
-            color_clip = ColorClip(size=(1080, 1920), color=(0, 0, 255), duration=duration)
-            text_clip = TextClip(
-                script,
-                fontsize=40,
-                color='white',
-                font='Arial',
-                size=(1080, 1920),
-                method='caption',
-                align='south'
-            ).set_duration(duration)
-            
-            video = CompositeVideoClip([color_clip, text_clip.set_position('center')])
-            video = video.set_audio(VideoFileClip(audio_path, audio_fps=44100))
-            video.write_videofile(simple_video_path, codec='libx264', audio_codec='aac', fps=24)
-            logger.info(f"✅ Simple video created: {simple_video_path}")
-            return simple_video_path
-        
-        except Exception as fallback_e:
-            logger.error(f"❌ Failed to create fallback video: {str(fallback_e)}")
-            logger.debug("Stack trace:", exc_info=True)
-            return Noneimport os
-import logging
-from datetime import datetime
-from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, ColorClip
-from PIL import Image
-from typing import Optional
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-def create_video(script: str, audio_path: str, thumbnail_path: str, topic: str) -> Optional[str]:
-    """
-    Create a YouTube Shorts video from script, audio, and thumbnail.
-    
-    Args:
-        script (str): The video script
-        audio_path (str): Path to the narration audio file
-        thumbnail_path (str): Path to the thumbnail image
-        topic (str): The video topic
-    
-    Returns:
-        Optional[str]: Path to the generated video file or None if failed
-    """
-    output_dir = 'output'
-    os.makedirs(output_dir, exist_ok=True)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    video_path = os.path.join(output_dir, f'youtube_short_{timestamp}.mp4')
-    simple_video_path = os.path.join(output_dir, f'youtube_short_simple_{timestamp}.mp4')
-
-    # Validate input paths
-    if not os.path.exists(audio_path):
-        logger.error(f"❌ Audio file not found: {audio_path}")
-        return None
-    if not os.path.exists(thumbnail_path):
-        logger.error(f"❌ Thumbnail file not found: {thumbnail_path}")
-        return None
-
-    # Additional validation for audio file
-    try:
-        with open(audio_path, 'rb') as f:
-            logger.info(f"✅ Audio file is accessible: {audio_path}")
-    except Exception as e:
-        logger.error(f"❌ Cannot access audio file {audio_path}: {str(e)}")
-        return None
-
-    # Load audio and get duration
-    try:
-        logger.info(f"Loading audio file: {audio_path}")
-        logger.debug(f"Audio path type: {type(audio_path)}, value: {audio_path}")
-        audio = VideoFileClip(audio_path, audio_fps=44100)  # Explicitly set audio_fps
-        duration = audio.duration
-        logger.info(f"✅ Audio loaded, duration: {duration:.1f} seconds")
-    except Exception as e:
-        logger.error(f"❌ Failed to load audio: {str(e)}")
-        logger.debug("Stack trace:", exc_info=True)
-        return None
-
-    try:
-        logger.info("🎬 Creating video...")
-        start_time = datetime.now()
-
-        # Load thumbnail and resize
-        with Image.open(thumbnail_path) as img:
-            # Convert to RGB if necessary
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-            
-            # Resize to 1080x1920 (YouTube Shorts resolution)
-            img = img.resize((1080, 1920), Image.LANCZOS)
-            thumbnail_temp = os.path.join(output_dir, f'temp_thumbnail_{timestamp}.jpg')
-            img.save(thumbnail_temp, 'JPEG')
-
-        # Create video from thumbnail
-        thumbnail_clip = VideoFileClip(thumbnail_temp).set_duration(duration)
-
-        # Add text overlay (script)
-        text_clip = TextClip(
-            script,
-            fontsize=40,
-            color='white',
-            font='Arial',
-            size=(1080, 1920),
-            method='caption',
-            align='south'
-        ).set_duration(duration)
-
-        # Combine clips
-        video = CompositeVideoClip([thumbnail_clip, text_clip.set_position('center')])
-
-        # Add audio
-        video = video.set_audio(audio)
-
-        # Write video
-        video.write_videofile(video_path, codec='libx264', audio_codec='aac', fps=24)
-        logger.info(f"✅ Video created: {video_path}")
-
-        # Clean up temporary files
-        for temp_file in [thumbnail_temp]:
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
-                logger.debug(f"🧹 Removed temporary file: {temp_file}")
-
-        duration_secs = (datetime.now() - start_time).total_seconds()
-        logger.info(f"⏱️ Video creation took: {duration_secs:.1f} seconds")
-
-        return video_path
-
-    except Exception as e:
-        logger.error(f"❌ Error creating video: {str(e)}")
-        logger.debug("Stack trace:", exc_info=True)
-        logger.info("🔄 Trying fallback video creation...")
-        
-        try:
-            logger.info("🎬 Creating simple fallback video...")
-            # Create a simple color background video
-            color_clip = ColorClip(size=(1080, 1920), color=(0, 0, 255), duration=duration)
-            text_clip = TextClip(
-                script,
-                fontsize=40,
-                color='white',
-                font='Arial',
-                size=(1080, 1920),
-                method='caption',
-                align='south'
-            ).set_duration(duration)
-            
-            video = CompositeVideoClip([color_clip, text_clip.set_position('center')])
-            video = video.set_audio(VideoFileClip(audio_path, audio_fps=44100))
-            video.write_videofile(simple_video_path, codec='libx264', audio_codec='aac', fps=24)
-            logger.info(f"✅ Simple video created: {simple_video_path}")
-            return simple_video_path
-        
-        except Exception as fallback_e:
-            logger.error(f"❌ Failed to create fallback video: {str(fallback_e)}")
-            logger.debug("Stack trace:", exc_info=True)
-            return Noneimport os
-import logging
-from datetime import datetime
-from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, ColorClip
-from PIL import Image
-from typing import Optional
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-def create_video(script: str, audio_path: str, thumbnail_path: str, topic: str) -> Optional[str]:
-    """
-    Create a YouTube Shorts video from script, audio, and thumbnail.
-    
-    Args:
-        script (str): The video script
-        audio_path (str): Path to the narration audio file
-        thumbnail_path (str): Path to the thumbnail image
-        topic (str): The video topic
-    
-    Returns:
-        Optional[str]: Path to the generated video file or None if failed
-    """
-    output_dir = 'output'
-    os.makedirs(output_dir, exist_ok=True)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    video_path = os.path.join(output_dir, f'youtube_short_{timestamp}.mp4')
-    simple_video_path = os.path.join(output_dir, f'youtube_short_simple_{timestamp}.mp4')
-
-    # Validate input paths
-    if not os.path.exists(audio_path):
-        logger.error(f"❌ Audio file not found: {audio_path}")
-        return None
-    if not os.path.exists(thumbnail_path):
-        logger.error(f"❌ Thumbnail file not found: {thumbnail_path}")
-        return None
-
-    # Additional validation for audio file
-    try:
-        with open(audio_path, 'rb') as f:
-            logger.info(f"✅ Audio file is accessible: {audio_path}")
-    except Exception as e:
-        logger.error(f"❌ Cannot access audio file {audio_path}: {str(e)}")
-        return None
-
-    # Load audio and get duration
-    try:
-        logger.info(f"Loading audio file: {audio_path}")
-        logger.debug(f"Audio path type: {type(audio_path)}, value: {audio_path}")
-        audio = VideoFileClip(audio_path, audio_fps=44100)  # Explicitly set audio_fps
-        duration = audio.duration
-        logger.info(f"✅ Audio loaded, duration: {duration:.1f} seconds")
-    except Exception as e:
-        logger.error(f"❌ Failed to load audio: {str(e)}")
-        logger.debug("Stack trace:", exc_info=True)
-        return None
-
-    try:
-        logger.info("🎬 Creating video...")
-        start_time = datetime.now()
-
-        # Load thumbnail and resize
-        with Image.open(thumbnail_path) as img:
-            # Convert to RGB if necessary
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-            
-            # Resize to 1080x1920 (YouTube Shorts resolution)
-            img = img.resize((1080, 1920), Image.LANCZOS)
-            thumbnail_temp = os.path.join(output_dir, f'temp_thumbnail_{timestamp}.jpg')
-            img.save(thumbnail_temp, 'JPEG')
-
-        # Create video from thumbnail
-        thumbnail_clip = VideoFileClip(thumbnail_temp).set_duration(duration)
-
-        # Add text overlay (script)
-        text_clip = TextClip(
-            script,
-            fontsize=40,
-            color='white',
-            font='Arial',
-            size=(1080, 1920),
-            method='caption',
-            align='south'
-        ).set_duration(duration)
-
-        # Combine clips
-        video = CompositeVideoClip([thumbnail_clip, text_clip.set_position('center')])
-
-        # Add audio
-        video = video.set_audio(audio)
-
-        # Write video
-        video.write_videofile(video_path, codec='libx264', audio_codec='aac', fps=24)
-        logger.info(f"✅ Video created: {video_path}")
-
-        # Clean up temporary files
-        for temp_file in [thumbnail_temp]:
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
-                logger.debug(f"🧹 Removed temporary file: {temp_file}")
-
-        duration_secs = (datetime.now() - start_time).total_seconds()
-        logger.info(f"⏱️ Video creation took: {duration_secs:.1f} seconds")
-
-        return video_path
-
-    except Exception as e:
-        logger.error(f"❌ Error creating video: {str(e)}")
-        logger.debug("Stack trace:", exc_info=True)
-        logger.info("🔄 Trying fallback video creation...")
-        
-        try:
-            logger.info("🎬 Creating simple fallback video...")
-            # Create a simple color background video
-            color_clip = ColorClip(size=(1080, 1920), color=(0, 0, 255), duration=duration)
-            text_clip = TextClip(
-                script,
-                fontsize=40,
-                color='white',
-                font='Arial',
-                size=(1080, 1920),
-                method='caption',
-                align='south'
-            ).set_duration(duration)
-            
-            video = CompositeVideoClip([color_clip, text_clip.set_position('center')])
-            video = video.set_audio(VideoFileClip(audio_path, audio_fps=44100))
-            video.write_videofile(simple_video_path, codec='libx264', audio_codec='aac', fps=24)
-            logger.info(f"✅ Simple video created: {simple_video_path}")
-            return simple_video_path
-        
-        except Exception as fallback_e:
-            logger.error(f"❌ Failed to create fallback video: {str(fallback_e)}")
-            logger.debug("Stack trace:", exc_info=True)
+        # Validate audio file
+        if not os.path.exists(audio_path):
+            logger.error(f"❌ Audio file not found: {audio_path}")
             return None
+        if not audio_path.lower().endswith(('.mp3', '.wav')):
+            logger.error(f"❌ Invalid audio file format: {audio_path}")
+            return None
+
+        # Validate thumbnail
+        if not os.path.exists(thumbnail_path):
+            logger.error(f"❌ Thumbnail file not found: {thumbnail_path}")
+            return None
+        if not thumbnail_path.lower().endswith(('.jpg', '.jpeg', '.png')):
+            logger.error(f"❌ Invalid thumbnail format: {thumbnail_path}")
+            return None
+
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, f"{topic.replace(' ', '_')}_video.mp4")
+
+        # Load audio
+        logger.info(f"🔊 Loading audio: {audio_path}")
+        try:
+            audio = AudioFileClip(audio_path, fps=44100)
+        except Exception as e:
+            logger.error(f"❌ Failed to load audio: {str(e)}")
+            return None
+
+        # Create text clips from script
+        text_clips = []
+        words = script.split()
+        duration_per_word = audio.duration / len(words)
+        for i, word in enumerate(words):
+            try:
+                text_clip = TextClip(
+                    word,
+                    fontsize=70,
+                    color='white',
+                    stroke_color='black',
+                    stroke_width=2,
+                    font='Arial',
+                    size=(1280, 720)
+                ).set_duration(duration_per_word).set_position('center').set_start(i * duration_per_word)
+                text_clips.append(text_clip)
+            except Exception as e:
+                logger.error(f"❌ Failed to create text clip for word '{word}': {str(e)}")
+                audio.close()
+                return None
+
+        # Load thumbnail as background
+        logger.info(f"🖼️ Loading thumbnail as background: {thumbnail_path}")
+        try:
+            background = VideoFileClip(thumbnail_path).set_duration(audio.duration)
+            background = background.resize((1280, 720))
+        except Exception as e:
+            logger.error(f"❌ Failed to load thumbnail: {str(e)}")
+            audio.close()
+            return None
+
+        # Combine video and audio
+        logger.info("🎥 Combining video elements...")
+        try:
+            video = CompositeVideoClip([background] + text_clips)
+            video = video.set_audio(audio)
+            video.write(output_path, codec='libx264', audio_codec='aac')
+            logger.info(f"✅ Video created successfully: {output_path}")
+        except Exception as e:
+            logger.error(f"❌ Failed to create video: {str(e)}")
+            video.close()
+            audio.close()
+            background.close()
+            return None
+
+        # Clean up
+        video.close()
+        audio.close()
+        background.close()
+        for clip in text_clips:
+            clip.close()
+
+        return output_path
+
+    except Exception as e:
+        logger.error(f"❌ Unexpected error in video creation: {str(e)}", exc_info=True)
+        return None
