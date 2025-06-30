@@ -64,6 +64,21 @@ jobs:
         pip list  # Log installed packages for debugging
         echo "✅ All dependencies installed successfully"
 
+    - name: Check for proxies references
+      run: |
+        echo "🔍 Checking for 'proxies' in Python files..."
+        git grep -i "proxies" *.py utils/*.py || echo "No 'proxies' references found"
+        echo "✅ Proxies check completed"
+
+    - name: Log script contents for debugging
+      run: |
+        echo "🔍 Logging contents of main.py and utils/scripting.py..."
+        echo "📄 main.py:"
+        cat main.py || echo "❌ main.py not found"
+        echo "📄 utils/scripting.py:"
+        cat utils/scripting.py || echo "❌ utils/scripting.py not found"
+        echo "✅ Script contents logged"
+
     - name: Fix namespace packages and verify installations
       run: |
         echo "🔧 Fixing namespace packages and performing comprehensive verification..."
@@ -305,6 +320,13 @@ jobs:
         else:
             print('\n✅ All critical packages verified successfully!')
         "
+
+    - name: Clear Python module cache
+      run: |
+        echo "🧹 Clearing Python module cache..."
+        find . -name "*.pyc" -delete
+        find . -name "__pycache__" -type d -exec rm -rf {} +
+        echo "✅ Module cache cleared"
 
     - name: Create output directories
       run: |
@@ -718,7 +740,7 @@ jobs:
             const oldArtifacts = artifacts.artifacts
               .filter(artifact => artifact.name.includes('automation-'))
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-              .slice(10); // Keep only the 10 most recent automation artifacts
+              .slice(10); # Keep only the 10 most recent automation artifacts
             
             console.log(`Found ${oldArtifacts.length} old artifacts to delete`);
             
@@ -736,7 +758,7 @@ jobs:
                 console.log(`✅ Deleted artifact: ${artifact.name} (ID: ${artifact.id})`);
                 deletedCount++;
                 
-                // Add a small delay to avoid rate limiting
+                # Add a small delay to avoid rate limiting
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
               } catch (deleteError) {
@@ -783,7 +805,7 @@ jobs:
             let failedRunCount = 0;
             
             for (const run of oldRuns) {
-              try:
+              try {
                 # Only delete runs older than 30 days
                 const runDate = new Date(run.created_at);
                 const thirtyDaysAgo = new Date();

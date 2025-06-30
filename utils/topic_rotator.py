@@ -4,7 +4,16 @@ Topic Rotator - Selects topics based on date rotation
 """
 
 import hashlib
+import logging
 from datetime import datetime
+from typing import Tuple, List
+
+# Configure logging to match scripting.py and main.py
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Diverse topic pool for YouTube Shorts
 TOPICS_POOL = [
@@ -79,42 +88,60 @@ TOPICS_POOL = [
     ("Drink That Can Make You Immortal", "Food"),
 ]
 
-def get_today_topic():
+def get_today_topic() -> Tuple[str, str]:
     """
-    Get today's topic based on date-based rotation
-    Returns: tuple (topic, category)
-    """
-    # Use current date to determine topic
-    today = datetime.now().strftime("%Y-%m-%d")
-    
-    # Create hash of today's date for consistent daily selection
-    date_hash = hashlib.md5(today.encode()).hexdigest()
-    
-    # Convert hash to index
-    topic_index = int(date_hash[:8], 16) % len(TOPICS_POOL)
-    
-    topic, category = TOPICS_POOL[topic_index]
-    
-    print(f"🗓️ Date: {today}")
-    print(f"🎯 Selected topic index: {topic_index}")
-    
-    return topic, category
+    Get today's topic based on date-based rotation.
 
-def get_all_topics():
-    """Return all available topics for reference"""
+    Returns:
+        Tuple[str, str]: A tuple containing the selected topic and category.
+    """
+    try:
+        if not TOPICS_POOL:
+            logger.error("TOPICS_POOL is empty")
+            raise ValueError("No topics available in TOPICS_POOL")
+
+        # Use current date to determine topic
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        # Create hash of today's date for consistent daily selection
+        date_hash = hashlib.md5(today.encode()).hexdigest()
+        
+        # Convert hash to index
+        topic_index = int(date_hash[:8], 16) % len(TOPICS_POOL)
+        
+        topic, category = TOPICS_POOL[topic_index]
+        
+        logger.info(f"🗓️ Date: {today}")
+        logger.info(f"🎯 Selected topic index: {topic_index}")
+        logger.info(f"✅ Topic: {topic}")
+        logger.info(f"✅ Category: {category}")
+        
+        return topic, category
+    
+    except Exception as e:
+        logger.error(f"Failed to select topic: {str(e)}")
+        logger.debug("Stack trace:", exc_info=True)
+        return "Default Topic", "General"
+
+def get_all_topics() -> List[Tuple[str, str]]:
+    """Return all available topics for reference."""
     return TOPICS_POOL
 
-def get_topics_by_category(category):
-    """Get all topics from a specific category"""
+def get_topics_by_category(category: str) -> List[Tuple[str, str]]:
+    """Get all topics from a specific category."""
     return [topic for topic, cat in TOPICS_POOL if cat.lower() == category.lower()]
 
 if __name__ == "__main__":
     # Test the topic rotator
-    topic, category = get_today_topic()
-    print(f"\nToday's Topic: {topic}")
-    print(f"Category: {category}")
+    try:
+        topic, category = get_today_topic()
+        logger.info(f"Today's Topic: {topic}")
+        logger.info(f"Category: {category}")
+        
+        # Show some stats
+        categories = sorted(set(cat for _, cat in TOPICS_POOL))
+        logger.info(f"Available categories: {', '.join(categories)}")
+        logger.info(f"Total topics: {len(TOPICS_POOL)}")
     
-    # Show some stats
-    categories = list(set([cat for _, cat in TOPICS_POOL]))
-    print(f"\nAvailable categories: {', '.join(categories)}")
-    print(f"Total topics: {len(TOPICS_POOL)}")
+    except Exception as e:
+        logger.error(f"Error testing topic rotator: {str(e)}")

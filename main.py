@@ -390,6 +390,12 @@ def import_modules() -> bool:
     
     imported_modules = {}
     
+    # Clear module cache to prevent stale imports
+    for module_name in modules_to_import:
+        for mod in list(sys.modules.keys()):
+            if mod.startswith(module_name) or module_name in mod:
+                del sys.modules[mod]
+    
     for module_name, functions in modules_to_import.items():
         try:
             module = __import__(module_name)
@@ -443,13 +449,16 @@ def retry_on_failure(func, max_retries: int = None, delay: float = 1.0):
     
     for attempt in range(max_retries + 1):
         try:
-            return func()
+            result = func()
+            if result is None:
+                raise ValueError(f"Function {func.__name__} returned None")
+            return result
         except Exception as e:
             if attempt == max_retries:
-                raise e
-            
+                logger.error(f"❌ Failed after {max_retries} attempts: {str(e)}")
+                raise
             wait_time = delay * (2 ** attempt)
-            logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {wait_time:.1f}s...")
+            logger.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {wait_time:.1f}s...")
             time.sleep(wait_time)
 
 def generate_content_with_retry(topic: str, category: str) -> Tuple[str, str, str, str]:
@@ -457,9 +466,11 @@ def generate_content_with_retry(topic: str, category: str) -> Tuple[str, str, st
     
     def generate_script_step():
         logger.info("✍️ Generating script...")
-        script = generate_script(topic, category)
+        script = generate_script(topic)
         if not script or len(script.strip()) < 50:
-            raise ValueError("Generated script is too short or empty")
+            logger.error(f"❌ Generated script is too short or empty ({len(script.strip()) if script else 0} characters)")
+            logger.debug(f"Script content: {script!r}")
+            raise ValueError(f"Generated script is too short or empty ({len(script.strip()) if script else 0} characters)")
         return script
     
     def generate_voice_step(script):
@@ -614,12 +625,16 @@ def main() -> int:
         
         if topic_override:
             topic = topic_override
-            category = category_override or 'general'
+            category = category_override or 'General'
             logger.info(f"✅ Using override - Topic: {topic}, Category: {category}")
         else:
-            topic, category = get_today_topic()
-            logger.info(f"✅ Topic: {topic}")
-            logger.info(f"✅ Category: {category}")
+            try:
+                topic, category = get_today_topic()
+                logger.info(f"✅ Topic: {topic}")
+                logger.info(f"✅ Category: {category}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to get topic: {str(e)}. Using default topic.")
+                topic, category = "Default Topic", "General"
         
         # Step 2-5: Generate content
         logger.info("🎨 Steps 2-5: Generating content...")
