@@ -39,16 +39,6 @@ else:
 def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_text: str, max_retries: int = 5) -> str:
     """
     Create a YouTube Shorts video with narration and text overlays.
-    
-    Args:
-        audio_path (str): Path to the narration audio file.
-        thumbnail_path (str): Path to the thumbnail image.
-        output_dir (str): Directory to save the output video.
-        script_text (str): Script text for text overlays.
-        max_retries (int): Maximum number of retries for text clip creation.
-    
-    Returns:
-        str: Path to the created video file, or False if creation fails.
     """
     try:
         logger.info("🎬 Starting video creation...")
@@ -69,17 +59,9 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
         
         # Load and resize thumbnail to YouTube Shorts resolution (1080x1920)
         logger.info(f"🖼️ Loading thumbnail: {thumbnail_path}")
-        try:
-            # Try using resize with method parameter for better compatibility
-            thumbnail = (mpe.ImageClip(thumbnail_path)
-                        .set_duration(duration)
-                        .resize((1080, 1920), resample='lanczos'))
-        except Exception as resize_error:
-            logger.warning(f"⚠️ Resize with lanczos failed: {resize_error}")
-            # Fallback to basic resize
-            thumbnail = (mpe.ImageClip(thumbnail_path)
-                        .set_duration(duration)
-                        .resize((1080, 1920)))
+        thumbnail = (mpe.ImageClip(thumbnail_path)
+                    .set_duration(duration)
+                    .resize((1080, 1920)))  # Simplified resize without resample
         
         # Split script into words for text overlays
         words = script_text.split()
