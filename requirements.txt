@@ -19,7 +19,7 @@ pydub==0.25.1
 
 # Image processing for thumbnails
 Pillow==10.4.0
-
+ 
 # Google API for YouTube upload
 google-auth==2.34.0
 google-auth-oauthlib==1.2.1
