@@ -31,14 +31,18 @@ def create_video(script: str, audio_path: str, thumbnail_path: str, topic: str) 
     video_path = os.path.join(output_dir, f'youtube_short_{timestamp}.mp4')
     simple_video_path = os.path.join(output_dir, f'youtube_short_simple_{timestamp}.mp4')
 
+    # Load audio and get duration outside try block
+    try:
+        audio = VideoFileClip(audio_path)
+        duration = audio.duration
+    except Exception as e:
+        logger.error(f"❌ Failed to load audio: {str(e)}")
+        logger.debug("Stack trace:", exc_info=True)
+        return None
+
     try:
         logger.info("🎬 Creating video...")
         start_time = datetime.now()
-
-        # Load audio
-        audio = VideoFileClip(audio_path)
-        duration = audio.duration
-        logger.info(f"⏱️ Video duration: {duration:.1f} seconds")
 
         # Load thumbnail and resize
         with Image.open(thumbnail_path) as img:
@@ -47,7 +51,7 @@ def create_video(script: str, audio_path: str, thumbnail_path: str, topic: str) 
                 img = img.convert('RGB')
             
             # Resize to 1080x1920 (YouTube Shorts resolution)
-            img = img.resize((1080, 1920), Image.LANCZOS)  # Replaced ANTIALIAS with LANCZOS
+            img = img.resize((1080, 1920), Image.LANCZOS)
             thumbnail_temp = os.path.join(output_dir, f'temp_thumbnail_{timestamp}.jpg')
             img.save(thumbnail_temp, 'JPEG')
 
@@ -81,8 +85,8 @@ def create_video(script: str, audio_path: str, thumbnail_path: str, topic: str) 
                 os.remove(temp_file)
                 logger.debug(f"🧹 Removed temporary file: {temp_file}")
 
-        duration = (datetime.now() - start_time).total_seconds()
-        logger.info(f"⏱️ Video creation took: {duration:.1f} seconds")
+        duration_secs = (datetime.now() - start_time).total_seconds()
+        logger.info(f"⏱️ Video creation took: {duration_secs:.1f} seconds")
 
         return video_path
 
