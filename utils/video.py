@@ -39,7 +39,7 @@ else:
 
 def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_text: str, max_retries: int = 5) -> str:
     """
-    Create a YouTube Shorts video with narration and professionally edited effects.
+    Create a YouTube Shorts video using a sequence of images and narration with professionally edited effects.
     """
     try:
         logger.info("🎬 Starting video creation...")
@@ -47,8 +47,8 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
         # Validate inputs
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
-        if not os.path.exists(thumbnail_path):
-            raise FileNotFoundError(f"Thumbnail file not found: {thumbnail_path}")
+        if not isinstance(thumbnail_path, list) or not all(os.path.exists(p) for p in thumbnail_path):
+            raise FileNotFoundError(f"Image sequence not found or invalid: {thumbnail_path}")
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
             logger.info(f"✅ Created output directory: {output_dir}")
@@ -56,29 +56,45 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
         # Load audio
         logger.info(f"🔊 Loading audio: {audio_path}")
         audio = mpe.AudioFileClip(audio_path)
-        duration = audio.duration
+        audio_duration = audio.duration
         
-        # Load and resize thumbnail to YouTube Shorts resolution (1080x1920)
-        logger.info(f"🖼️ Loading thumbnail: {thumbnail_path}")
-        thumbnail = (mpe.ImageClip(thumbnail_path)
-                    .set_duration(duration)
-                    .resize((1080, 1920)))  # Simplified resize without resample
+        # Determine number of images and target duration (15-60s)
+        image_paths = thumbnail_path
+        num_images = len(image_paths)
+        target_duration = min(max(15, audio_duration), 60)
+        duration_per_image = target_duration / num_images if num_images > 0 else target_duration
         
-        # Create animated gradient background
+        # Create video clips from image sequence with crossfade transitions
+        clips = []
+        for i, image_path in enumerate(image_paths):
+            logger.info(f"🖼️ Loading image {i+1}: {image_path}")
+            clip = (mpe.ImageClip(image_path)
+                   .set_duration(duration_per_image)
+                   .resize((1080, 1920)))
+            
+            if i > 0:
+                clip = clip.crossfadein(duration_per_image * 0.2)  # 20% crossfade
+            clips.append(clip)
+        
+        # Concatenate clips with smooth transitions
+        video = mpe.concatenate_videoclips(clips, method="compose", padding=-duration_per_image * 0.2)
+        video = video.set_audio(audio)
+        
+        # Add animated gradient background
         def gradient_frame(t):
             r = int(25 + 40 * np.sin(t + 0))
             g = int(25 + 40 * np.cos(t + 2))
             b = int(112 + 40 * np.sin(t + 4))
             return np.array([[[r, g, b]] * 1080] * 1920, dtype=np.uint8)
         
-        animated_bg = mpe.VideoClip(gradient_frame, duration=duration).resize((1080, 1920))
-        video = mpe.CompositeVideoClip([animated_bg, thumbnail.set_opacity(0.7)])
+        animated_bg = mpe.VideoClip(gradient_frame, duration=target_duration).resize((1080, 1920))
+        video = mpe.CompositeVideoClip([animated_bg.set_opacity(0.7), video])
         
         # Split script into words for text overlays with animations
         words = script_text.split()
         text_clips = []
         current_time = 0
-        time_per_word = duration / max(len(words), 1)  # Avoid division by zero
+        time_per_word = target_duration / max(len(words), 1)
         
         for i, word in enumerate(words):
             for attempt in range(max_retries):
@@ -96,11 +112,9 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
                         align='center'
                     ).set_position(('center', 'bottom' if i % 2 == 0 else 'top'))
                     
-                    # Add fade-in and slide animation
                     def get_position(t):
                         x = 'center'
                         y = 1800 - 1400 * np.exp(-4 * t / time_per_word) if i % 2 == 0 else -200 + 1400 * np.exp(-4 * t / time_per_word)
-                        logger.debug(f"Position for '{word}' at t={t}: ({x}, {y})")
                         return x, y
                     
                     text_clip = (text_clip
@@ -110,15 +124,7 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
                                .fadeout(0.5)
                                .set_position(get_position, relative=False))
                     
-                    # Add particle effect
-                    def particle_effect(t):
-                        x = 1080 * np.random.random()
-                        y = 1920 * np.random.random()
-                        size = 5 + 5 * np.sin(t * 10)
-                        return mpe.ColorClip([int(x), int(y), size, size], color=(255, 255, 255, 50)).set_duration(0.1)
-                    
-                    particle = mpe.VideoClip(particle_effect, duration=time_per_word / 2).set_start(current_time)
-                    text_clips.extend([text_clip, particle])
+                    text_clips.append(text_clip)
                     logger.info(f"✅ Text clip created for '{word}' with effects")
                     break
                 except Exception as e:
@@ -128,10 +134,9 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
                         time.sleep(2 ** attempt)
                     else:
                         logger.error(f"❌ Failed after {max_retries} attempts for word '{word}'")
-                        # Fallback: Create a blank clip with fade
                         text_clip = mpe.ColorClip(
                             size=(1080, 400),
-                            color=(0, 0, 0, 0),  # Transparent
+                            color=(0, 0, 0, 0),
                             duration=time_per_word
                         ).set_position(('center', 'bottom')).set_start(current_time).fadein(0.3).fadeout(0.3)
                         text_clips.append(text_clip)
@@ -139,15 +144,13 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
                         break
             current_time += time_per_word
         
-        # Composite video with animated background, thumbnail, and text overlays
-        logger.info("🎥 Compositing video with effects...")
+        # Composite video with text overlays
         video = mpe.CompositeVideoClip([video] + text_clips)
-        video = video.set_audio(audio)
         
         # Add final touch: Dynamic scaling and rotation
         video = (video
-                .resize(lambda t: 1 + 0.1 * np.sin(t))  # Subtle zoom
-                .rotate(lambda t: 2 * np.sin(t), unit='deg'))  # Gentle rotation
+                .resize(lambda t: 1 + 0.1 * np.sin(t))
+                .rotate(lambda t: 2 * np.sin(t), unit='deg'))
         
         # Generate sanitized output path
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -164,14 +167,13 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
             fps=30,
             preset='medium',
             threads=4,
-            bitrate='5000k'  # Higher bitrate for quality
+            bitrate='5000k'
         )
         
         # Clean up resources
         try:
             audio.close()
-            thumbnail.close()
-            for clip in text_clips:
+            for clip in clips + text_clips:
                 clip.close()
             video.close()
         except Exception as e:

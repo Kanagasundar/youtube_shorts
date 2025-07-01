@@ -130,7 +130,8 @@ def check_dependencies() -> bool:
         'google-auth': ('import google.auth', 'google.auth'),
         'google-auth-oauthlib': ('import google_auth_oauthlib', 'google_auth_oauthlib'),
         'google-api-python-client': ('from googleapiclient import discovery', 'discovery'),
-        'requests': ('import requests', 'requests')
+        'requests': ('import requests', 'requests'),
+        'replicate': ('import replicate', 'replicate')
     }
     
     missing_packages = []
@@ -240,7 +241,7 @@ def check_environment() -> bool:
     """Check if required environment variables are set."""
     logger.info("🔍 Checking environment variables...")
     
-    required_vars = ['OPENAI_API_KEY']
+    required_vars = ['OPENAI_API_KEY', 'REPLICATE_API_TOKEN']
     optional_vars = {
         'UPLOAD_TO_YOUTUBE': 'true',
         'VIDEO_PRIVACY': 'public',
@@ -283,6 +284,8 @@ def check_environment() -> bool:
         for var in missing_vars:
             if var == 'OPENAI_API_KEY':
                 print(f"   export {var}=sk-your_openai_api_key_here")
+            elif var == 'REPLICATE_API_TOKEN':
+                print(f"   export {var}=your_replicate_api_token_here")
             else:
                 print(f"   export {var}=your_value_here")
         return False
@@ -407,7 +410,7 @@ def import_modules() -> bool:
         'scripting': ['generate_script'],
         'voice': ['generate_voice'],
         'video': ['create_video'],
-        'thumbnail_generator': ['generate_thumbnail'],
+        'thumbnail_generator': ['generate_image_sequence'],  # Updated to use image sequence
         'youtube_uploader': ['YouTubeUploader', 'generate_video_metadata']
     }
     
@@ -416,7 +419,7 @@ def import_modules() -> bool:
     # Clear module cache to prevent stale imports
     for module_name in modules_to_import:
         for mod in list(sys.modules.keys()):
-            if module_name in mod or 'openai' in mod.lower():
+            if module_name in mod or 'openai' in mod.lower() or 'replicate' in mod.lower():
                 del sys.modules[mod]
     
     for module_name, functions in modules_to_import.items():
@@ -490,7 +493,7 @@ def retry_on_failure(func, max_retries: int = None, delay: float = 1.0):
             logger.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {wait_time:.1f}s...")
             time.sleep(wait_time)
 
-def generate_content_with_retry(topic: str, category: str) -> Tuple[str, str, str, str]:
+def generate_content_with_retry(topic: str, category: str) -> Tuple[str, str, list, str]:
     """Generate all content with retry logic."""
     
     def generate_script_step():
@@ -529,18 +532,19 @@ Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()
         cleanup_files.append(audio_path)
         return audio_path
     
-    def generate_thumbnail_step():
-        logger.info("🖼️ Generating thumbnail...")
-        thumbnail_path = generate_thumbnail(topic, category)
-        if not os.path.exists(thumbnail_path):
-            raise FileNotFoundError(f"Thumbnail file not created: {thumbnail_path}")
-        cleanup_files.append(thumbnail_path)
-        return thumbnail_path
+    def generate_image_sequence_step(script):
+        logger.info("🖼️ Generating image sequence...")
+        image_paths = generate_image_sequence(topic, script)
+        if not image_paths or not all(os.path.exists(p) for p in image_paths):
+            raise FileNotFoundError(f"Image sequence not created: {image_paths}")
+        for path in image_paths:
+            cleanup_files.append(path)
+        return image_paths
     
-    def create_video_step(script, audio_path, thumbnail_path):
+    def create_video_step(script, audio_path, image_paths):
         logger.info("🎬 Creating video...")
         output_dir = str(OUTPUT_DIR)
-        video_path = create_video(audio_path, thumbnail_path, output_dir, script)
+        video_path = create_video(audio_path, image_paths, output_dir, script)
         if not video_path or not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not created: {video_path}")
         cleanup_files.append(video_path)
@@ -553,13 +557,13 @@ Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()
     audio_path = retry_on_failure(lambda: generate_voice_step(script))
     logger.info(f"✅ Audio generated: {audio_path}")
     
-    thumbnail_path = retry_on_failure(generate_thumbnail_step)
-    logger.info(f"✅ Thumbnail generated: {thumbnail_path}")
+    image_paths = retry_on_failure(lambda: generate_image_sequence_step(script))
+    logger.info(f"✅ Image sequence generated: {len(image_paths)} images")
     
-    video_path = retry_on_failure(lambda: create_video_step(script, audio_path, thumbnail_path))
+    video_path = retry_on_failure(lambda: create_video_step(script, audio_path, image_paths))
     logger.info(f"✅ Video created: {video_path}")
     
-    return script, audio_path, thumbnail_path, video_path
+    return script, audio_path, image_paths, video_path
 
 def upload_to_youtube(video_path: str, thumbnail_path: str, script: str, topic: str, category: str) -> Optional[str]:
     """Upload video to YouTube with error handling."""
@@ -569,7 +573,6 @@ def upload_to_youtube(video_path: str, thumbnail_path: str, script: str, topic: 
     if not upload_enabled:
         logger.info("⚠️ Upload disabled (UPLOAD_TO_YOUTUBE=false)")
         logger.info(f"📁 Video saved locally: {video_path}")
-        logger.info(f"📁 Thumbnail saved locally: {thumbnail_path}")
         return None
     
     try:
@@ -586,7 +589,7 @@ def upload_to_youtube(video_path: str, thumbnail_path: str, script: str, topic: 
             
             video_id = uploader.upload_video(
                 video_path=video_path,
-                thumbnail_path=thumbnail_path,
+                thumbnail_path=None,  # No thumbnail since we use image sequence
                 title=title,
                 description=description,
                 tags=tags
@@ -603,14 +606,13 @@ def upload_to_youtube(video_path: str, thumbnail_path: str, script: str, topic: 
         logger.info(f"🔗 Watch at: https://www.youtube.com/watch?v={video_id}")
         logger.info(f"🔗 YouTube Shorts: https://youtube.com/shorts/{video_id}")
         
-        save_upload_info(video_id, title, topic, category, video_path, thumbnail_path)
+        save_upload_info(video_id, title, topic, category, video_path, None)
         
         return video_id
         
     except Exception as upload_error:
         logger.error(f"❌ Upload process failed: {upload_error}")
         logger.info(f"📁 Video saved locally: {video_path}")
-        logger.info(f"📁 Thumbnail saved locally: {thumbnail_path}")
         raise upload_error
 
 def save_upload_info(video_id: str, title: str, topic: str, category: str, video_path: str, thumbnail_path: str):
@@ -627,7 +629,7 @@ def save_upload_info(video_id: str, title: str, topic: str, category: str, video
         "topic": topic,
         "category": category,
         "video_path": video_path,
-        "thumbnail_path": thumbnail_path,
+        "thumbnail_path": None,  # No thumbnail
         "youtube_url": f"https://www.youtube.com/watch?v={video_id}",
         "shorts_url": f"https://youtube.com/shorts/{video_id}",
         "privacy": os.getenv('VIDEO_PRIVACY', 'public'),
@@ -648,7 +650,6 @@ Title: {title}
 Topic: {topic}
 Category: {category}
 Video Path: {video_path}
-Thumbnail Path: {thumbnail_path}
 YouTube URL: https://www.youtube.com/watch?v={video_id}
 Shorts URL: https://youtube.com/shorts/{video_id}
 {'='*80}
@@ -687,13 +688,13 @@ def main() -> int:
         
         # Step 2-5: Generate content
         logger.info("🎨 Steps 2-5: Generating content...")
-        script, audio_path, thumbnail_path, video_path = generate_content_with_retry(topic, category)
+        script, audio_path, image_paths, video_path = generate_content_with_retry(topic, category)
         
         # Step 6: Upload
         logger.info("📤 Step 6: Uploading to YouTube...")
         
         try:
-            video_id = upload_to_youtube(video_path, thumbnail_path, script, topic, category)
+            video_id = upload_to_youtube(video_path, image_paths, script, topic, category)
             
             if video_id:
                 logger.info("✅ AUTOMATION COMPLETED SUCCESSFULLY WITH UPLOAD!")
