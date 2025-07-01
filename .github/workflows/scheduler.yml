@@ -172,11 +172,43 @@ jobs:
         pip list  # Log installed packages for debugging
         echo "✅ All dependencies installed successfully"
 
-    - name: Check for proxies references
+    - name: Search for proxies references in code
       run: |
-        echo "🔍 Checking for 'proxies' in Python files..."
-        git grep -i "proxies" *.py utils/*.py || echo "No 'proxies' references found"
-        echo "✅ Proxies check completed"
+        echo "🔍 Searching for 'proxies' references in Python files..."
+        
+        # Search for proxies in all Python files
+        PROXIES_FOUND=$(grep -r "proxies" . --include="*.py" || true)
+        
+        if [ -n "$PROXIES_FOUND" ]; then
+          echo "❌ Found 'proxies' references in the following files:"
+          echo "$PROXIES_FOUND"
+          echo ""
+          echo "🔧 Files that need to be fixed:"
+          grep -l "proxies" . --include="*.py" || true
+          echo ""
+          echo "💡 These files likely contain the problematic 'proxies' parameter"
+          echo "   that needs to be removed from OpenAI client initialization."
+          
+          # Show context around each match
+          echo ""
+          echo "📄 Context around each match:"
+          grep -rn -B2 -A2 "proxies" . --include="*.py" || true
+          
+        else
+          echo "✅ No 'proxies' references found in Python files"
+        fi
+        
+        # Also check for common variations
+        echo ""
+        echo "🔍 Checking for common variations..."
+        
+        PROXY_VARIATIONS=$(grep -ri "proxy\|http_proxy\|https_proxy" . --include="*.py" | grep -v "# " || true)
+        if [ -n "$PROXY_VARIATIONS" ]; then
+          echo "⚠️ Found proxy-related references:"
+          echo "$PROXY_VARIATIONS"
+        else
+          echo "✅ No proxy variations found"
+        fi
 
     - name: Log script contents for debugging
       run: |
