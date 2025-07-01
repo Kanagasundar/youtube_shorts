@@ -97,15 +97,18 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
                     ).set_position(('center', 'bottom' if i % 2 == 0 else 'top'))
                     
                     # Add fade-in and slide animation
+                    def get_position(t):
+                        x = 'center'
+                        y = 1800 - 1400 * np.exp(-4 * t / time_per_word) if i % 2 == 0 else -200 + 1400 * np.exp(-4 * t / time_per_word)
+                        logger.debug(f"Position for '{word}' at t={t}: ({x}, {y})")
+                        return x, y
+                    
                     text_clip = (text_clip
                                .set_start(current_time)
                                .set_duration(time_per_word)
                                .fadein(0.5)
                                .fadeout(0.5)
-                               .set_position(
-                                   lambda t: ('center', 1800 - 1400 * np.exp(-4 * t / time_per_word) if i % 2 == 0 else -200 + 1400 * np.exp(-4 * t / time_per_word)),
-                                   relative=False
-                               ))
+                               .set_position(get_position, relative=False))
                     
                     # Add particle effect
                     def particle_effect(t):
