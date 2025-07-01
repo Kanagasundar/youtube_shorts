@@ -130,8 +130,7 @@ def check_dependencies() -> bool:
         'google-auth': ('import google.auth', 'google.auth'),
         'google-auth-oauthlib': ('import google_auth_oauthlib', 'google_auth_oauthlib'),
         'google-api-python-client': ('from googleapiclient import discovery', 'discovery'),
-        'requests': ('import requests', 'requests'),
-        'replicate': ('import replicate', 'replicate')
+        'requests': ('import requests', 'requests')  # Required for Pexels API
     }
     
     missing_packages = []
@@ -241,7 +240,7 @@ def check_environment() -> bool:
     """Check if required environment variables are set."""
     logger.info("🔍 Checking environment variables...")
     
-    required_vars = ['OPENAI_API_KEY', 'REPLICATE_API_TOKEN']
+    required_vars = ['OPENAI_API_KEY', 'PEXELS_API_KEY']  # Updated to use PEXELS_API_KEY
     optional_vars = {
         'UPLOAD_TO_YOUTUBE': 'true',
         'VIDEO_PRIVACY': 'public',
@@ -284,8 +283,8 @@ def check_environment() -> bool:
         for var in missing_vars:
             if var == 'OPENAI_API_KEY':
                 print(f"   export {var}=sk-your_openai_api_key_here")
-            elif var == 'REPLICATE_API_TOKEN':
-                print(f"   export {var}=your_replicate_api_token_here")
+            elif var == 'PEXELS_API_KEY':
+                print(f"   export {var}=your_pexels_api_key_here")
             else:
                 print(f"   export {var}=your_value_here")
         return False
@@ -410,7 +409,7 @@ def import_modules() -> bool:
         'scripting': ['generate_script'],
         'voice': ['generate_voice'],
         'video': ['create_video'],
-        'thumbnail_generator': ['generate_image_sequence'],  # Updated to use image sequence
+        'thumbnail_generator': ['generate_image_sequence'],  # Updated to use Pexels
         'youtube_uploader': ['YouTubeUploader', 'generate_video_metadata']
     }
     
@@ -419,7 +418,7 @@ def import_modules() -> bool:
     # Clear module cache to prevent stale imports
     for module_name in modules_to_import:
         for mod in list(sys.modules.keys()):
-            if module_name in mod or 'openai' in mod.lower() or 'replicate' in mod.lower():
+            if module_name in mod or 'openai' in mod.lower() or 'requests' in mod.lower():
                 del sys.modules[mod]
     
     for module_name, functions in modules_to_import.items():
@@ -664,7 +663,7 @@ def main() -> int:
     """Main function to orchestrate the entire process."""
     start_time = time.time()
     logger.info("🚀 Starting YouTube Automation...")
-    logger.info(f"📅 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"📅 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (IST)")
     
     try:
         # Step 1: Get topic
