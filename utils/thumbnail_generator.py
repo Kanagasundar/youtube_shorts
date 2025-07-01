@@ -47,13 +47,19 @@ def generate_image_sequence(topic, script, output_dir="output", num_images=5, du
     
     try:
         for i in range(num_images):
-            prompt = f"{prompt_base} - variation {i+1}, high quality, cinematic lighting"
+            prompt = f"{prompt_base} - variation {i+1}, hd, dramatic lighting"
             logger.info(f"Generating image {i+1} with prompt: {prompt}")
             
-            # Use a stable diffusion model (e.g., from Replicate)
+            # Use the specified Stable Diffusion version with K_EULER scheduler
+            input_data = {
+                "prompt": prompt,
+                "width": 1080,
+                "height": 1920,
+                "scheduler": "K_EULER"
+            }
             output = replicate_client.run(
-                "stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16d7134b327152d7ff3be3421f94",
-                input={"prompt": prompt, "width": 1080, "height": 1920}
+                "stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4",
+                input=input_data
             )
             
             if isinstance(output, list) and output:
