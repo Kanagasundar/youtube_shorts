@@ -66,54 +66,51 @@ class YouTubeUploader:
         self._authenticate()
     
     def _authenticate(self):
-        """Authenticate with YouTube API using token.pickle or OAuth2 credentials"""
+        """Authenticate with YouTube API using service account or OAuth2 credentials"""
         try:
-            # Check for pre-existing token.pickle
             credentials = None
-            if os.path.exists(self.token_path):
+            
+            # Check for credentials.json
+            if not os.path.exists(self.credentials_path):
+                logger.error(f"❌ Credentials file not found: {self.credentials_path}")
+                raise FileNotFoundError(f"Credentials file not found: {self.credentials_path}")
+            
+            with open(self.credentials_path, 'r', encoding='utf-8') as f:
+                creds_data = json.load(f)
+            
+            # Handle service account credentials first (CI/CD priority)
+            if creds_data.get('type') == 'service_account':
+                logger.info("📝 Detected service account credentials")
+                credentials = service_account.Credentials.from_service_account_info(
+                    creds_data, scopes=self.SCOPES
+                )
+                if credentials.valid:
+                    logger.info("✅ Service account credentials validated")
+                else:
+                    raise RuntimeError("Invalid service account credentials")
+            
+            # Fallback to OAuth2 with token.pickle if service account fails or not present
+            elif os.path.exists(self.token_path):
                 logger.info("🔍 Loading saved OAuth2 token from token.pickle")
                 with open(self.token_path, 'rb') as token:
                     credentials = pickle.load(token)
-            
-            # Validate or refresh credentials
-            if credentials and credentials.valid:
-                logger.info("✅ Valid credentials loaded from token.pickle")
-            elif credentials and credentials.expired and credentials.refresh_token:
-                logger.info("🔄 Refreshing expired OAuth2 token")
-                credentials.refresh(Request())
-                # Save refreshed token
-                with open(self.token_path, 'wb') as token:
-                    pickle.dump(credentials, token)
-                    logger.info(f"✅ Saved refreshed OAuth2 token to {self.token_path}")
-            else:
-                if not os.path.exists(self.credentials_path):
-                    logger.error(f"❌ Credentials file not found: {self.credentials_path}")
-                    raise FileNotFoundError(f"Credentials file not found: {self.credentials_path}")
                 
-                with open(self.credentials_path, 'r', encoding='utf-8') as f:
-                    creds_data = json.load(f)
-                
-                # Handle OAuth2 credentials (installed or web)
-                if 'installed' in creds_data or 'web' in creds_data:
-                    logger.info("📝 Detected OAuth2 credentials")
-                    flow = InstalledAppFlow.from_client_config(
-                        creds_data, self.SCOPES
-                    )
-                    # In CI/CD, assume token.pickle should exist; raise error if not
-                    logger.error("❌ Interactive OAuth2 flow not supported in CI/CD")
-                    logger.info("💡 Ensure YOUTUBE_TOKEN secret contains a valid base64-encoded token.pickle")
-                    raise RuntimeError("Interactive OAuth2 flow not supported in CI/CD")
-                
-                # Handle service account credentials
-                elif creds_data.get('type') == 'service_account':
-                    logger.info("📝 Detected service account credentials")
-                    credentials = service_account.Credentials.from_service_account_info(
-                        creds_data, scopes=self.SCOPES
-                    )
+                if credentials and credentials.valid:
+                    logger.info("✅ Valid credentials loaded from token.pickle")
+                elif credentials and credentials.expired and credentials.refresh_token:
+                    logger.info("🔄 Refreshing expired OAuth2 token")
+                    credentials.refresh(Request())
+                    with open(self.token_path, 'wb') as token:
+                        pickle.dump(credentials, token)
+                        logger.info(f"✅ Saved refreshed OAuth2 token to {self.token_path}")
                 else:
-                    logger.error("❌ Invalid credentials format. Expected 'installed', 'web', or 'service_account'")
-                    raise RuntimeError("Invalid credentials format")
+                    raise RuntimeError("Invalid or expired OAuth2 token in token.pickle")
             
+            # Avoid InstalledAppFlow in CI/CD
+            else:
+                logger.error("❌ No valid service account or token.pickle found for authentication")
+                raise RuntimeError("Authentication requires a service account or pre-existing token.pickle in CI/CD")
+
             self.youtube = build('youtube', 'v3', credentials=credentials)
             logger.info("✅ YouTube API client initialized successfully")
         

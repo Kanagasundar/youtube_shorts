@@ -454,25 +454,26 @@ jobs:
     - name: Set up YouTube credentials
       env:
         YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
-        YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
       run: |
         echo "🔍 Setting up YouTube credentials..."
-        echo "$YOUTUBE_CREDENTIALS" > credentials.json
-        if [ -n "$YOUTUBE_TOKEN" ]; then
-          echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle
-          echo "✅ YouTube token restored"
+        if [ -n "$YOUTUBE_CREDENTIALS" ]; then
+          echo "$YOUTUBE_CREDENTIALS" > credentials.json
+          echo "✅ YouTube service account credentials restored"
         else
-          echo "⚠️ No YouTube token provided"
+          echo "⚠️ No YOUTUBE_CREDENTIALS provided, upload will be disabled"
+          touch credentials.json  # Create empty file to avoid errors
         fi
         echo "✅ YouTube credentials setup completed"
 
     - name: Set upload status
       run: |
         echo "🔧 Determining upload status..."
-        if [ -f credentials.json ] && [ -f token.pickle ]; then
+        if [ -f credentials.json ] && grep -q '"type": "service_account"' credentials.json; then
           echo "UPLOAD_TO_YOUTUBE=true" >> $GITHUB_ENV
+          echo "✅ Service account detected, enabling upload"
         else
           echo "UPLOAD_TO_YOUTUBE=false" >> $GITHUB_ENV
+          echo "⚠️ No valid service account credentials, disabling upload"
         fi
 
     - name: Create environment file
