@@ -517,7 +517,7 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         VIDEO_PRIVACY: ${{ vars.VIDEO_PRIVACY || 'public' }}
         VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
-        UPLOAD_TO_YOUTUBE: ${{ env.UPLOAD_TO_YOUTUBE }}
+        UPLOAD_TO_YOUTUBE: true
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         TOPIC_OVERRIDE: ${{ github.event.inputs.topic_override }}
         CATEGORY_OVERRIDE: ${{ github.event.inputs.category_override }}
