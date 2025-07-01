@@ -103,9 +103,8 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
                                .fadein(0.5)
                                .fadeout(0.5)
                                .set_position(
-                                   lambda t: ('center', 1800 - 1400 * np.exp(-4 * t / time_per_word))
-                                   if i % 2 == 0 else ('center', -200 + 1400 * np.exp(-4 * t / time_per_word)),
-                                   relative=True
+                                   lambda t: ('center', 1800 - 1400 * np.exp(-4 * t / time_per_word) if i % 2 == 0 else -200 + 1400 * np.exp(-4 * t / time_per_word)),
+                                   relative=False
                                ))
                     
                     # Add particle effect
