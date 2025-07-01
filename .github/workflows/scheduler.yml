@@ -459,22 +459,18 @@ jobs:
         if [ -n "$YOUTUBE_CREDENTIALS" ]; then
           echo "$YOUTUBE_CREDENTIALS" > credentials.json
           echo "✅ YouTube service account credentials restored"
+          # Log structure with sensitive fields masked
+          if command -v jq >/dev/null 2>&1; then
+            echo "🔍 Credentials structure (masked):"
+            jq -r 'del(.private_key, .client_id, .private_key_id) | tostring' credentials.json || echo "⚠️ Failed to parse credentials with jq"
+          else
+            echo "⚠️ jq not found, cannot log credentials structure"
+          fi
         else
           echo "⚠️ No YOUTUBE_CREDENTIALS provided, upload will be disabled"
           touch credentials.json  # Create empty file to avoid errors
         fi
         echo "✅ YouTube credentials setup completed"
-
-    - name: Set upload status
-      run: |
-        echo "🔧 Determining upload status..."
-        if [ -f credentials.json ] && grep -q '"type": "service_account"' credentials.json; then
-          echo "UPLOAD_TO_YOUTUBE=true" >> $GITHUB_ENV
-          echo "✅ Service account detected, enabling upload"
-        else
-          echo "UPLOAD_TO_YOUTUBE=false" >> $GITHUB_ENV
-          echo "⚠️ No valid service account credentials, disabling upload"
-        fi
 
     - name: Create environment file
       env:
