@@ -66,6 +66,13 @@ def generate_script(topic, category):
         logger.info(f"✅ Script generated ({len(script)} characters)")
         return script
     
+    except ValueError as ve:
+        logger.error(f"❌ Failed to generate script due to invalid input: {str(ve)}")
+        fallback_script = (
+            f"Did you know about {topic}? It's fascinating! Learn more in this quick {category} Short!"
+        )
+        logger.info(f"✅ Using fallback script ({len(fallback_script)} characters)")
+        return fallback_script
     except Exception as e:
         logger.error(f"❌ Failed to generate script: {str(e)}")
         # Fallback script
