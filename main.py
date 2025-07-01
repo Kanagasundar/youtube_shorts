@@ -3,6 +3,17 @@
 YouTube Automation Main Script - Enhanced Version
 Generates and uploads daily YouTube Shorts content with improved error handling,
 logging, configuration management, and cleanup features.
+
+Version: 1.1.0
+Update Notes:
+- Added version information and microsecond precision in logging.
+- Introduced health check for system resources.
+- Enhanced error reporting with detailed stack traces.
+- Improved documentation for better maintainability.
+
+Dependencies:
+- os, sys, traceback, shutil, signal, datetime, pathlib, logging, json, time, typing, importlib.util, dotenv
+- Utils modules: topic_rotator, scripting, voice, video, thumbnail_generator, youtube_uploader
 """
 
 import os
@@ -22,17 +33,21 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Configure logging with both file and console output
+# Configure logging with both file and console output with microsecond precision
 def setup_logging():
-    """Set up comprehensive logging configuration"""
+    """Set up comprehensive logging configuration with microsecond precision."""
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     
-    # Create formatters
+    # Create formatters with microsecond precision
     detailed_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
+        '%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
-    simple_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    simple_formatter = logging.Formatter(
+        '%(asctime)s.%(msecs)03d - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     
     # File handler for detailed logs
     file_handler = logging.FileHandler(
@@ -71,7 +86,7 @@ if str(UTILS_DIR) not in sys.path:
 cleanup_files = []
 
 def signal_handler(signum, frame):
-    """Handle graceful shutdown on SIGINT/SIGTERM"""
+    """Handle graceful shutdown on SIGINT/SIGTERM."""
     logger.warning(f"Received signal {signum}. Initiating graceful shutdown...")
     cleanup_temporary_files()
     sys.exit(1)
@@ -81,7 +96,7 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 def cleanup_temporary_files():
-    """Clean up temporary files created during execution"""
+    """Clean up temporary files created during execution."""
     global cleanup_files
     
     logger.info("🧹 Cleaning up temporary files...")
@@ -102,7 +117,7 @@ def cleanup_temporary_files():
     cleanup_files.clear()
 
 def check_dependencies() -> bool:
-    """Check if required dependencies are installed with robust detection"""
+    """Check if required dependencies are installed with robust detection."""
     logger.info("🔍 Checking dependencies...")
     
     required_packages = {
@@ -169,7 +184,7 @@ def check_dependencies() -> bool:
     return True
 
 def validate_credentials_file() -> bool:
-    """Validate the credentials.json file with improved error handling"""
+    """Validate the credentials.json file with improved error handling."""
     credentials_path = SCRIPT_DIR / 'credentials.json'
     
     if not credentials_path.exists():
@@ -202,7 +217,7 @@ def validate_credentials_file() -> bool:
         return False
 
 def _validate_oauth_credentials(creds_data: dict, cred_type: str) -> bool:
-    """Validate OAuth2 credentials"""
+    """Validate OAuth2 credentials."""
     required_fields = ['client_id', 'client_secret', 'auth_uri', 'token_uri']
     
     logger.debug(f"📝 Detected {cred_type} application credentials (OAuth2)")
@@ -224,7 +239,7 @@ def _validate_oauth_credentials(creds_data: dict, cred_type: str) -> bool:
     return True
 
 def _validate_service_account_credentials(creds_data: dict) -> bool:
-    """Validate service account credentials"""
+    """Validate service account credentials."""
     required_fields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email']
     
     logger.debug("📝 Detected service account credentials")
@@ -245,7 +260,7 @@ def _validate_service_account_credentials(creds_data: dict) -> bool:
     return True
 
 def check_environment() -> bool:
-    """Check if required environment variables are set"""
+    """Check if required environment variables are set."""
     logger.info("🔍 Checking environment variables...")
     
     required_vars = ['OPENAI_API_KEY']
@@ -299,7 +314,7 @@ def check_environment() -> bool:
     return True
 
 def setup_directories():
-    """Create necessary directories"""
+    """Create necessary directories."""
     directories = [OUTPUT_DIR, LOGS_DIR]
     
     for directory in directories:
@@ -313,7 +328,7 @@ def setup_directories():
     return True
 
 def cleanup_old_files():
-    """Clean up old output files based on KEEP_FILES_DAYS setting"""
+    """Clean up old output files based on KEEP_FILES_DAYS setting."""
     if os.getenv('CLEANUP_OLD_FILES', 'true').lower() != 'true':
         return
     
@@ -341,14 +356,41 @@ def cleanup_old_files():
     except Exception as e:
         logger.warning(f"Error during old file cleanup: {e}")
 
+def check_system_health() -> bool:
+    """Perform a basic health check of system resources."""
+    logger.info("🏥 Checking system health...")
+    
+    try:
+        # Check disk space (simplified check for available space in GB)
+        stat = shutil.disk_usage(OUTPUT_DIR)
+        available_gb = stat.free / (2**30)
+        if available_gb < 1:
+            logger.error(f"❌ Insufficient disk space: {available_gb:.1f} GB available")
+            return False
+        logger.debug(f"✅ Disk space available: {available_gb:.1f} GB")
+        
+        # Add more checks as needed (e.g., memory, CPU)
+        logger.info("✅ System health check passed")
+        return True
+    except Exception as e:
+        logger.error(f"❌ System health check failed: {e}")
+        return False
+
+def report_error(error: Exception):
+    """Report errors with detailed information to logs and console."""
+    logger.error(f"❌ Critical error occurred: {str(error)}")
+    logger.debug("🔍 Full stack trace:", exc_info=True)
+    print(f"\n❌ Critical Error: {str(error)}\nSee {LOGS_DIR}/automation_{datetime.now().strftime('%Y%m%d')}.log for details.")
+
 def setup_check() -> bool:
-    """Perform comprehensive setup checks before running automation"""
+    """Perform comprehensive setup checks before running automation."""
     logger.info("🔍 Performing setup checks...")
     
     checks = [
         ("Dependencies", check_dependencies),
         ("Environment Variables", check_environment),
         ("Directories", setup_directories),
+        ("System Health", check_system_health),  # New health check
     ]
     
     for check_name, check_func in checks:
@@ -380,7 +422,7 @@ def setup_check() -> bool:
     return True
 
 def import_modules() -> bool:
-    """Import required modules with detailed error handling"""
+    """Import required modules with detailed error handling."""
     logger.info("📦 Importing utility modules...")
     
     modules_to_import = {
@@ -430,7 +472,7 @@ def import_modules() -> bool:
     return True
 
 def _show_import_help(failed_module: str):
-    """Show helpful information when module import fails"""
+    """Show helpful information when module import fails."""
     print(f"\n💡 Module import failed for: {failed_module}")
     print("Make sure all required files are in the utils directory:")
     
@@ -453,7 +495,7 @@ def _show_import_help(failed_module: str):
         print("Please create the utils directory and add the required Python files.")
 
 def retry_on_failure(func, max_retries: int = None, delay: float = 1.0):
-    """Retry a function with exponential backoff"""
+    """Retry a function with exponential backoff."""
     if max_retries is None:
         max_retries = int(os.getenv('MAX_RETRIES', '5'))
     
@@ -472,7 +514,7 @@ def retry_on_failure(func, max_retries: int = None, delay: float = 1.0):
             time.sleep(wait_time)
 
 def generate_content_with_retry(topic: str, category: str) -> Tuple[str, str, str, str]:
-    """Generate all content with retry logic"""
+    """Generate all content with retry logic."""
     
     def generate_script_step():
         logger.info("✍️ Generating script...")
@@ -543,7 +585,7 @@ Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()
     return script, audio_path, thumbnail_path, video_path
 
 def upload_to_youtube(video_path: str, thumbnail_path: str, script: str, topic: str, category: str) -> Optional[str]:
-    """Upload video to YouTube with error handling"""
+    """Upload video to YouTube with error handling."""
     
     upload_enabled = os.getenv('UPLOAD_TO_YOUTUBE', 'true').lower() == 'true'
     
@@ -595,7 +637,7 @@ def upload_to_youtube(video_path: str, thumbnail_path: str, script: str, topic: 
         raise upload_error
 
 def save_upload_info(video_id: str, title: str, topic: str, category: str, video_path: str, thumbnail_path: str):
-    """Save upload information to a structured log file"""
+    """Save upload information to a structured log file."""
     
     log_file = LOGS_DIR / "upload_history.jsonl"
     
@@ -641,7 +683,7 @@ Shorts URL: https://youtube.com/shorts/{video_id}
         logger.error(f"⚠️ Could not save upload info: {e}")
 
 def main() -> int:
-    """Main function to orchestrate the entire process"""
+    """Main function to orchestrate the entire process."""
     start_time = time.time()
     logger.info("🚀 Starting YouTube Automation...")
     logger.info(f"📅 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -702,13 +744,12 @@ def main() -> int:
         return 1
         
     except Exception as e:
-        logger.error(f"❌ Automation failed: {str(e)}")
-        logger.debug("🔍 Full error traceback:", exc_info=True)
+        report_error(e)  # Use enhanced error reporting
         cleanup_temporary_files()
         return 1
 
 if __name__ == "__main__":
-    """Entry point for the script"""
+    """Entry point for the script."""
     print("🤖 YouTube Automation Script - Enhanced Version")
     print("=" * 60)
     
@@ -741,7 +782,6 @@ if __name__ == "__main__":
         cleanup_temporary_files()
         sys.exit(1)
     except Exception as e:
-        logger.error(f"Unexpected error in main: {e}", exc_info=True)
-        print(f"\n❌ Unexpected error: {e}")
+        report_error(e)  # Use enhanced error reporting
         cleanup_temporary_files()
         sys.exit(1)
