@@ -4,13 +4,11 @@ from datetime import datetime
 from pathlib import Path
 import moviepy.editor as mpe
 from moviepy.config import change_settings
-import time
 import numpy as np
 
 # PIL compatibility fix
 try:
     from PIL import Image
-    # For newer Pillow versions (10.0.0+), ANTIALIAS was removed
     if not hasattr(Image, 'ANTIALIAS'):
         Image.ANTIALIAS = Image.LANCZOS
         logging.info("Applied PIL compatibility fix: Image.ANTIALIAS -> Image.LANCZOS")
@@ -64,121 +62,79 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
         target_duration = min(max(15, audio_duration), 60)
         duration_per_image = target_duration / num_images if num_images > 0 else target_duration
         
-        # Create video clips from image sequence with crossfade transitions
+        # Pre-resize images
+        logger.info(f"🖼️ Pre-processing {num_images} images...")
         clips = []
         for i, image_path in enumerate(image_paths):
             logger.info(f"🖼️ Loading image {i+1}: {image_path}")
-            clip = (mpe.ImageClip(image_path)
-                   .set_duration(duration_per_image)
-                   .resize((1080, 1920)))
-            
+            img = Image.open(image_path).convert("RGB").resize((1080, 1920), Image.Resampling.LANCZOS)
+            clip = mpe.ImageClip(np.array(img)).set_duration(duration_per_image)
             if i > 0:
-                clip = clip.crossfadein(duration_per_image * 0.2)  # 20% crossfade
+                clip = clip.crossfadein(duration_per_image * 0.1)  # Reduced crossfade to 10%
             clips.append(clip)
         
-        # Concatenate clips with smooth transitions
-        video = mpe.concatenate_videoclips(clips, method="compose", padding=-duration_per_image * 0.2)
+        # Concatenate clips
+        video = mpe.concatenate_videoclips(clips, method="compose", padding=-duration_per_image * 0.1)
         video = video.set_audio(audio)
         
-        # Add animated gradient background
+        # Simplified gradient background
         def gradient_frame(t):
-            r = int(25 + 40 * np.sin(t + 0))
-            g = int(25 + 40 * np.cos(t + 2))
-            b = int(112 + 40 * np.sin(t + 4))
+            r = int(25 + 20 * np.sin(t))
+            g = int(25 + 20 * np.cos(t))
+            b = int(112 + 20 * np.sin(t + 1))
             return np.array([[[r, g, b]] * 1080] * 1920, dtype=np.uint8)
         
-        animated_bg = mpe.VideoClip(gradient_frame, duration=target_duration).resize((1080, 1920))
-        video = mpe.CompositeVideoClip([animated_bg.set_opacity(0.7), video])
+        animated_bg = mpe.VideoClip(gradient_frame, duration=target_duration).resize((1080, 1920)).set_opacity(0.5)
+        video = mpe.CompositeVideoClip([animated_bg, video])
         
-        # Split script into words for text overlays with animations
+        # Create subtitles as a single clip
+        logger.info("📝 Generating subtitles...")
         words = script_text.split()
-        text_clips = []
+        subtitles = []
         current_time = 0
-        time_per_word = target_duration / max(len(words), 1)
+        word_duration = target_duration / max(len(words), 1)
         
-        for i, word in enumerate(words):
-            for attempt in range(max_retries):
-                try:
-                    logger.info(f"📝 Creating text clip for word '{word}'...")
-                    text_clip = mpe.TextClip(
-                        word,
-                        fontsize=60,
-                        color='white',
-                        stroke_color='black',
-                        stroke_width=3,
-                        font='Arial-Bold',
-                        size=(900, 400),
-                        method='caption',
-                        align='center'
-                    ).set_position(('center', 'bottom' if i % 2 == 0 else 'top'))
-                    
-                    def get_position(t):
-                        x = 'center'
-                        y = 1800 - 1400 * np.exp(-4 * t / time_per_word) if i % 2 == 0 else -200 + 1400 * np.exp(-4 * t / time_per_word)
-                        return x, y
-                    
-                    text_clip = (text_clip
-                               .set_start(current_time)
-                               .set_duration(time_per_word)
-                               .fadein(0.5)
-                               .fadeout(0.5)
-                               .set_position(get_position, relative=False))
-                    
-                    text_clips.append(text_clip)
-                    logger.info(f"✅ Text clip created for '{word}' with effects")
-                    break
-                except Exception as e:
-                    logger.error(f"❌ Failed to create text clip for word '{word}': {str(e)}")
-                    if attempt < max_retries - 1:
-                        logger.warning(f"Attempt {attempt + 1} failed. Retrying in {2 ** attempt}s...")
-                        time.sleep(2 ** attempt)
-                    else:
-                        logger.error(f"❌ Failed after {max_retries} attempts for word '{word}'")
-                        text_clip = mpe.ColorClip(
-                            size=(1080, 400),
-                            color=(0, 0, 0, 0),
-                            duration=time_per_word
-                        ).set_position(('center', 'bottom')).set_start(current_time).fadein(0.3).fadeout(0.3)
-                        text_clips.append(text_clip)
-                        logger.info(f"✅ Fallback blank clip created for '{word}'")
-                        break
-            current_time += time_per_word
+        for word in words:
+            subtitles.append(((current_time, current_time + word_duration), word))
+            current_time += word_duration
         
-        # Composite video with text overlays
-        video = mpe.CompositeVideoClip([video] + text_clips)
+        subtitle_clip = mpe.SubtitlesClip(subtitles, lambda txt: mpe.TextClip(
+            txt,
+            fontsize=70,
+            color='white',
+            stroke_color='black',
+            stroke_width=1,
+            size=(1080, None),
+            method='caption',
+            align='center'
+        ).set_position(('center', 'bottom')).set_duration(word_duration).fadein(0.3).fadeout(0.3))
         
-        # Add final touch: Dynamic scaling and rotation
-        video = (video
-                .resize(lambda t: 1 + 0.1 * np.sin(t))
-                .rotate(lambda t: 2 * np.sin(t), unit='deg'))
+        # Composite with subtitles
+        video = mpe.CompositeVideoClip([video, subtitle_clip.set_duration(target_duration)])
         
-        # Generate sanitized output path
+        # Minimal dynamic effects
+        video = video.resize(lambda t: 1 + 0.05 * np.sin(t / 2))  # Reduced amplitude and frequency
+        
+        # Generate output path
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = str(Path(output_dir) / f"video_{timestamp}.mp4")
         
-        # Write video with high quality
+        # Write video with optimized settings
         logger.info(f"💾 Writing video to {output_path}...")
         video.write_videofile(
             output_path,
-            codec='libx264',
-            audio_codec='aac',
-            temp_audiofile=str(Path(output_dir) / f"temp-audio-{timestamp}.m4a"),
-            remove_temp=True,
+            codec="libx264",
+            audio_codec="aac",
+            preset="ultrafast",
+            bitrate="2000k",  # Reduced bitrate
+            threads=2,  # Adjusted for runner
             fps=30,
-            preset='medium',
-            threads=4,
-            bitrate='5000k'
+            logger=None  # Disable MoviePy logging
         )
         
         # Clean up resources
-        try:
-            audio.close()
-            for clip in clips + text_clips:
-                clip.close()
-            video.close()
-        except Exception as e:
-            logger.warning(f"⚠️ Error during resource cleanup: {e}")
-        
+        audio.close()
+        video.close()
         logger.info(f"✅ Video created successfully: {output_path}")
         return output_path
     
