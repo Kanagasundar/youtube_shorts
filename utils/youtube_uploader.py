@@ -8,7 +8,6 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-from google.oauth2 import service_account
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +54,7 @@ def generate_video_metadata(topic: str, category: str, script: str = '') -> tupl
         return fallback_metadata
 
 class YouTubeUploader:
-    """Handles YouTube video uploads with authentication"""
+    """Handles YouTube video uploads with OAuth 2.0 authentication"""
 
     SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
     
@@ -66,7 +65,7 @@ class YouTubeUploader:
         self._authenticate()
     
     def _authenticate(self):
-        """Authenticate with YouTube API using service account or OAuth2 credentials"""
+        """Authenticate with YouTube API using OAuth 2.0 credentials"""
         try:
             credentials = None
             
@@ -75,42 +74,38 @@ class YouTubeUploader:
                 logger.error(f"❌ Credentials file not found: {self.credentials_path}")
                 raise FileNotFoundError(f"Credentials file not found: {self.credentials_path}")
             
-            with open(self.credentials_path, 'r', encoding='utf-8') as f:
-                creds_data = json.load(f)
-            
-            # Handle service account credentials first (CI/CD priority)
-            if creds_data.get('type') == 'service_account':
-                logger.info("📝 Detected service account credentials")
-                credentials = service_account.Credentials.from_service_account_info(
-                    creds_data, scopes=self.SCOPES
-                )
-                if credentials.valid:
-                    logger.info("✅ Service account credentials validated")
-                else:
-                    raise RuntimeError("Invalid service account credentials")
-            
-            # Fallback to OAuth2 with token.pickle if service account fails or not present
-            elif os.path.exists(self.token_path):
-                logger.info("🔍 Loading saved OAuth2 token from token.pickle")
+            # Load existing token if available
+            if os.path.exists(self.token_path):
+                logger.info(f"🔍 Loading saved OAuth 2.0 token from {self.token_path}")
                 with open(self.token_path, 'rb') as token:
                     credentials = pickle.load(token)
                 
+                # Check if credentials are valid or can be refreshed
                 if credentials and credentials.valid:
                     logger.info("✅ Valid credentials loaded from token.pickle")
                 elif credentials and credentials.expired and credentials.refresh_token:
-                    logger.info("🔄 Refreshing expired OAuth2 token")
+                    logger.info("🔄 Refreshing expired OAuth 2.0 token")
                     credentials.refresh(Request())
                     with open(self.token_path, 'wb') as token:
                         pickle.dump(credentials, token)
-                        logger.info(f"✅ Saved refreshed OAuth2 token to {self.token_path}")
+                        logger.info(f"✅ Saved refreshed OAuth 2.0 token to {self.token_path}")
                 else:
-                    raise RuntimeError("Invalid or expired OAuth2 token in token.pickle")
+                    logger.error("❌ Invalid or expired OAuth 2.0 token in token.pickle")
+                    credentials = None
             
-            # Avoid InstalledAppFlow in CI/CD
-            else:
-                logger.error("❌ No valid service account or token.pickle found for authentication")
-                raise RuntimeError("Authentication requires a service account or pre-existing token.pickle in CI/CD")
-
+            # If no valid credentials, run OAuth 2.0 flow (not suitable for CI/CD)
+            if not credentials:
+                if os.getenv('CI', 'false').lower() == 'true':
+                    logger.error("❌ No valid token.pickle found for CI/CD environment")
+                    raise RuntimeError("Authentication requires a pre-existing token.pickle in CI/CD")
+                else:
+                    logger.info("🔐 Initiating OAuth 2.0 user consent flow")
+                    flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, self.SCOPES)
+                    credentials = flow.run_local_server(port=0)
+                    with open(self.token_path, 'wb') as token:
+                        pickle.dump(credentials, token)
+                        logger.info(f"✅ Saved new OAuth 2.0 token to {self.token_path}")
+            
             self.youtube = build('youtube', 'v3', credentials=credentials)
             logger.info("✅ YouTube API client initialized successfully")
         

@@ -454,21 +454,28 @@ jobs:
     - name: Set up YouTube credentials
       env:
         YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
+        YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
       run: |
         echo "🔍 Setting up YouTube credentials..."
         if [ -n "$YOUTUBE_CREDENTIALS" ]; then
           echo "$YOUTUBE_CREDENTIALS" > credentials.json
-          echo "✅ YouTube service account credentials restored"
-          # Log structure with sensitive fields masked
+          echo "✅ YouTube OAuth 2.0 credentials restored"
           if command -v jq >/dev/null 2>&1; then
             echo "🔍 Credentials structure (masked):"
-            jq -r 'del(.private_key, .client_id, .private_key_id) | tostring' credentials.json || echo "⚠️ Failed to parse credentials with jq"
+            jq -r 'del(.client_secret, .client_id) | tostring' credentials.json || echo "⚠️ Failed to parse credentials with jq"
           else
             echo "⚠️ jq not found, cannot log credentials structure"
           fi
         else
-          echo "⚠️ No YOUTUBE_CREDENTIALS provided, upload will be disabled"
-          touch credentials.json  # Create empty file to avoid errors
+          echo "❌ YOUTUBE_CREDENTIALS not provided"
+          exit 1
+        fi
+        if [ -n "$YOUTUBE_TOKEN" ]; then
+          echo "$YOUTUBE_TOKEN" | base64 -d > token.pickle
+          echo "✅ YouTube OAuth 2.0 token restored"
+        else
+          echo "❌ YOUTUBE_TOKEN not provided"
+          exit 1
         fi
         echo "✅ YouTube credentials setup completed"
 

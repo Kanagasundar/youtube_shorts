@@ -184,7 +184,7 @@ def check_dependencies() -> bool:
     return True
 
 def validate_credentials_file() -> bool:
-    """Validate the credentials.json file with improved error handling."""
+    """Validate the credentials.json file for OAuth 2.0."""
     credentials_path = SCRIPT_DIR / 'credentials.json'
     
     if not credentials_path.exists():
@@ -197,15 +197,13 @@ def validate_credentials_file() -> bool:
         
         logger.debug(f"📝 Credentials file structure: {list(creds_data.keys())}")
         
-        # Handle different credential formats
+        # Validate OAuth 2.0 credentials (installed or web)
         if 'installed' in creds_data:
             return _validate_oauth_credentials(creds_data['installed'], 'installed')
         elif 'web' in creds_data:
             return _validate_oauth_credentials(creds_data['web'], 'web')
-        elif creds_data.get('type') == 'service_account':
-            return _validate_service_account_credentials(creds_data)
         else:
-            logger.error("❌ Unknown credentials format. Expected 'installed', 'web', or service account format")
+            logger.error("❌ Unknown credentials format. Expected 'installed' or 'web' for OAuth 2.0")
             logger.error(f"Available keys: {list(creds_data.keys())}")
             return False
         
@@ -236,27 +234,6 @@ def _validate_oauth_credentials(creds_data: dict, cred_type: str) -> bool:
             return False
     
     logger.info(f"✅ OAuth2 {cred_type} application credentials validation passed")
-    return True
-
-def _validate_service_account_credentials(creds_data: dict) -> bool:
-    """Validate service account credentials."""
-    required_fields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email']
-    
-    logger.debug("📝 Detected service account credentials")
-    
-    missing_fields = [field for field in required_fields if field not in creds_data]
-    
-    if missing_fields:
-        logger.error(f"❌ credentials.json missing required fields: {missing_fields}")
-        return False
-    
-    # Validate private key format
-    private_key = creds_data.get('private_key', '')
-    if not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
-        logger.error("❌ Invalid private key format in service account credentials")
-        return False
-    
-    logger.info("✅ Service account credentials validation passed")
     return True
 
 def check_environment() -> bool:
@@ -439,7 +416,7 @@ def import_modules() -> bool:
     # Clear module cache to prevent stale imports
     for module_name in modules_to_import:
         for mod in list(sys.modules.keys()):
-            if mod.startswith(module_name) or module_name in mod or 'openai' in mod.lower():
+            if module_name in mod or 'openai' in mod.lower():
                 del sys.modules[mod]
     
     for module_name, functions in modules_to_import.items():
