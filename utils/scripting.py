@@ -2,13 +2,14 @@ import os
 import logging
 import requests
 import json
+import time  # Added import
 from typing import Optional
 from openai import OpenAI
 from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(
-    روند: logging.INFO,
+    level=logging.INFO,  # Corrected from 'round' to 'level'
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -90,7 +91,7 @@ class ScriptGenerator:
             response.raise_for_status()
             
             result_url = response.json()["urls"]["get"]
-            for _ in range(5):  # Poll for result
+            for _fname in range(5):  # Poll for result
                 result_response = requests.get(result_url, headers=headers, timeout=30)
                 if result_response.json()["status"] == "succeeded":
                     script = " ".join(result_response.json()["output"]).strip()
