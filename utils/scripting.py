@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    روند: logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -105,38 +105,6 @@ class ScriptGenerator:
             logger.warning(f"Llama generation failed: {str(e)}")
             return None
 
-    def generate_with_pegasus(self, topic: str, category: str) -> Optional[str]:
-        """Generate script using Hugging Face's Pegasus model"""
-        try:
-            api_url = "https://api-inference.huggingface.co/models/google/pegasus-xsum"
-            headers = {
-                "Authorization": f"Bearer {os.getenv('HF_API_KEY', '')}",
-                "Content-Type": "application/json"
-            }
-            
-            input_text = (
-                f"Summarize this topic for a YouTube Short: {topic} in {category} category. "
-                "Keep it under 250 characters with hook, body and call to action."
-            )
-            
-            response = requests.post(
-                api_url,
-                headers=headers,
-                json={"inputs": input_text},
-                timeout=30
-            )
-            response.raise_for_status()
-            
-            script = response.json()[0]["summary_text"].strip()
-            if len(script) >= 50:
-                logger.info("✅ Pegasus script generated successfully")
-                return script
-            return None
-            
-        except Exception as e:
-            logger.warning(f"Pegasus generation failed: {str(e)}")
-            return None
-
     def generate_with_pexels(self, topic: str, category: str) -> Optional[str]:
         """Generate a simple script based on Pexels search results"""
         if not self.pexels_api_key:
@@ -191,7 +159,6 @@ class ScriptGenerator:
         # Try free alternatives
         for method in [
             self.generate_with_llama,
-            self.generate_with_pegasus,
             self.generate_with_pexels
         ]:
             script = method(topic, category)
