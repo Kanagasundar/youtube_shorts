@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 45
     env:
       ACTIONS_RUNNER_DEBUG: true  # Enable debug logging for performance monitoring
-      NODE_OPTIONS: "--max-old-space-size=6144"  # Adjusted to 6GB within 7GB limit
+      NODE_OPTIONS: "--max-old-space-size=8192"  # Increased to 8GB within 7GB limit
 
     steps:
     - name: Checkout repository
@@ -157,11 +157,12 @@ jobs:
         fi
         echo "✅ FFmpeg and ImageMagick verified"
 
-    - name: Check disk space
+    - name: Check disk space and memory
       run: |
-        echo "🔍 Checking available disk space..."
+        echo "🔍 Checking available disk space and memory..."
         df -h
-        echo "✅ Disk space check completed"
+        free -m
+        echo "✅ Resource check completed"
 
     - name: Install Python dependencies
       run: |

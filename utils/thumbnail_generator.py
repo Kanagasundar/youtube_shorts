@@ -155,9 +155,12 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                                     time.sleep(2 ** attempt)
                                 continue
                             
-                            # Save the validated image
+                            # Save the validated image and a debug copy
                             img.save(image_path, format='JPEG', quality=95)
+                            debug_path = os.path.join(output_dir, f"debug_frame_{timestamp}_{i}.png")
+                            img.save(debug_path, format='PNG')
                             logger.info(f"✅ Image saved and validated: {image_path}")
+                            logger.info(f"🖼️ Saved debug image: {debug_path}")
                             image_paths.append(image_path)
                             break  # Success, move to next image
                             

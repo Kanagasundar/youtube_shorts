@@ -4,12 +4,12 @@ YouTube Automation Main Script - Enhanced Version
 Generates and uploads daily YouTube Shorts content with improved error handling,
 logging, configuration management, and cleanup features.
 
-Version: 1.1.0
+Version: 1.1.1
 Update Notes:
-- Added version information and microsecond precision in logging.
-- Introduced health check for system resources.
-- Enhanced error reporting with detailed stack traces.
-- Improved documentation for better maintainability.
+- Added microsecond precision to logging for better timestamp accuracy.
+- Enhanced system health check with memory and CPU usage monitoring.
+- Added debug logging for video creation steps to diagnose quality issues.
+- Improved documentation for maintainability and debugging.
 
 Dependencies:
 - os, sys, traceback, shutil, signal, datetime, pathlib, logging, json, time, typing, importlib.util, dotenv
@@ -29,6 +29,7 @@ import time
 from typing import Optional, Tuple, Dict, Any
 import importlib.util
 from dotenv import load_dotenv
+import psutil  # Added for system health monitoring
 
 # Load environment variables from .env file
 load_dotenv()
@@ -130,7 +131,8 @@ def check_dependencies() -> bool:
         'google-auth': ('import google.auth', 'google.auth'),
         'google-auth-oauthlib': ('import google_auth_oauthlib', 'google_auth_oauthlib'),
         'google-api-python-client': ('from googleapiclient import discovery', 'discovery'),
-        'requests': ('import requests', 'requests')  # Required for Pexels API
+        'requests': ('import requests', 'requests'),  # Required for Pexels API
+        'psutil': ('import psutil', 'psutil')  # Added for system health
     }
     
     missing_packages = []
@@ -336,11 +338,11 @@ def cleanup_old_files():
         logger.warning(f"Error during old file cleanup: {e}")
 
 def check_system_health() -> bool:
-    """Perform a basic health check of system resources."""
+    """Perform a detailed health check of system resources."""
     logger.info("🏥 Checking system health...")
     
     try:
-        # Check disk space (simplified check for available space in GB)
+        # Check disk space
         stat = shutil.disk_usage(OUTPUT_DIR)
         available_gb = stat.free / (2**30)
         if available_gb < 1:
@@ -348,7 +350,20 @@ def check_system_health() -> bool:
             return False
         logger.debug(f"✅ Disk space available: {available_gb:.1f} GB")
         
-        # Add more checks as needed (e.g., memory, CPU)
+        # Check memory usage
+        memory = psutil.virtual_memory()
+        available_mb = memory.available / (2**20)
+        if available_mb < 512:
+            logger.error(f"❌ Insufficient memory: {available_mb:.1f} MB available")
+            return False
+        logger.debug(f"✅ Memory available: {available_mb:.1f} MB")
+        
+        # Check CPU usage
+        cpu_percent = psutil.cpu_percent(interval=1)
+        if cpu_percent > 90:
+            logger.warning(f"⚠️ High CPU usage: {cpu_percent:.1f}%")
+        logger.debug(f"✅ CPU usage: {cpu_percent:.1f}%")
+        
         logger.info("✅ System health check passed")
         return True
     except Exception as e:
@@ -369,7 +384,7 @@ def setup_check() -> bool:
         ("Dependencies", check_dependencies),
         ("Environment Variables", check_environment),
         ("Directories", setup_directories),
-        ("System Health", check_system_health),  # New health check
+        ("System Health", check_system_health),  # Enhanced health check
     ]
     
     for check_name, check_func in checks:
@@ -542,9 +557,11 @@ Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()
     def create_video_step(script, audio_path, image_paths):
         logger.info("🎬 Creating video...")
         output_dir = str(OUTPUT_DIR)
+        logger.debug(f"Video creation started with output_dir: {output_dir}, audio_path: {audio_path}, image_paths: {image_paths}")
         video_path = create_video(audio_path, image_paths, output_dir, script)
         if not video_path or not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not created: {video_path}")
+        logger.debug(f"Video file created at: {video_path}, size: {os.path.getsize(video_path) / (2**20):.1f} MB")
         cleanup_files.append(video_path)
         return video_path
     
@@ -662,7 +679,7 @@ def main() -> int:
     """Main function to orchestrate the entire process."""
     start_time = time.time()
     logger.info("🚀 Starting YouTube Automation...")
-    logger.info(f"📅 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (IST)")
+    logger.info(f"📅 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]} (IST)")
     
     try:
         # Step 1: Get topic

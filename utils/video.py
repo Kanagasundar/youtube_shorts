@@ -62,30 +62,34 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
         target_duration = max(25, min(60, audio_duration * 1.5))  # Ensure 25-60 seconds
         duration_per_image = target_duration / num_images if num_images > 0 else target_duration
         
-        # Pre-resize images
+        # Pre-resize images with debug logging
         logger.info(f"🖼️ Pre-processing {num_images} images...")
         clips = []
         for i, image_path in enumerate(image_paths):
             logger.info(f"🖼️ Loading image {i+1}: {image_path}")
             img = Image.open(image_path).convert("RGB").resize((1080, 1920), Image.Resampling.LANCZOS)
+            # Save debug image to verify quality
+            debug_path = os.path.join(output_dir, f"debug_frame_{i+1}.png")
+            img.save(debug_path, format='PNG')
+            logger.info(f"🖼️ Saved debug image: {debug_path}")
             clip = mpe.ImageClip(np.array(img)).set_duration(duration_per_image)
             if i > 0:
                 clip = clip.crossfadein(duration_per_image * 0.1)  # Reduced crossfade to 10%
             clips.append(clip)
+            logger.info(f"🖼️ Frame {i+1} processed, size: {img.size}")
         
         # Concatenate clips with padding for smoother transitions
         video = mpe.concatenate_videoclips(clips, method="compose", padding=-duration_per_image * 0.1)
         video = video.set_audio(audio)
         
-        # Simplified gradient background
-        def gradient_frame(t):
-            r = int(25 + 20 * np.sin(t))
-            g = int(25 + 20 * np.cos(t))
-            b = int(112 + 20 * np.sin(t + 1))
-            return np.array([[[r, g, b]] * 1080] * 1920, dtype=np.uint8)
-        
-        animated_bg = mpe.VideoClip(gradient_frame, duration=target_duration).resize((1080, 1920)).set_opacity(0.5)
-        video = mpe.CompositeVideoClip([animated_bg, video])
+        # Simplified gradient background (disabled for testing)
+        # def gradient_frame(t):
+        #     r = int(25 + 20 * np.sin(t))
+        #     g = int(25 + 20 * np.cos(t))
+        #     b = int(112 + 20 * np.sin(t + 1))
+        #     return np.array([[[r, g, b]] * 1080] * 1920, dtype=np.uint8)
+        # animated_bg = mpe.VideoClip(gradient_frame, duration=target_duration).resize((1080, 1920)).set_opacity(0.5)
+        # video = mpe.CompositeVideoClip([animated_bg, video])
         
         # Create subtitles with full script support
         logger.info("📝 Generating subtitles...")
@@ -130,8 +134,8 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
             except Exception as e:
                 logger.warning(f"⚠️ Fallback text overlay failed: {str(e)}")
 
-        # Minimal dynamic effects
-        video = video.resize(lambda t: 1 + 0.05 * np.sin(t / 2))  # Reduced amplitude and frequency
+        # Minimal dynamic effects (disabled for testing)
+        # video = video.resize(lambda t: 1 + 0.05 * np.sin(t / 2))  # Reduced amplitude and frequency
         
         # Generate output path
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -143,8 +147,8 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
             output_path,
             codec="libx264",
             audio_codec="aac",
-            preset="ultrafast",
-            bitrate="2000k",
+            preset="medium",  # Changed from ultrafast to medium for better quality
+            bitrate="4000k",  # Increased bitrate for better quality
             threads=2,
             fps=30,
             logger=None
