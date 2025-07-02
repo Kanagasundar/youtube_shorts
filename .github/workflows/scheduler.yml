@@ -43,7 +43,7 @@ jobs:
         sudo apt-get install -y libavcodec-dev libavformat-dev libavdevice-dev
         sudo apt-get install -y libavfilter-dev libswscale-dev libswresample-dev
         sudo apt-get install -y imagemagick
-        sudo apt-get install -y libopencv-dev python3-opencv
+        sudo apt-get install -y libopencv-dev python3-opencv  # Ensure OpenCV system dependencies
         sudo apt-get install -y texlive-full  # Required for Manim
         # Configure ImageMagick policy
         POLICY_UPDATED=false
@@ -134,8 +134,17 @@ jobs:
         echo "🔍 Verifying system dependencies..."
         ffmpeg -version || { echo "❌ FFmpeg not installed correctly"; exit 1; }
         convert -version || { echo "❌ ImageMagick not installed correctly"; exit 1; }
-        python -c "import cv2; print('OpenCV version:', cv2.__version__)" || { echo "❌ OpenCV not installed correctly"; exit 1; }
+        python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
+          echo "❌ OpenCV not installed correctly, attempting reinstall..."
+          pip uninstall -y opencv-python
+          pip install --no-cache-dir opencv-python==4.10.0
+          python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
+            echo "❌ OpenCV reinstall failed"
+            exit 1
+          }
+        }
         python -c "from manim import *; print('Manim imported successfully')" || { echo "❌ Manim not installed correctly"; exit 1; }
+        python -c "import nltk; print('NLTK imported successfully')" || { echo "❌ NLTK not installed correctly"; exit 1; }
         POLICY_VERIFIED=false
         for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml; do
           if [ -f "$POLICY_FILE" ] && grep -q '<policy.*domain="path".*pattern="@*".*rights="read|write"' "$POLICY_FILE"; then
@@ -158,7 +167,7 @@ jobs:
           echo "❌ ImageMagick policy not correctly configured"
           exit 1
         fi
-        echo "✅ FFmpeg, ImageMagick, OpenCV, and Manim verified"
+        echo "✅ FFmpeg, ImageMagick, OpenCV, Manim, and NLTK verified"
 
     - name: Check disk space and memory
       run: |
@@ -173,13 +182,33 @@ jobs:
         python -m pip cache purge
         python -m pip install --upgrade pip==24.2 setuptools==70.3.0 wheel==0.43.0
         pip install --no-cache-dir -r requirements.txt
-        pip install moviepy==1.0.3
-        pip install replicate
-        pip install opencv-python
-        pip install manim
-        pip install nltk
+        pip install --no-cache-dir moviepy==1.0.3
+        pip install --no-cache-dir replicate
+        pip install --no-cache-dir opencv-python==4.10.0  # Force install OpenCV
+        pip install --no-cache-dir manim==0.18.1
+        pip install --no-cache-dir nltk==3.9.1
+        python -m nltk.downloader punkt averaged_perceptron_tagger
         pip list
         echo "✅ All dependencies installed successfully"
+
+    - name: Verify Python dependencies
+      run: |
+        echo "🔍 Verifying Python dependencies..."
+        python -c "import sys; print('Python version:', sys.version)"
+        python -c "import sys; print('Python executable:', sys.executable)"
+        python -c "import sys; print('Python path:', sys.path)"
+        python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
+          echo "❌ OpenCV verification failed, attempting reinstall..."
+          pip uninstall -y opencv-python
+          pip install --no-cache-dir opencv-python==4.10.0
+          python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
+            echo "❌ OpenCV reinstall failed"
+            exit 1
+          }
+        }
+        python -c "from manim import *; print('Manim version:', __version__)"
+        python -c "import nltk; print('NLTK version:', nltk.__version__)"
+        echo "✅ Python dependencies verified"
 
     - name: Search for proxies references in code
       run: |
@@ -286,6 +315,10 @@ jobs:
                     modules_to_clear = [mod for mod in sys.modules.keys() if 'replicate' in mod]
                     for mod in modules_to_clear:
                         del sys.modules[mod]
+                elif module_name == 'cv2':
+                    modules_to_clear = [mod for mod in sys.modules.keys() if 'cv2' in mod or 'opencv' in mod]
+                    for mod in modules_to_clear:
+                        del sys.modules[mod]
                 exec(import_statement)
                 print(f'✅ {display_name}: Import successful')
                 test_results.append((display_name, True, 'OK'))
@@ -299,14 +332,14 @@ jobs:
         test_import_advanced('PIL', 'from PIL import Image')
         test_import_advanced('openai', 'import openai')
         test_import_advanced('gtts', 'from gtts import gTTS')
-                test_import_advanced('pydub', 'from pydub import AudioSegment')
-                test_import_advanced('requests', 'import requests')
-                test_import_advanced('replicate', 'import replicate')
-                test_import_advanced('cv2', 'import cv2')
-                test_import_advanced('manim', 'from manim import *')
-                test_import_advanced('nltk', 'import nltk')
-                print('\n🎬 Testing MoviePy with fallback strategies...')
-                moviepy_success = False
+        test_import_advanced('pydub', 'from pydub import AudioSegment')
+        test_import_advanced('requests', 'import requests')
+        test_import_advanced('replicate', 'import replicate')
+        test_import_advanced('cv2', 'import cv2', 'OpenCV')
+        test_import_advanced('manim', 'from manim import *')
+        test_import_advanced('nltk', 'import nltk')
+        print('\n🎬 Testing MoviePy with fallback strategies...')
+        moviepy_success = False
         try:
             import moviepy
             import moviepy.editor as mpe
@@ -419,6 +452,29 @@ jobs:
             except Exception as e2:
                 print(f'❌ Replicate Strategy 2 failed: {e2}')
         test_results.append(('Replicate', replicate_success, 'OK' if replicate_success else 'Failed'))
+        print('\n🔍 Testing OpenCV with fallback strategies...')
+        opencv_success = False
+        try:
+            import cv2
+            print(f'✅ OpenCV Strategy 1 (direct): Success (version: {cv2.__version__})')
+            opencv_success = True
+        except Exception as e:
+            print(f'❌ OpenCV Strategy 1 failed: {e}')
+            try:
+                print('🔧 OpenCV Strategy 2: Reinstalling...')
+                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python'], 
+                             capture_output=True, check=False)
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                              'opencv-python==4.10.0'], capture_output=True, check=True)
+                for mod in list(sys.modules.keys()):
+                    if 'cv2' in mod or 'opencv' in mod:
+                        del sys.modules[mod]
+                import cv2
+                print(f'✅ OpenCV Strategy 2 (reinstall): Success (version: {cv2.__version__})')
+                opencv_success = True
+            except Exception as e2:
+                print(f'❌ OpenCV Strategy 2 failed: {e2}')
+        test_results.append(('OpenCV', opencv_success, 'OK' if opencv_success else 'Failed'))
         failed = [name for name, success, _ in test_results if not success]
         if failed:
             print(f'\n❌ Failed imports: {failed}')
@@ -622,6 +678,22 @@ jobs:
                 print('✅ Replicate installed successfully')
             except Exception as e2:
                 print(f'❌ Replicate installation failed: {e2}')
+        for mod in list(sys.modules.keys()):
+            if 'cv2' in mod or 'opencv' in mod:
+                del sys.modules[mod]
+        try:
+            import cv2
+            print(f'✅ OpenCV ready (version: {cv2.__version__})')
+        except Exception as e:
+            print(f'🔧 Final OpenCV fix attempt... Error: {e}')
+            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python'], check=False)
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                          'opencv-python==4.10.0'], check=False)
+            try:
+                import cv2
+                print(f'✅ OpenCV installed successfully (version: {cv2.__version__})')
+            except Exception as e2:
+                print(f'❌ OpenCV installation failed: {e2}')
         print('🚀 Ready to execute main script')
         "
         set -o pipefail

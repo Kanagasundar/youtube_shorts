@@ -5,15 +5,15 @@ Generates and uploads daily YouTube Shorts content with improved error handling,
 logging, configuration management, and cleanup features. Supports overlays, transitions,
 captions, 9:16 cropping, OpenCV/Manim integration, and keyword-based Pexels queries.
 
-Version: 1.2.0
+Version: 1.2.1
 Update Notes:
+- Added detailed debugging for OpenCV import failures in check_dependencies.
+- Enhanced logging for OpenCV, Manim, and NLTK to diagnose installation issues.
 - Integrated enhanced video creation with overlays (text, stickers, logos), transitions (fade, zoom, slide),
   and animated captions using OpenCV and Manim.
 - Updated to support 9:16 aspect ratio (1080x1920) for YouTube Shorts.
 - Added keyword-based Pexels API queries using NLTK.
 - Ensured video duration between 15-40 seconds with image durations of 0.5-6 seconds.
-- Removed redundant video creation logic, relying on video.py for processing.
-- Enhanced logging for new features and dependencies.
 
 Dependencies:
 - os, sys, traceback, shutil, signal, datetime, pathlib, logging, json, time, typing, importlib.util, dotenv
@@ -35,6 +35,7 @@ import time
 from typing import Optional, Tuple, Dict, Any
 import importlib.util
 from dotenv import load_dotenv
+import subprocess
 
 try:
     import psutil  # Optional for system health monitoring
@@ -132,7 +133,7 @@ def check_dependencies() -> bool:
         'gtts': ('from gtts import gTTS', 'gTTS'),
         'pydub': ('from pydub import AudioSegment', 'AudioSegment'),
         'Pillow': ('from PIL import Image', 'Image'),
-        'moviepy': ('from moviepy.editor import VideoFileClip', 'VideoFileClip'),
+        'moviepy': ('from moviepy.editor import VideoTipClip', 'VideoFileClip'),
         'numpy': ('import numpy', 'numpy'),
         'google-auth': ('import google.auth', 'google.auth'),
         'google-auth-oauthlib': ('import google_auth_oauthlib', 'google_auth_oauthlib'),
@@ -160,8 +161,21 @@ def check_dependencies() -> bool:
             spec = importlib.util.find_spec(base_module)
             logger.debug(f"✅ {package_name} ({check_name}) - v{version} from {spec.origin if spec else 'unknown'}")
             
+            # Additional diagnostics for OpenCV
+            if package_name == 'opencv-python':
+                logger.debug(f"OpenCV details: sys.path={sys.path}")
+                pip_list = subprocess.run([sys.executable, '-m', 'pip', 'list'], capture_output=True, text=True)
+                logger.debug(f"pip list output:\n{pip_list.stdout}")
+            
         except (ImportError, AttributeError) as e:
             logger.error(f"❌ {package_name} ({check_name}) - Failed: {str(e)}")
+            if package_name == 'opencv-python':
+                logger.error("OpenCV diagnostic info:")
+                logger.error(f"sys.path: {sys.path}")
+                pip_list = subprocess.run([sys.executable, '-m', 'pip', 'list'], capture_output=True, text=True)
+                logger.error(f"pip list:\n{pip_list.stdout}")
+                logger.error(f"Python executable: {sys.executable}")
+                logger.error(f"Python version: {sys.version}")
             missing_packages.append(package_name)
     
     if missing_packages:
@@ -170,6 +184,12 @@ def check_dependencies() -> bool:
             logger.error(f"   - {package}")
         print("\n💡 Install missing packages with:")
         print(f"   pip install {' '.join(missing_packages)}")
+        print("\n🔍 Python environment info:")
+        print(f"   Python version: {sys.version}")
+        print(f"   Python executable: {sys.executable}")
+        site_packages = [p for p in sys.path if 'site-packages' in p]
+        if site_packages:
+            print(f"   Site packages: {site_packages[0]}")
         return False
     
     logger.info("✅ All required dependencies are available")
