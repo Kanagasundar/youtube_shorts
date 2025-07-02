@@ -69,8 +69,8 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                 if response.status_code != 200:
                     logger.error(f"❌ Failed to fetch images for query '{query}': {response.status_code} - {response.text}")
                     attempt += 1
-                    if attempt < max_retries and response.status_code in [429, 503]:  # Rate limit or server error
-                        time.sleep(2 ** attempt + 2)  # Extended backoff for API issues
+                    if attempt < max_retries and response.status_code in [429, 503]:
+                        time.sleep(2 ** attempt + 2)
                     elif attempt < max_retries:
                         time.sleep(2 ** attempt)
                     continue
@@ -102,30 +102,26 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                             time.sleep(2 ** attempt)
                         continue
                     
-                    # Write to temporary file and validate in memory
-                    with open(temp_path, 'wb') as f:
-                        for chunk in img_response.iter_content(1024):
-                            f.write(chunk)
-                    f.close()  # Ensure file is closed
+                    # Read image into memory and validate
+                    img_data = io.BytesIO()
+                    for chunk in img_response.iter_content(1024):
+                        img_data.write(chunk)
+                    img_data.seek(0)
                     
                     try:
-                        # Load image into memory for validation
-                        with open(temp_path, 'rb') as f:
-                            img_data = io.BytesIO(f.read())
-                            img = Image.open(img_data)
-                            img.verify()  # Check if the file is a valid image
-                            img = img.convert("RGB")
-                            if img.size[0] < 1080 or img.size[1] < 1920:
-                                logger.warning(f"⚠️ Image {i} resolution {img.size} is below 1080x1920")
-                            # Save validated image
-                            img.save(image_path)
-                            logger.info(f"✅ Image saved and validated: {image_path}")
-                            image_paths.append(image_path)
-                            break  # Success, move to next image
+                        img = Image.open(img_data)
+                        img.verify()  # Check if the file is a valid image
+                        img = img.convert("RGB")
+                        if img.size[0] < 1080 or img.size[1] < 1920:
+                            logger.warning(f"⚠️ Image {i} resolution {img.size} is below 1080x1920")
+                        # Save validated image
+                        img.save(temp_path)
+                        shutil.move(temp_path, image_path)
+                        logger.info(f"✅ Image saved and validated: {image_path}")
+                        image_paths.append(image_path)
+                        break  # Success, move to next image
                     except (IOError, SyntaxError, AttributeError) as e:
-                        logger.error(f"❌ Invalid image downloaded for query '{query}': {str(e)} - File size: {os.path.getsize(temp_path)} bytes")
-                        if os.path.exists(temp_path):
-                            os.remove(temp_path)
+                        logger.error(f"❌ Invalid image downloaded for query '{query}': {str(e)} - File size: {img_data.getbuffer().nbytes} bytes")
                         attempt += 1
                         if attempt < max_retries:
                             time.sleep(2 ** attempt)
