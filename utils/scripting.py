@@ -2,7 +2,7 @@ import os
 import logging
 import requests
 import json
-import time  # Added import
+import time
 from typing import Optional
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -28,12 +28,14 @@ class ScriptGenerator:
         if os.getenv('OPENAI_API_KEY'):
             try:
                 self.openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+                logger.info("✅ OpenAI client initialized successfully")
             except Exception as e:
                 logger.warning(f"OpenAI client initialization warning: {str(e)}")
 
     def generate_with_openai(self, topic: str, category: str) -> Optional[str]:
         """Generate script using OpenAI"""
         if not self.openai_client:
+            logger.warning("OpenAI client not initialized")
             return None
             
         try:
@@ -57,6 +59,7 @@ class ScriptGenerator:
             if len(script) >= 50:
                 logger.info("✅ OpenAI script generated successfully")
                 return script
+            logger.warning(f"OpenAI script too short: {len(script)} characters")
             return None
             
         except Exception as e:
@@ -66,7 +69,6 @@ class ScriptGenerator:
     def generate_with_llama(self, topic: str, category: str) -> Optional[str]:
         """Generate script using free Llama API (Replicate)"""
         try:
-            # Using Replicate's free tier for Llama
             api_url = "https://api.replicate.com/v1/predictions"
             headers = {
                 "Authorization": f"Token {os.getenv('REPLICATE_API_KEY', '')}",
@@ -91,13 +93,14 @@ class ScriptGenerator:
             response.raise_for_status()
             
             result_url = response.json()["urls"]["get"]
-            for _fname in range(5):  # Poll for result
+            for _ in range(5):  # Poll for result
                 result_response = requests.get(result_url, headers=headers, timeout=30)
                 if result_response.json()["status"] == "succeeded":
                     script = " ".join(result_response.json()["output"]).strip()
                     if len(script) >= 50:
                         logger.info("✅ Llama script generated successfully")
                         return script
+                    logger.warning(f"Llama script too short: {len(script)} characters")
                     break
                 time.sleep(2)
             return None
@@ -109,10 +112,10 @@ class ScriptGenerator:
     def generate_with_pexels(self, topic: str, category: str) -> Optional[str]:
         """Generate a simple script based on Pexels search results"""
         if not self.pexels_api_key:
+            logger.warning("Pexels API key not provided")
             return None
             
         try:
-            # First get related images to inspire the script
             search_url = f"https://api.pexels.com/v1/search?query={topic}&per_page=1"
             headers = {"Authorization": self.pexels_api_key}
             
@@ -130,6 +133,7 @@ class ScriptGenerator:
                 if len(script) >= 50:
                     logger.info("✅ Pexels-inspired script generated")
                     return script
+                logger.warning(f"Pexels script too short: {len(script)} characters")
             return None
             
         except Exception as e:
@@ -145,8 +149,10 @@ class ScriptGenerator:
             "Technology": f"💻 Tech: {topic}! Innovation never stops. What tech excites you? 🚀",
             "Space": f"🚀 Space fact: {topic}! The universe is full of wonders. What space mystery intrigues you? 🌌"
         }
-        return fallback_scripts.get(category, 
+        script = fallback_scripts.get(category, 
             f"🤔 Fact: {topic}! Always something new to learn. What should we explore next? 💭")
+        logger.info("✅ Fallback script generated")
+        return script
 
     def generate_script(self, topic: str, category: str) -> str:
         """Generate script with multiple fallback options"""
@@ -154,7 +160,8 @@ class ScriptGenerator:
         
         # Try OpenAI first
         script = self.generate_with_openai(topic, category)
-        if script:
+        if script and len(script) >= 50:
+            logger.info(f"Script generated (OpenAI): {len(script)} characters")
             return script
             
         # Try free alternatives
@@ -163,22 +170,30 @@ class ScriptGenerator:
             self.generate_with_pexels
         ]:
             script = method(topic, category)
-            if script:
+            if script and len(script) >= 50:
+                logger.info(f"Script generated ({method.__name__}): {len(script)} characters")
                 return script
                 
         # Final fallback
         logger.warning("⚠️ All API methods failed, using local fallback")
-        return self.generate_script_fallback(topic, category)
+        script = self.generate_script_fallback(topic, category)
+        logger.info(f"Script generated (fallback): {len(script)} characters")
+        return script
 
 def generate_script(topic: str, category: str) -> str:
     """Public interface for script generation"""
-    return ScriptGenerator().generate_script(topic, category)
+    generator = ScriptGenerator()
+    script = generator.generate_script(topic, category)
+    if not script or len(script) < 50:
+        logger.error("Generated script is invalid or too short, using default fallback")
+        script = f"🤔 Fact: {topic}! Always something new to learn. What should we explore next? 💭"
+    return script
 
 if __name__ == "__main__":
     # Test the generator
     test_topic = "Plants That Can Count to Twenty"
     test_category = "Nature"
     
-    generator = ScriptGenerator()
-    script = generator.generate_script(test_topic, test_category)
-    print(f"Generated Script:\n{script}\nLength: {len(script)}")
+    logger.info("Starting script generation test")
+    script = generate_script(test_topic, test_category)
+    logger.info(f"Generated Script:\n{script}\nLength: {len(script)}")
