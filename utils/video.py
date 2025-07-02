@@ -56,10 +56,10 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
         audio = mpe.AudioFileClip(audio_path)
         audio_duration = audio.duration
         
-        # Determine number of images and target duration (15-60s)
+        # Determine number of images and target duration (25-60s as per requirement)
         image_paths = thumbnail_path
         num_images = len(image_paths)
-        target_duration = min(max(15, audio_duration), 60)
+        target_duration = max(25, min(60, audio_duration * 1.5))  # Ensure 25-60 seconds
         duration_per_image = target_duration / num_images if num_images > 0 else target_duration
         
         # Pre-resize images
@@ -73,7 +73,7 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
                 clip = clip.crossfadein(duration_per_image * 0.1)  # Reduced crossfade to 10%
             clips.append(clip)
         
-        # Concatenate clips
+        # Concatenate clips with padding for smoother transitions
         video = mpe.concatenate_videoclips(clips, method="compose", padding=-duration_per_image * 0.1)
         video = video.set_audio(audio)
         
@@ -87,7 +87,7 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
         animated_bg = mpe.VideoClip(gradient_frame, duration=target_duration).resize((1080, 1920)).set_opacity(0.5)
         video = mpe.CompositeVideoClip([animated_bg, video])
         
-        # Create subtitles with fallback for missing SubtitlesClip
+        # Create subtitles with full script support
         logger.info("📝 Generating subtitles...")
         words = script_text.split()
         subtitles = []
@@ -101,28 +101,31 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
         try:
             subtitle_clip = mpe.SubtitlesClip(subtitles, lambda txt: mpe.TextClip(
                 txt,
-                fontsize=70,
+                fontsize=60,  # Slightly reduced for readability
                 color='white',
                 stroke_color='black',
                 stroke_width=1,
-                size=(1080, None),
+                size=(1000, None),  # Adjusted size to fit more text
                 method='caption',
                 align='center'
             ).set_position(('center', 'bottom')).set_duration(word_duration).fadein(0.3).fadeout(0.3))
             video = mpe.CompositeVideoClip([video, subtitle_clip.set_duration(target_duration)])
         except AttributeError:
-            logger.warning("⚠️ SubtitlesClip not available, skipping subtitles")
-            # Fallback: Add a simple text overlay if subtitles fail
+            logger.warning("⚠️ SubtitlesClip not available, using text overlay")
+            # Fallback: Display full script with scrolling effect
             try:
                 text_clip = mpe.TextClip(
-                    script_text[:50] + "..." if len(script_text) > 50 else script_text,
-                    fontsize=50,
+                    script_text,
+                    fontsize=45,
                     color='white',
                     bg_color='rgba(0, 0, 0, 0.5)',
-                    size=(1080, 200),
+                    size=(1000, 300),  # Increased height for more text
                     method='caption',
                     align='center'
-                ).set_position(('center', 'bottom')).set_duration(target_duration).fadein(0.5).fadeout(0.5)
+                ).set_position(('center', 'bottom')).set_duration(target_duration)
+                # Add scrolling effect for longer text
+                if len(script_text) > 100:
+                    text_clip = text_clip.set_pos(lambda t: ('center', 1920 - 300 + t * (300 / target_duration) % 300))
                 video = mpe.CompositeVideoClip([video, text_clip])
             except Exception as e:
                 logger.warning(f"⚠️ Fallback text overlay failed: {str(e)}")
@@ -141,10 +144,10 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
             codec="libx264",
             audio_codec="aac",
             preset="ultrafast",
-            bitrate="2000k",  # Reduced bitrate
-            threads=2,  # Adjusted for runner
+            bitrate="2000k",
+            threads=2,
             fps=30,
-            logger=None  # Disable MoviePy logging
+            logger=None
         )
         
         # Clean up resources
