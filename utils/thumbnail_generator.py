@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import time
 from datetime import datetime
 from PIL import Image
+import shutil
 
 # Configure logging
 logging.basicConfig(
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-def generate_image_sequence(topic: str, script: str, output_dir: str = "output", num_images: int = 5, duration_per_image: int = 5) -> list:
+def generate_image_sequence(topic: str, script: str, output_dir: str = "output", num_images: int = 5, duration_per_image: int = 5, max_retries: int = 5) -> list:
     """
     Generate a sequence of images using Pexels API based on topic and script.
     
@@ -26,6 +27,7 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
         output_dir (str): Directory to save images
         num_images (int): Number of images to generate
         duration_per_image (int): Duration in seconds for each image in the video
+        max_retries (int): Maximum number of retry attempts per image
     
     Returns:
         list: List of paths to generated images
@@ -52,63 +54,88 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
             queries.extend([f"{topic} scene {i}" for i in range(len(queries), num_images)])
         
         for i, query in enumerate(queries, 1):
-            logger.info(f"Generating image {i} with query: {query}")
-            params = {
-                "query": query,
-                "per_page": 1,
-                "page": 1,
-                "orientation": "portrait"  # Suitable for video thumbnails
-            }
-            response = requests.get(base_url, headers=headers, params=params)
+            attempt = 0
+            while attempt < max_retries:
+                logger.info(f"Generating image {i} with query: {query} (Attempt {attempt + 1}/{max_retries})")
+                params = {
+                    "query": query,
+                    "per_page": 1,
+                    "page": 1,
+                    "orientation": "portrait"
+                }
+                response = requests.get(base_url, headers=headers, params=params)
+                
+                if response.status_code != 200:
+                    logger.error(f"❌ Failed to fetch images for query '{query}': {response.status_code} - {response.text}")
+                    attempt += 1
+                    if attempt < max_retries:
+                        time.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                
+                data = response.json()
+                photos = data.get("photos", [])
+                
+                if not photos:
+                    logger.error(f"❌ No photos found for query: {query}")
+                    attempt += 1
+                    if attempt < max_retries:
+                        time.sleep(2 ** attempt)
+                    continue
+                
+                image_url = photos[0]["src"]["original"]
+                logger.info(f"Downloading image {i} from URL: {image_url}")
+                
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                temp_path = os.path.join(output_dir, f"temp_frame_{timestamp}_{i}.png")
+                image_path = os.path.join(output_dir, f"frame_{timestamp}_{i}.png")
+                
+                img_response = requests.get(image_url, stream=True)
+                if img_response.status_code == 200:
+                    content_length = int(img_response.headers.get('content-length', 0))
+                    if content_length == 0:
+                        logger.error(f"❌ Empty response for image {i} from {image_url}")
+                        attempt += 1
+                        if attempt < max_retries:
+                            time.sleep(2 ** attempt)
+                        continue
+                    
+                    with open(temp_path, 'wb') as f:
+                        for chunk in img_response.iter_content(1024):
+                            f.write(chunk)
+                    
+                    # Validate image
+                    try:
+                        with Image.open(temp_path) as img:
+                            img.verify()  # Check if the file is a valid image
+                            img = img.convert("RGB")
+                            if img.size[0] < 1080 or img.size[1] < 1920:
+                                logger.warning(f"⚠️ Image {i} resolution {img.size} is below 1080x1920")
+                            shutil.move(temp_path, image_path)
+                            logger.info(f"✅ Image saved and validated: {image_path}")
+                            image_paths.append(image_path)
+                            break  # Success, move to next image
+                    except (IOError, SyntaxError, AttributeError) as e:
+                        logger.error(f"❌ Invalid image downloaded for query '{query}': {str(e)}")
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                        attempt += 1
+                        if attempt < max_retries:
+                            time.sleep(2 ** attempt)
+                else:
+                    logger.error(f"❌ Failed to download image {i}: {img_response.status_code}")
+                    attempt += 1
+                    if attempt < max_retries:
+                        time.sleep(2 ** attempt)
             
-            if response.status_code != 200:
-                logger.error(f"❌ Failed to fetch images for query '{query}': {response.status_code} - {response.text}")
-                continue
-            
-            data = response.json()
-            photos = data.get("photos", [])
-            
-            if not photos:
-                logger.error(f"❌ No photos found for query: {query}")
-                continue
-            
-            image_url = photos[0]["src"]["original"]  # Use original size for better quality
-            logger.info(f"Downloading image {i} from URL: {image_url}")
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            image_filename = f"frame_{timestamp}_{i}.png"
-            image_path = os.path.join(output_dir, image_filename)
-            
-            img_response = requests.get(image_url, stream=True)
-            if img_response.status_code == 200:
-                # Validate image content
-                with open(image_path, 'wb') as f:
-                    for chunk in img_response.iter_content(1024):
-                        f.write(chunk)
-                # Verify the image is valid
-                try:
-                    with Image.open(image_path) as img:
-                        img.verify()  # Check if the file is a valid image
-                        img = img.convert("RGB")  # Ensure it's processable
-                        if img.size[0] < 1080 or img.size[1] < 1920:  # Minimum resolution check
-                            logger.warning(f"⚠️ Image {i} resolution {img.size} is below 1080x1920, resizing may fail")
-                        logger.info(f"✅ Image saved and validated: {image_path}")
-                        image_paths.append(image_path)
-                except (IOError, SyntaxError) as e:
-                    logger.error(f"❌ Invalid image downloaded for query '{query}': {str(e)}")
-                    if os.path.exists(image_path):
-                        os.remove(image_path)
-            else:
-                logger.error(f"❌ Failed to download image {i}: {img_response.status_code}")
-            
-            time.sleep(1)  # Respect rate limits (200 requests/hour)
+            if attempt >= max_retries:
+                logger.error(f"❌ Failed to generate image {i} after {max_retries} attempts")
         
         if not image_paths:
             logger.error("❌ No images generated")
             return []
         
         total_duration = len(image_paths) * duration_per_image
-        if not (25 <= total_duration <= 60):  # Updated to 25-60 seconds range
+        if not (25 <= total_duration <= 60):
             logger.warning(f"⚠️ Total duration {total_duration}s is outside 25-60s range, adjusting")
             if total_duration < 25:
                 duration_per_image = max(25 // len(image_paths), 5)
