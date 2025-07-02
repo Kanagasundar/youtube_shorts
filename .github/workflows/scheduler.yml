@@ -26,6 +26,14 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Cache apt-get packages
+      uses: actions/cache@v4
+      with:
+        path: /var/cache/apt
+        key: ${{ runner.os }}-apt-${{ hashFiles('**/scheduler.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-apt-
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -34,22 +42,30 @@ jobs:
 
     - name: Install system dependencies
       run: |
+        echo "🔍 Installing system dependencies..."
+        start_time=$(date +%s)
         sudo apt-get update
-        sudo apt-get install -y ffmpeg espeak espeak-data libespeak1 libespeak-dev
-        sudo apt-get install -y python3-dev python3-pip python3-venv
-        sudo apt-get install -y libffi-dev libssl-dev libxml2-dev libxslt-dev
-        sudo apt-get install -y build-essential libasound2-dev portaudio19-dev
-        sudo apt-get install -y jq
-        sudo apt-get install -y libavcodec-dev libavformat-dev libavdevice-dev
-        sudo apt-get install -y libavfilter-dev libswscale-dev libswresample-dev
-        sudo apt-get install -y imagemagick
-        sudo apt-get install -y libopencv-dev python3-opencv  # Ensure OpenCV system dependencies
-        sudo apt-get install -y texlive-full  # Required for Manim
+        sudo apt-get install -y --no-install-recommends \
+          ffmpeg \
+          libopencv-dev python3-opencv \
+          texlive texlive-latex-extra texlive-fonts-extra \
+          imagemagick \
+          python3-dev python3-pip python3-venv \
+          libffi-dev libssl-dev libxml2-dev libxslt-dev \
+          libasound2-dev portaudio19-dev \
+          jq
+        end_time=$(date +%s)
+        duration=$((end_time - start_time))
+        echo "✅ System dependencies installed in $duration seconds"
+        convert -version || { echo "❌ ImageMagick not installed correctly"; exit 1; }
+        echo "🔍 ImageMagick version:"
+        convert -version
+        ffmpeg -version || { echo "❌ FFmpeg not installed correctly"; exit 1; }
+        echo "🔍 FFmpeg version:"
+        ffmpeg -version
         # Configure ImageMagick policy
-        POLICY_UPDATED=false
         POLICY_FILE="/etc/ImageMagick-6/policy.xml"
-        if [ -f "$POLICY_FILE" ]; then
-          sudo bash -c "cat > $POLICY_FILE << EOF
+        sudo bash -c "cat > $POLICY_FILE << EOF
         <?xml version=\"1.0\" encoding=\"UTF-8\"?>
         <!DOCTYPE policymap [
           <!ELEMENT policymap (policy)+>
@@ -70,64 +86,25 @@ jobs:
           <policy domain=\"system\" name=\"thread\" value=\"2\"/>
         </policymap>
         EOF"
-          sudo chmod 644 "$POLICY_FILE"
-          echo "✅ Overwrote ImageMagick policy at $POLICY_FILE"
-          POLICY_UPDATED=true
-        else
-          echo "⚠️ ImageMagick policy file not found, creating new one..."
-          sudo mkdir -p /etc/ImageMagick-6
-          sudo bash -c "cat > $POLICY_FILE << EOF
-          <?xml version=\"1.0\" encoding=\"UTF-8\"?>
-          <!DOCTYPE policymap [
-            <!ELEMENT policymap (policy)+>
-            <!ELEMENT policy EMPTY>
-            <!ATTLIST policy domain CDATA #REQUIRED>
-            <!ATTLIST policy name CDATA #IMPLIED>
-            <!ATTLIST policy pattern CDATA #IMPLIED>
-            <!ATTLIST policy rights CDATA #IMPLIED>
-            <!ATTLIST policy value CDATA #IMPLIED>
-          ]>
-          <policymap>
-            <policy domain=\"path\" rights=\"read|write\" pattern=\"@*\"/>
-            <policy domain=\"coder\" rights=\"read|write\" pattern=\"*\"/>
-            <policy domain=\"delegate\" rights=\"read|write\" pattern=\"*\"/>
-            <policy domain=\"filter\" rights=\"read|write\" pattern=\"*\"/>
-            <policy domain=\"system\" name=\"memory\" value=\"512MiB\"/>
-            <policy domain=\"system\" name=\"disk\" value=\"1GiB\"/>
-            <policy domain=\"system\" name=\"thread\" value=\"2\"/>
-          </policymap>
-          EOF"
-          sudo chmod 644 "$POLICY_FILE"
-          echo "✅ Created ImageMagick policy file at $POLICY_FILE"
-          POLICY_UPDATED=true
-        fi
-        convert -version || { echo "❌ ImageMagick not installed correctly"; exit 1; }
-        echo "🔍 ImageMagick version:"
-        convert -version
+        sudo chmod 644 "$POLICY_FILE"
+        echo "✅ ImageMagick policy configured at $POLICY_FILE"
         echo "🔍 ImageMagick policy file contents:"
         cat "$POLICY_FILE" || echo "❌ Failed to read $POLICY_FILE"
-        if [ -f "$POLICY_FILE" ]; then
-          if grep -q 'domain="path"' "$POLICY_FILE" && grep -q 'rights="read|write"' "$POLICY_FILE" && grep -q 'pattern="@' "$POLICY_FILE"; then
-            echo "✅ ImageMagick policy verified for @* read|write"
-          else
-            echo "❌ ImageMagick policy verification failed"
-            cat "$POLICY_FILE"
-            exit 1
-          fi
-          echo "Test" > test.txt
-          convert label:@test.txt test.png 2> imagemagick_test_error.log || {
-            echo "❌ ImageMagick text rendering test failed"
-            echo "🔍 ImageMagick test error output:"
-            cat imagemagick_test_error.log
-            exit 1
-          }
-          echo "✅ ImageMagick text rendering test passed"
+        if grep -q 'domain="path"' "$POLICY_FILE" && grep -q 'rights="read|write"' "$POLICY_FILE" && grep -q 'pattern="@' "$POLICY_FILE"; then
+          echo "✅ ImageMagick policy verified for @* read|write"
         else
-          echo "❌ ImageMagick policy file not found after creation"
+          echo "❌ ImageMagick policy verification failed"
+          cat "$POLICY_FILE"
           exit 1
         fi
-        ffmpeg -version
-        echo "✅ System dependencies installed"
+        echo "Test" > test.txt
+        convert label:@test.txt test.png 2> imagemagick_test_error.log || {
+          echo "❌ ImageMagick text rendering test failed"
+          echo "🔍 ImageMagick test error output:"
+          cat imagemagick_test_error.log
+          exit 1
+        }
+        echo "✅ ImageMagick text rendering test passed"
 
     - name: Verify system dependencies
       run: |
@@ -137,7 +114,7 @@ jobs:
         python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
           echo "❌ OpenCV not installed correctly, attempting reinstall..."
           pip uninstall -y opencv-python
-          pip install --no-cache-dir opencv-python==4.10.0
+          pip install --no-cache-dir opencv-python==4.10.0.84
           python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
             echo "❌ OpenCV reinstall failed"
             exit 1
@@ -145,28 +122,6 @@ jobs:
         }
         python -c "from manim import *; print('Manim imported successfully')" || { echo "❌ Manim not installed correctly"; exit 1; }
         python -c "import nltk; print('NLTK imported successfully')" || { echo "❌ NLTK not installed correctly"; exit 1; }
-        POLICY_VERIFIED=false
-        for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml; do
-          if [ -f "$POLICY_FILE" ] && grep -q '<policy.*domain="path".*pattern="@*".*rights="read|write"' "$POLICY_FILE"; then
-            echo "✅ ImageMagick policy verified at $POLICY_FILE"
-            POLICY_VERIFIED=true
-            break
-          fi
-        done
-        if [ "$POLICY_VERIFIED" = "false" ]; then
-          echo "⚠️ ImageMagick policy not found or not correctly configured, attempting to verify manually..."
-          for POLICY_FILE in /etc/ImageMagick-6/policy.xml /etc/ImageMagick/policy.xml; do
-            if [ -f "$POLICY_FILE" ] && grep -q 'read|write.*@\*' "$POLICY_FILE"; then
-              echo "✅ ImageMagick policy verified (fallback check) at $POLICY_FILE"
-              POLICY_VERIFIED=true
-              break
-            fi
-          done
-        fi
-        if [ "$POLICY_VERIFIED" = "false" ]; then
-          echo "❌ ImageMagick policy not correctly configured"
-          exit 1
-        fi
         echo "✅ FFmpeg, ImageMagick, OpenCV, Manim, and NLTK verified"
 
     - name: Check disk space and memory
@@ -182,9 +137,7 @@ jobs:
         python -m pip cache purge
         python -m pip install --upgrade pip==24.2 setuptools==70.3.0 wheel==0.43.0
         pip install --no-cache-dir -r requirements.txt
-        pip install --no-cache-dir moviepy==1.0.3
-        pip install --no-cache-dir replicate
-        pip install --no-cache-dir opencv-python==4.10.0  # Force install OpenCV
+        pip install --no-cache-dir opencv-python==4.10.0.84  # Updated to available version
         pip install --no-cache-dir manim==0.18.1
         pip install --no-cache-dir nltk==3.9.1
         python -m nltk.downloader punkt averaged_perceptron_tagger
@@ -200,7 +153,7 @@ jobs:
         python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
           echo "❌ OpenCV verification failed, attempting reinstall..."
           pip uninstall -y opencv-python
-          pip install --no-cache-dir opencv-python==4.10.0
+          pip install --no-cache-dir opencv-python==4.10.0.84
           python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
             echo "❌ OpenCV reinstall failed"
             exit 1
@@ -465,7 +418,7 @@ jobs:
                 subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python'], 
                              capture_output=True, check=False)
                 subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              'opencv-python==4.10.0'], capture_output=True, check=True)
+                              'opencv-python==4.10.0.84'], capture_output=True, check=True)
                 for mod in list(sys.modules.keys()):
                     if 'cv2' in mod or 'opencv' in mod:
                         del sys.modules[mod]
@@ -688,7 +641,7 @@ jobs:
             print(f'🔧 Final OpenCV fix attempt... Error: {e}')
             subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python'], check=False)
             subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                          'opencv-python==4.10.0'], check=False)
+                          'opencv-python==4.10.0.84'], check=False)
             try:
                 import cv2
                 print(f'✅ OpenCV installed successfully (version: {cv2.__version__})')
