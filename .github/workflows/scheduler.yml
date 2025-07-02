@@ -298,17 +298,15 @@ jobs:
         test_import_advanced('numpy', 'import numpy')
         test_import_advanced('PIL', 'from PIL import Image')
         test_import_advanced('openai', 'import openai')
-       
-
- test_import_advanced('gtts', 'from gtts import gTTS')
-        test_import_advanced('pydub', 'from pydub import AudioSegment')
-        test_import_advanced('requests', 'import requests')
-        test_import_advanced('replicate', 'import replicate')
-        test_import_advanced('cv2', 'import cv2')
-        test_import_advanced('manim', 'from manim import *')
-        test_import_advanced('nltk', 'import nltk')
-        print('\n🎬 Testing MoviePy with fallback strategies...')
-        moviepy_success = False
+        test_import_advanced('gtts', 'from gtts import gTTS')
+                test_import_advanced('pydub', 'from pydub import AudioSegment')
+                test_import_advanced('requests', 'import requests')
+                test_import_advanced('replicate', 'import replicate')
+                test_import_advanced('cv2', 'import cv2')
+                test_import_advanced('manim', 'from manim import *')
+                test_import_advanced('nltk', 'import nltk')
+                print('\n🎬 Testing MoviePy with fallback strategies...')
+                moviepy_success = False
         try:
             import moviepy
             import moviepy.editor as mpe
