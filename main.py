@@ -531,12 +531,12 @@ Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()
         cleanup_files.append(audio_path)
         return audio_path
     
-    def generate_image_sequence_step(script):
+    def generate_image_sequence_step(topic_param, script):
         logger.info("🖼️ Generating image sequence...")
-        if not topic:
+        if not topic_param:
             logger.error("❌ Topic is empty, using default topic 'Nature Scene'")
-            topic = "Nature Scene"
-        image_paths = generate_image_sequence(topic, script)
+            topic_param = "Nature Scene"
+        image_paths = generate_image_sequence(topic_param, script)
         if not image_paths or not all(os.path.exists(p) for p in image_paths):
             raise FileNotFoundError(f"Image sequence not created: {image_paths}")
         for path in image_paths:
@@ -559,7 +559,7 @@ Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()
     audio_path = retry_on_failure(lambda: generate_voice_step(script))
     logger.info(f"✅ Audio generated: {audio_path}")
     
-    image_paths = retry_on_failure(lambda: generate_image_sequence_step(script))
+    image_paths = retry_on_failure(lambda: generate_image_sequence_step(topic, script))
     logger.info(f"✅ Image sequence generated: {len(image_paths)} images")
     
     video_path = retry_on_failure(lambda: create_video_step(script, audio_path, image_paths))
