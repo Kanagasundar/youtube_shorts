@@ -169,14 +169,47 @@ jobs:
         python -m pip cache purge
         python -m pip install --upgrade pip==24.2 setuptools==70.3.0 wheel==0.43.0
         pip install --no-cache-dir -r requirements.txt
+        pip install replicate  # Add Replicate for Llama API fallback
         pip list  # Log installed packages for debugging
         echo "✅ All dependencies installed successfully"
 
-    - name: Check for proxies references
+    - name: Search for proxies references in code
       run: |
-        echo "🔍 Checking for 'proxies' in Python files..."
-        git grep -i "proxies" *.py utils/*.py || echo "No 'proxies' references found"
-        echo "✅ Proxies check completed"
+        echo "🔍 Searching for 'proxies' references in Python files..."
+        
+        # Search for proxies in all Python files
+        PROXIES_FOUND=$(grep -r "proxies" . --include="*.py" || true)
+        
+        if [ -n "$PROXIES_FOUND" ]; then
+          echo "❌ Found 'proxies' references in the following files:"
+          echo "$PROXIES_FOUND"
+          echo ""
+          echo "🔧 Files that need to be fixed:"
+          grep -l "proxies" . --include="*.py" || true
+          echo ""
+          echo "💡 These files likely contain the problematic 'proxies' parameter"
+          echo "   that needs to be removed from OpenAI client initialization."
+          
+          # Show context around each match
+          echo ""
+          echo "📄 Context around each match:"
+          grep -rn -B2 -A2 "proxies" . --include="*.py" || true
+          
+        else
+          echo "✅ No 'proxies' references found in Python files"
+        fi
+        
+        # Also check for common variations
+        echo ""
+        echo "🔍 Checking for common variations..."
+        
+        PROXY_VARIATIONS=$(grep -ri "proxy\|http_proxy\|https_proxy" . --include="*.py" | grep -v "# " || true)
+        if [ -n "$PROXY_VARIATIONS" ]; then
+          echo "⚠️ Found proxy-related references:"
+          echo "$PROXY_VARIATIONS"
+        else
+          echo "✅ No proxy variations found"
+        fi
 
     - name: Log script contents for debugging
       run: |
@@ -273,6 +306,10 @@ jobs:
                     modules_to_clear = [mod for mod in sys.modules.keys() if 'openai' in mod]
                     for mod in modules_to_clear:
                         del sys.modules[mod]
+                elif module_name == 'replicate':
+                    modules_to_clear = [mod for mod in sys.modules.keys() if 'replicate' in mod]
+                    for mod in modules_to_clear:
+                        del sys.modules[mod]
                 
                 # Execute the import statement
                 exec(import_statement)
@@ -292,6 +329,7 @@ jobs:
         test_import_advanced('gtts', 'from gtts import gTTS')
         test_import_advanced('pydub', 'from pydub import AudioSegment')
         test_import_advanced('requests', 'import requests')
+        test_import_advanced('replicate', 'import replicate')
         
         # Special handling for moviepy with multiple fallback strategies
         print('\n🎬 Testing MoviePy with fallback strategies...')
@@ -422,6 +460,39 @@ jobs:
         
         test_results.append(('OpenAI', openai_success, 'OK' if openai_success else 'Failed'))
         
+        # Special handling for Replicate
+        print('\n🔍 Testing Replicate with fallback strategies...')
+        replicate_success = False
+        
+        # Strategy 1: Direct import
+        try:
+            import replicate
+            print('✅ Replicate Strategy 1 (direct): Success')
+            replicate_success = True
+        except Exception as e:
+            print(f'❌ Replicate Strategy 1 failed: {e}')
+            
+            # Strategy 2: Reinstall and retry
+            try:
+                print('🔧 Replicate Strategy 2: Reinstalling...')
+                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'replicate'], 
+                             capture_output=True, check=False)
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                              'replicate'], capture_output=True, check=True)
+                
+                # Clear module cache
+                for mod in list(sys.modules.keys()):
+                    if 'replicate' in mod:
+                        del sys.modules[mod]
+                
+                import replicate
+                print('✅ Replicate Strategy 2 (reinstall): Success')
+                replicate_success = True
+            except Exception as e2:
+                print(f'❌ Replicate Strategy 2 failed: {e2}')
+        
+        test_results.append(('Replicate', replicate_success, 'OK' if replicate_success else 'Failed'))
+        
         # Summary
         failed = [name for name, success, _ in test_results if not success]
         if failed:
@@ -433,7 +504,7 @@ jobs:
                                   capture_output=True, text=True)
             if result.returncode == 0:
                 for line in result.stdout.split('\n'):
-                    if any(pkg in line.lower() for pkg in ['moviepy', 'google', 'openai', 'requests']):
+                    if any(pkg in line.lower() for pkg in ['moviepy', 'google', 'openai', 'requests', 'replicate']):
                         print(f'   {line}')
         else:
             print('\n✅ All critical packages verified successfully!')
@@ -484,6 +555,7 @@ jobs:
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        REPLICATE_API_KEY: ${{ secrets.REPLICATE_API_KEY }}
         VIDEO_PRIVACY: ${{ vars.VIDEO_PRIVACY || 'public' }}
         VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -496,10 +568,14 @@ jobs:
           echo "❌ PEXELS_API_KEY is not set in repository secrets"
           exit 1
         fi
+        if [ -z "$REPLICATE_API_KEY" ]; then
+          echo "⚠️ REPLICATE_API_KEY is not set - Llama fallback will be disabled"
+        fi
         
         cat > .env << EOF
         OPENAI_API_KEY=$OPENAI_API_KEY
         PEXELS_API_KEY=$PEXELS_API_KEY
+        REPLICATE_API_KEY=$REPLICATE_API_KEY
         VIDEO_PRIVACY=$VIDEO_PRIVACY
         VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID
         UPLOAD_TO_YOUTUBE=${{ env.UPLOAD_TO_YOUTUBE }}
@@ -527,6 +603,7 @@ jobs:
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        REPLICATE_API_KEY: ${{ secrets.REPLICATE_API_KEY }}
         VIDEO_PRIVACY: ${{ vars.VIDEO_PRIVACY || 'public' }}
         VIDEO_CATEGORY_ID: ${{ vars.VIDEO_CATEGORY_ID || '28' }}
         UPLOAD_TO_YOUTUBE: ${{ env.UPLOAD_TO_YOUTUBE }}
@@ -552,7 +629,7 @@ jobs:
         python -c "
         import os
         for key, value in sorted(os.environ.items()):
-            if key in ['OPENAI_API_KEY', 'PEXELS_API_KEY', 'YOUTUBE_CREDENTIALS', 'YOUTUBE_TOKEN', 'DISCORD_WEBHOOK_URL']:
+            if key in ['OPENAI_API_KEY', 'PEXELS_API_KEY', 'REPLICATE_API_KEY', 'YOUTUBE_CREDENTIALS', 'YOUTUBE_TOKEN', 'DISCORD_WEBHOOK_URL']:
                 print(f'   - {key}: ***')
             else:
                 print(f'   - {key}: {value}')
@@ -618,6 +695,24 @@ jobs:
                 print('✅ OpenAI installed successfully')
             except Exception as e2:
                 print(f'❌ OpenAI installation failed: {e2}')
+        
+        # Clear and fix Replicate
+        for mod in list(sys.modules.keys()):
+            if 'replicate' in mod:
+                del sys.modules[mod]
+        
+        try:
+            import replicate
+            print('✅ Replicate ready')
+        except Exception as e:
+            print(f'🔧 Final Replicate fix attempt... Error: {e}')
+            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'replicate'], check=False)
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'replicate'], check=False)
+            try:
+                import replicate
+                print('✅ Replicate installed successfully')
+            except Exception as e2:
+                print(f'❌ Replicate installation failed: {e2}')
         
         print('🚀 Ready to execute main script')
         "
@@ -694,3 +789,5 @@ jobs:
         VIDEO_ID=$(echo "$VIDEO_ID" | grep -E '^[a-zA-Z0-9_-]{11}$' || echo "")
         
         echo "video_title=$VIDEO_TITLE" >> $GITHUB_OUTPUT
+        echo "video_id=$VIDEO_ID" >> $GITHUB_OUTPUT
+        echo "video_category=$VIDEO_CATEGORY" >> $GITHUB_OUTPUT

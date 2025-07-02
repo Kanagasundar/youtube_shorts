@@ -4,7 +4,7 @@ setuptools==70.3.0
 wheel==0.43.0
 
 # AI and API dependencies
-openai==1.40.6
+openai>=1.0.0,<2.0.0
 replicate==0.30.0  # Compatible with Replicate API for image generation
 
 # Audio and video processing
