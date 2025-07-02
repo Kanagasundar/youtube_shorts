@@ -55,6 +55,14 @@ def generate_voice(script, output_dir="output", language="en", slow=False):
         # Optimize audio settings
         audio = optimize_audio(audio)
         
+        # Check duration and repeat if less than 25 seconds
+        duration = len(audio) / 1000.0
+        if duration < 25:
+            repeat_count = int(25 / duration) + 1
+            audio = audio * repeat_count
+            print(f"⚠️ Duration {duration:.1f}s too short, repeating {repeat_count} times")
+            duration = len(audio) / 1000.0
+        
         # Export final audio
         audio.export(audio_path, format="mp3", bitrate="128k")
         
@@ -62,7 +70,7 @@ def generate_voice(script, output_dir="output", language="en", slow=False):
         os.unlink(temp_path)
         
         print(f"✅ Voice generated: {audio_path}")
-        print(f"⏱️ Duration: {len(audio) / 1000:.1f} seconds")
+        print(f"⏱️ Duration: {duration:.1f} seconds")
         
         return audio_path
         

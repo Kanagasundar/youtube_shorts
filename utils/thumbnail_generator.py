@@ -32,6 +32,9 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
     
     Returns:
         list: List of paths to generated images
+    
+    Raises:
+        FileNotFoundError: If no images can be generated after all retries
     """
     os.makedirs(output_dir, exist_ok=True)
     
@@ -39,7 +42,7 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
     pexels_api_key = os.getenv('PEXELS_API_KEY')
     if not pexels_api_key:
         logger.error("❌ PEXELS_API_KEY not found in environment variables")
-        return []
+        raise FileNotFoundError("PEXELS_API_KEY missing")
     
     headers = {"Authorization": pexels_api_key}
     base_url = "https://api.pexels.com/v1/search"
@@ -102,6 +105,15 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                             time.sleep(2 ** attempt)
                         continue
                     
+                    # Check content type
+                    content_type = img_response.headers.get('content-type', '')
+                    if not content_type.startswith('image/'):
+                        logger.error(f"❌ Invalid content type '{content_type}' for image {i} from {image_url}")
+                        attempt += 1
+                        if attempt < max_retries:
+                            time.sleep(2 ** attempt)
+                        continue
+                    
                     # Read image into memory and validate
                     img_data = io.BytesIO()
                     for chunk in img_response.iter_content(1024):
@@ -115,7 +127,7 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                         if img.size[0] < 1080 or img.size[1] < 1920:
                             logger.warning(f"⚠️ Image {i} resolution {img.size} is below 1080x1920")
                         # Save validated image
-                        img.save(temp_path)
+                        img.save(temp_path, format='JPEG')  # Force JPEG to handle potential format issues
                         shutil.move(temp_path, image_path)
                         logger.info(f"✅ Image saved and validated: {image_path}")
                         image_paths.append(image_path)
@@ -135,8 +147,8 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                 logger.error(f"❌ Failed to generate image {i} after {max_retries} attempts")
         
         if not image_paths:
-            logger.error("❌ No images generated after all attempts")
-            return []
+            logger.error("❌ No images generated after all attempts - terminating process")
+            raise FileNotFoundError("Failed to generate any images after all retries")
         
         total_duration = len(image_paths) * duration_per_image
         if not (25 <= total_duration <= 60):
@@ -154,7 +166,7 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
     
     except Exception as e:
         logger.error(f"❌ Failed to generate image sequence: {str(e)}")
-        return []
+        raise  # Re-raise to ensure retry_on_failure catches it
 
 def generate_thumbnail(topic: str, category: str):
     """
