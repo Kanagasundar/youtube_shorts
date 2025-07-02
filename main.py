@@ -693,7 +693,7 @@ def main() -> int:
         logger.info("📤 Step 6: Uploading to YouTube...")
         
         try:
-            video_id = upload_to_youtube(video_path, image_paths, script, topic, category)
+            video_id = upload_to_youtube(video_path, image_paths[-1] if image_paths else None, script, topic, category)
             
             if video_id:
                 logger.info("✅ AUTOMATION COMPLETED SUCCESSFULLY WITH UPLOAD!")
