@@ -95,50 +95,102 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                 temp_path = os.path.join(output_dir, f"temp_frame_{timestamp}_{i}.png")
                 image_path = os.path.join(output_dir, f"frame_{timestamp}_{i}.png")
                 
-                img_response = requests.get(image_url, stream=True)
-                if img_response.status_code == 200:
-                    content_length = int(img_response.headers.get('content-length', 0))
-                    if content_length == 0:
-                        logger.error(f"❌ Empty response for image {i} from {image_url}")
+                try:
+                    # Download with proper error handling and headers
+                    img_response = requests.get(image_url, stream=True, timeout=30, headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    })
+                    
+                    if img_response.status_code == 200:
+                        content_length = int(img_response.headers.get('content-length', 0))
+                        if content_length == 0:
+                            logger.error(f"❌ Empty response for image {i} from {image_url}")
+                            attempt += 1
+                            if attempt < max_retries:
+                                time.sleep(2 ** attempt)
+                            continue
+                        
+                        # Check content type
+                        content_type = img_response.headers.get('content-type', '')
+                        if not content_type.startswith('image/'):
+                            logger.error(f"❌ Invalid content type '{content_type}' for image {i} from {image_url}")
+                            attempt += 1
+                            if attempt < max_retries:
+                                time.sleep(2 ** attempt)
+                            continue
+                        
+                        # Read image into memory with proper buffering
+                        img_data = io.BytesIO()
+                        for chunk in img_response.iter_content(chunk_size=8192):
+                            if chunk:
+                                img_data.write(chunk)
+                        
+                        # Validate we have actual data
+                        if img_data.tell() == 0:
+                            logger.error(f"❌ No data received for image {i} from {image_url}")
+                            attempt += 1
+                            if attempt < max_retries:
+                                time.sleep(2 ** attempt)
+                            continue
+                        
+                        img_data.seek(0)
+                        
+                        # Try to open and validate the image
+                        try:
+                            # First, try to open the image
+                            img = Image.open(img_data)
+                            
+                            # Load the image data to ensure it's valid
+                            img.load()
+                            
+                            # Convert to RGB to ensure compatibility
+                            if img.mode != 'RGB':
+                                img = img.convert('RGB')
+                            
+                            # Check minimum dimensions
+                            if img.size[0] < 100 or img.size[1] < 100:
+                                logger.error(f"❌ Image {i} dimensions {img.size} too small")
+                                attempt += 1
+                                if attempt < max_retries:
+                                    time.sleep(2 ** attempt)
+                                continue
+                            
+                            # Save the validated image
+                            img.save(image_path, format='JPEG', quality=95)
+                            logger.info(f"✅ Image saved and validated: {image_path}")
+                            image_paths.append(image_path)
+                            break  # Success, move to next image
+                            
+                        except (IOError, OSError, AttributeError, ValueError) as img_error:
+                            logger.error(f"❌ Invalid image data for query '{query}': {str(img_error)} - File size: {img_data.getbuffer().nbytes} bytes")
+                            # Try to get a different image from the same query
+                            attempt += 1
+                            if attempt < max_retries:
+                                time.sleep(2 ** attempt)
+                            continue
+                        
+                        finally:
+                            # Clean up temporary files
+                            if os.path.exists(temp_path):
+                                try:
+                                    os.remove(temp_path)
+                                except:
+                                    pass
+                    
+                    else:
+                        logger.error(f"❌ Failed to download image {i}: {img_response.status_code}")
                         attempt += 1
                         if attempt < max_retries:
                             time.sleep(2 ** attempt)
-                        continue
-                    
-                    # Check content type
-                    content_type = img_response.headers.get('content-type', '')
-                    if not content_type.startswith('image/'):
-                        logger.error(f"❌ Invalid content type '{content_type}' for image {i} from {image_url}")
-                        attempt += 1
-                        if attempt < max_retries:
-                            time.sleep(2 ** attempt)
-                        continue
-                    
-                    # Read image into memory and validate
-                    img_data = io.BytesIO()
-                    for chunk in img_response.iter_content(1024):
-                        img_data.write(chunk)
-                    img_data.seek(0)
-                    
-                    try:
-                        img = Image.open(img_data)
-                        img.verify()  # Check if the file is a valid image
-                        img = img.convert("RGB")
-                        if img.size[0] < 1080 or img.size[1] < 1920:
-                            logger.warning(f"⚠️ Image {i} resolution {img.size} is below 1080x1920")
-                        # Save validated image
-                        img.save(temp_path, format='JPEG')  # Force JPEG to handle potential format issues
-                        shutil.move(temp_path, image_path)
-                        logger.info(f"✅ Image saved and validated: {image_path}")
-                        image_paths.append(image_path)
-                        break  # Success, move to next image
-                    except (IOError, SyntaxError, AttributeError) as e:
-                        logger.error(f"❌ Invalid image downloaded for query '{query}': {str(e)} - File size: {img_data.getbuffer().nbytes} bytes")
-                        attempt += 1
-                        if attempt < max_retries:
-                            time.sleep(2 ** attempt)
-                else:
-                    logger.error(f"❌ Failed to download image {i}: {img_response.status_code}")
+                
+                except requests.exceptions.RequestException as req_error:
+                    logger.error(f"❌ Request failed for image {i}: {str(req_error)}")
+                    attempt += 1
+                    if attempt < max_retries:
+                        time.sleep(2 ** attempt)
+                
+                except Exception as unexpected_error:
+                    logger.error(f"❌ Unexpected error for image {i}: {str(unexpected_error)}")
                     attempt += 1
                     if attempt < max_retries:
                         time.sleep(2 ** attempt)
