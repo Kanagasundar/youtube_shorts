@@ -240,7 +240,7 @@ def check_environment() -> bool:
     """Check if required environment variables are set."""
     logger.info("🔍 Checking environment variables...")
     
-    required_vars = ['OPENAI_API_KEY', 'PEXELS_API_KEY']  # Updated to use PEXELS_API_KEY
+    required_vars = ['OPENAI_API_KEY', 'PEXELS_API_KEY', 'REPLICATE_API_KEY']  # Added REPLICATE_API_KEY
     optional_vars = {
         'UPLOAD_TO_YOUTUBE': 'true',
         'VIDEO_PRIVACY': 'public',
@@ -248,7 +248,7 @@ def check_environment() -> bool:
         'DISCORD_WEBHOOK_URL': None,
         'TOPIC_OVERRIDE': None,
         'CATEGORY_OVERRIDE': None,
-        'MAX_RETRIES': '5',  # Aligned with workflow
+        'MAX_RETRIES': '5',
         'CLEANUP_OLD_FILES': 'true',
         'KEEP_FILES_DAYS': '7'
     }
@@ -285,6 +285,8 @@ def check_environment() -> bool:
                 print(f"   export {var}=sk-your_openai_api_key_here")
             elif var == 'PEXELS_API_KEY':
                 print(f"   export {var}=your_pexels_api_key_here")
+            elif var == 'REPLICATE_API_KEY':
+                print(f"   export {var}=your_replicate_api_key_here")
             else:
                 print(f"   export {var}=your_value_here")
         return False
@@ -369,7 +371,7 @@ def setup_check() -> bool:
         ("Dependencies", check_dependencies),
         ("Environment Variables", check_environment),
         ("Directories", setup_directories),
-        ("System Health", check_system_health),  # New health check
+        ("System Health", check_system_health),
     ]
     
     for check_name, check_func in checks:
@@ -409,7 +411,7 @@ def import_modules() -> bool:
         'scripting': ['generate_script'],
         'voice': ['generate_voice'],
         'video': ['create_video'],
-        'thumbnail_generator': ['generate_image_sequence'],  # Updated to use Pexels
+        'thumbnail_generator': ['generate_image_sequence'],
         'youtube_uploader': ['YouTubeUploader', 'generate_video_metadata']
     }
     
@@ -520,11 +522,6 @@ def generate_content_with_retry(topic: str, category: str) -> Tuple[str, str, li
             script = generator.generate_script_fallback(topic, category)
             logger.info(f"✅ Using fallback script from ScriptGenerator ({len(script)} characters)")
         return script
-
-    # The rest of the function remains unchanged (assuming other content generation steps are the same)
-    # For completeness, you would include the remaining steps for voice, video, and thumbnail generation
-    # Since they weren't provided in the original, I'll assume they remain unchanged
-    # If you need these parts, please provide them, and I can include them
 
     # Placeholder for remaining content generation steps
     logger.info("🔊 Generating voice...")
