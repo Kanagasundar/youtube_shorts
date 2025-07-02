@@ -240,7 +240,7 @@ def check_environment() -> bool:
     """Check if required environment variables are set."""
     logger.info("🔍 Checking environment variables...")
     
-    required_vars = ['OPENAI_API_KEY', 'PEXELS_API_KEY', 'REPLICATE_API_KEY']  # Added REPLICATE_API_KEY
+    required_vars = ['OPENAI_API_KEY', 'PEXELS_API_KEY']  # Updated to use PEXELS_API_KEY
     optional_vars = {
         'UPLOAD_TO_YOUTUBE': 'true',
         'VIDEO_PRIVACY': 'public',
@@ -248,7 +248,7 @@ def check_environment() -> bool:
         'DISCORD_WEBHOOK_URL': None,
         'TOPIC_OVERRIDE': None,
         'CATEGORY_OVERRIDE': None,
-        'MAX_RETRIES': '5',
+        'MAX_RETRIES': '5',  # Aligned with workflow
         'CLEANUP_OLD_FILES': 'true',
         'KEEP_FILES_DAYS': '7'
     }
@@ -285,8 +285,6 @@ def check_environment() -> bool:
                 print(f"   export {var}=sk-your_openai_api_key_here")
             elif var == 'PEXELS_API_KEY':
                 print(f"   export {var}=your_pexels_api_key_here")
-            elif var == 'REPLICATE_API_KEY':
-                print(f"   export {var}=your_replicate_api_key_here")
             else:
                 print(f"   export {var}=your_value_here")
         return False
@@ -371,7 +369,7 @@ def setup_check() -> bool:
         ("Dependencies", check_dependencies),
         ("Environment Variables", check_environment),
         ("Directories", setup_directories),
-        ("System Health", check_system_health),
+        ("System Health", check_system_health),  # New health check
     ]
     
     for check_name, check_func in checks:
@@ -411,7 +409,7 @@ def import_modules() -> bool:
         'scripting': ['generate_script'],
         'voice': ['generate_voice'],
         'video': ['create_video'],
-        'thumbnail_generator': ['generate_image_sequence'],
+        'thumbnail_generator': ['generate_image_sequence'],  # Updated to use Pexels
         'youtube_uploader': ['YouTubeUploader', 'generate_video_metadata']
     }
     
@@ -511,16 +509,18 @@ def generate_content_with_retry(topic: str, category: str) -> Tuple[str, str, li
         except ImportError:
             logger.warning("⚠️ OpenAI module not imported")
         
-        # Use ScriptGenerator for script generation with fallbacks
+        # Pass both topic and category to generate_script
         script = generate_script(topic, category)
         if not script or len(script.strip()) < 50:
             logger.error(f"❌ Generated script is too short or empty ({len(script.strip()) if script else 0} characters)")
             logger.debug(f"Script content: {script!r}")
-            # Rely on ScriptGenerator's built-in fallback
-            from scripting import ScriptGenerator
-            generator = ScriptGenerator()
-            script = generator.generate_script_fallback(topic, category)
-            logger.info(f"✅ Using fallback script from ScriptGenerator ({len(script)} characters)")
+            # Fallback script
+            script = f"""
+Hook: Did you know about {topic.lower()}?
+Body: This is a fascinating topic in the {category} category. Unfortunately, we couldn't generate a full script, but here's a brief overview to spark your interest! Learn more about {topic.lower()} and its impact.
+Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()} topics!
+"""
+            logger.info(f"✅ Using fallback script ({len(script)} characters)")
         return script
     
     def generate_voice_step(script):
@@ -533,6 +533,9 @@ def generate_content_with_retry(topic: str, category: str) -> Tuple[str, str, li
     
     def generate_image_sequence_step(script):
         logger.info("🖼️ Generating image sequence...")
+        if not topic:
+            logger.error("❌ Topic is empty, using default topic 'Nature Scene'")
+            topic = "Nature Scene"
         image_paths = generate_image_sequence(topic, script)
         if not image_paths or not all(os.path.exists(p) for p in image_paths):
             raise FileNotFoundError(f"Image sequence not created: {image_paths}")
@@ -679,6 +682,8 @@ def main() -> int:
         else:
             try:
                 topic, category = get_today_topic()
+                if not topic or not category:
+                    raise ValueError("Topic or category is empty from get_today_topic")
                 logger.info(f"✅ Topic: {topic}")
                 logger.info(f"✅ Category: {category}")
             except Exception as e:
@@ -726,30 +731,39 @@ def main() -> int:
         return 1
 
 if __name__ == "__main__":
+    """Entry point for the script."""
+    print("🤖 YouTube Automation Script - Enhanced Version")
+    print("=" * 60)
+    
     try:
+        # Setup checks
         if not setup_check():
+            print("\n❌ Setup checks failed. Please fix the issues above and try again.")
             sys.exit(1)
         
+        # Import modules
         if not import_modules():
+            print("\n❌ Module import failed. Please check your utils directory.")
             sys.exit(1)
         
-        # Test content generation
-        topic = os.getenv('TOPIC_OVERRIDE', 'Plants That Can Count to Twenty')
-        category = os.getenv('CATEGORY_OVERRIDE', 'Nature')
+        # Run main automation
+        exit_code = main()
         
-        script, voice_file, thumbnail_files, video_file = generate_content_with_retry(topic, category)
-        logger.info(f"✅ Generated content:\nScript: {script}\nVoice: {voice_file}\nThumbnails: {thumbnail_files}\nVideo: {video_file}")
+        # Exit with appropriate message
+        if exit_code == 0:
+            print("\n🎉 Script completed successfully!")
+        elif exit_code == 2:
+            print("\n⚠️ Script completed with partial success (upload failed).")
+        else:
+            print("\n⚠️ Script completed with errors.")
         
-        # Optionally upload to YouTube
-        if os.getenv('UPLOAD_TO_YOUTUBE', 'true').lower() == 'true':
-            logger.info("📤 Uploading to YouTube...")
-            metadata = generate_video_metadata(script, topic, category)
-            uploader = YouTubeUploader()
-            video_id = retry_on_failure(lambda: uploader.upload_video(video_file, metadata))
-            logger.info(f"✅ Video uploaded successfully: {video_id}")
+        sys.exit(exit_code)
         
-    except Exception as e:
-        report_error(e)
-        sys.exit(1)
-    finally:
+    except KeyboardInterrupt:
+        print("\n\n⚠️ Script interrupted by user (Ctrl+C)")
         cleanup_temporary_files()
+        sys.exit(1)
+    except Exception as e:
+        report_error(e)  # Use enhanced error reporting
+        cleanup_temporary_files()
+        sys.exit(1)
