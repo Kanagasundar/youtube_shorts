@@ -7,13 +7,14 @@ logging, configuration management, and cleanup features.
 Version: 1.1.1
 Update Notes:
 - Added microsecond precision to logging for better timestamp accuracy.
-- Enhanced system health check with memory and CPU usage monitoring.
+- Enhanced system health check with memory and CPU usage monitoring (optional via psutil).
 - Added debug logging for video creation steps to diagnose quality issues.
 - Improved documentation for maintainability and debugging.
 
 Dependencies:
 - os, sys, traceback, shutil, signal, datetime, pathlib, logging, json, time, typing, importlib.util, dotenv
 - Utils modules: topic_rotator, scripting, voice, video, thumbnail_generator, youtube_uploader
+- Optional: psutil (for enhanced system health monitoring)
 """
 
 import os
@@ -29,7 +30,11 @@ import time
 from typing import Optional, Tuple, Dict, Any
 import importlib.util
 from dotenv import load_dotenv
-import psutil  # Added for system health monitoring
+
+try:
+    import psutil  # Added for system health monitoring, optional
+except ImportError:
+    psutil = None  # Set to None if not available
 
 # Load environment variables from .env file
 load_dotenv()
@@ -132,7 +137,6 @@ def check_dependencies() -> bool:
         'google-auth-oauthlib': ('import google_auth_oauthlib', 'google_auth_oauthlib'),
         'google-api-python-client': ('from googleapiclient import discovery', 'discovery'),
         'requests': ('import requests', 'requests'),  # Required for Pexels API
-        'psutil': ('import psutil', 'psutil')  # Added for system health
     }
     
     missing_packages = []
@@ -350,19 +354,22 @@ def check_system_health() -> bool:
             return False
         logger.debug(f"✅ Disk space available: {available_gb:.1f} GB")
         
-        # Check memory usage
-        memory = psutil.virtual_memory()
-        available_mb = memory.available / (2**20)
-        if available_mb < 512:
-            logger.error(f"❌ Insufficient memory: {available_mb:.1f} MB available")
-            return False
-        logger.debug(f"✅ Memory available: {available_mb:.1f} MB")
-        
-        # Check CPU usage
-        cpu_percent = psutil.cpu_percent(interval=1)
-        if cpu_percent > 90:
-            logger.warning(f"⚠️ High CPU usage: {cpu_percent:.1f}%")
-        logger.debug(f"✅ CPU usage: {cpu_percent:.1f}%")
+        # Check memory usage if psutil is available
+        if psutil:
+            memory = psutil.virtual_memory()
+            available_mb = memory.available / (2**20)
+            if available_mb < 512:
+                logger.error(f"❌ Insufficient memory: {available_mb:.1f} MB available")
+                return False
+            logger.debug(f"✅ Memory available: {available_mb:.1f} MB")
+            
+            # Check CPU usage
+            cpu_percent = psutil.cpu_percent(interval=1)
+            if cpu_percent > 90:
+                logger.warning(f"⚠️ High CPU usage: {cpu_percent:.1f}%")
+            logger.debug(f"✅ CPU usage: {cpu_percent:.1f}%")
+        else:
+            logger.warning("⚠️ psutil not available, skipping memory and CPU checks")
         
         logger.info("✅ System health check passed")
         return True
