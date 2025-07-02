@@ -10,8 +10,8 @@ import numpy as np
 try:
     from PIL import Image
     if not hasattr(Image, 'ANTIALIAS'):
-        Image.ANTIALIAS = Image.LANCZOS
-        logging.info("Applied PIL compatibility fix: Image.ANTIALIAS -> Image.LANCZOS")
+        Image.ANTIALIAS = Image.Resampling.LANCZOS
+        logging.info("Applied PIL compatibility fix: Image.ANTIALIAS -> Image.Resampling.LANCZOS")
 except ImportError:
     pass
 
@@ -87,7 +87,7 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
         animated_bg = mpe.VideoClip(gradient_frame, duration=target_duration).resize((1080, 1920)).set_opacity(0.5)
         video = mpe.CompositeVideoClip([animated_bg, video])
         
-        # Create subtitles as a single clip
+        # Create subtitles with fallback for missing SubtitlesClip
         logger.info("📝 Generating subtitles...")
         words = script_text.split()
         subtitles = []
@@ -98,20 +98,35 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
             subtitles.append(((current_time, current_time + word_duration), word))
             current_time += word_duration
         
-        subtitle_clip = mpe.SubtitlesClip(subtitles, lambda txt: mpe.TextClip(
-            txt,
-            fontsize=70,
-            color='white',
-            stroke_color='black',
-            stroke_width=1,
-            size=(1080, None),
-            method='caption',
-            align='center'
-        ).set_position(('center', 'bottom')).set_duration(word_duration).fadein(0.3).fadeout(0.3))
-        
-        # Composite with subtitles
-        video = mpe.CompositeVideoClip([video, subtitle_clip.set_duration(target_duration)])
-        
+        try:
+            subtitle_clip = mpe.SubtitlesClip(subtitles, lambda txt: mpe.TextClip(
+                txt,
+                fontsize=70,
+                color='white',
+                stroke_color='black',
+                stroke_width=1,
+                size=(1080, None),
+                method='caption',
+                align='center'
+            ).set_position(('center', 'bottom')).set_duration(word_duration).fadein(0.3).fadeout(0.3))
+            video = mpe.CompositeVideoClip([video, subtitle_clip.set_duration(target_duration)])
+        except AttributeError:
+            logger.warning("⚠️ SubtitlesClip not available, skipping subtitles")
+            # Fallback: Add a simple text overlay if subtitles fail
+            try:
+                text_clip = mpe.TextClip(
+                    script_text[:50] + "..." if len(script_text) > 50 else script_text,
+                    fontsize=50,
+                    color='white',
+                    bg_color='rgba(0, 0, 0, 0.5)',
+                    size=(1080, 200),
+                    method='caption',
+                    align='center'
+                ).set_position(('center', 'bottom')).set_duration(target_duration).fadein(0.5).fadeout(0.5)
+                video = mpe.CompositeVideoClip([video, text_clip])
+            except Exception as e:
+                logger.warning(f"⚠️ Fallback text overlay failed: {str(e)}")
+
         # Minimal dynamic effects
         video = video.resize(lambda t: 1 + 0.05 * np.sin(t / 2))  # Reduced amplitude and frequency
         
