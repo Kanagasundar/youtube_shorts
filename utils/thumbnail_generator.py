@@ -4,6 +4,7 @@ import requests
 from dotenv import load_dotenv
 import time
 from datetime import datetime
+from PIL import Image
 
 # Configure logging
 logging.basicConfig(
@@ -71,7 +72,7 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                 logger.error(f"❌ No photos found for query: {query}")
                 continue
             
-            image_url = photos[0]["src"]["large"]  # Use large size for better quality
+            image_url = photos[0]["src"]["original"]  # Use original size for better quality
             logger.info(f"Downloading image {i} from URL: {image_url}")
             
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -80,11 +81,23 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
             
             img_response = requests.get(image_url, stream=True)
             if img_response.status_code == 200:
+                # Validate image content
                 with open(image_path, 'wb') as f:
                     for chunk in img_response.iter_content(1024):
                         f.write(chunk)
-                logger.info(f"✅ Image saved: {image_path}")
-                image_paths.append(image_path)
+                # Verify the image is valid
+                try:
+                    with Image.open(image_path) as img:
+                        img.verify()  # Check if the file is a valid image
+                        img = img.convert("RGB")  # Ensure it's processable
+                        if img.size[0] < 1080 or img.size[1] < 1920:  # Minimum resolution check
+                            logger.warning(f"⚠️ Image {i} resolution {img.size} is below 1080x1920, resizing may fail")
+                        logger.info(f"✅ Image saved and validated: {image_path}")
+                        image_paths.append(image_path)
+                except (IOError, SyntaxError) as e:
+                    logger.error(f"❌ Invalid image downloaded for query '{query}': {str(e)}")
+                    if os.path.exists(image_path):
+                        os.remove(image_path)
             else:
                 logger.error(f"❌ Failed to download image {i}: {img_response.status_code}")
             
