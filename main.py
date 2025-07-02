@@ -536,12 +536,8 @@ Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()
         if not topic_param:
             logger.error("❌ Topic is empty, using default topic 'Nature Scene'")
             topic_param = "Nature Scene"
-        image_paths = generate_image_sequence(topic_param, script)
-        if not image_paths or not all(os.path.exists(p) for p in image_paths):
-            raise FileNotFoundError(f"Image sequence not created: {image_paths}")
-        for path in image_paths:
-            cleanup_files.append(path)
-        return image_paths
+        # Limit retries to 1 for image sequence to avoid excessive looping
+        return retry_on_failure(lambda: generate_image_sequence(topic_param, script), max_retries=1)
     
     def create_video_step(script, audio_path, image_paths):
         logger.info("🎬 Creating video...")
