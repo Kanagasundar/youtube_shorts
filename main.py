@@ -11,6 +11,7 @@ Update Notes:
 - Added debug logging for video creation steps to diagnose quality issues.
 - Improved documentation for maintainability and debugging.
 - Enhanced video creation with professional effects (text animations, transitions, color grading).
+- Fixed import error for transitions by using moviepy.video.fx.all.
 
 Dependencies:
 - os, sys, traceback, shutil, signal, datetime, pathlib, logging, json, time, typing, importlib.util, dotenv
@@ -32,7 +33,8 @@ import time
 from typing import Optional, Tuple, Dict, Any
 import importlib.util
 from dotenv import load_dotenv
-from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, vfx, transitions
+from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, vfx
+from moviepy.video.fx.all import crossfadein  # Corrected import for transitions
 
 try:
     import psutil  # Added for system health monitoring, optional
@@ -597,7 +599,7 @@ Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()
             
             # Add transition (e.g., crossfade)
             if i > 0:
-                transition = transitions.crossfadein(final_clips[-1], 0.5)
+                transition = crossfadein(final_clips[-1], 0.5)
                 composite = CompositeVideoClip([transition, composite.set_start(transition.duration)])
             
             final_clips.append(composite)
