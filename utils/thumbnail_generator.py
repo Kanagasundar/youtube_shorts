@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from PIL import Image
 import shutil
+import io
 
 # Configure logging
 logging.basicConfig(
@@ -101,21 +102,23 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                             time.sleep(2 ** attempt)
                         continue
                     
-                    # Write to temporary file
+                    # Write to temporary file and validate in memory
                     with open(temp_path, 'wb') as f:
                         for chunk in img_response.iter_content(1024):
                             f.write(chunk)
                     f.close()  # Ensure file is closed
                     
-                    # Validate image
                     try:
+                        # Load image into memory for validation
                         with open(temp_path, 'rb') as f:
-                            img = Image.open(f)
+                            img_data = io.BytesIO(f.read())
+                            img = Image.open(img_data)
                             img.verify()  # Check if the file is a valid image
                             img = img.convert("RGB")
                             if img.size[0] < 1080 or img.size[1] < 1920:
                                 logger.warning(f"⚠️ Image {i} resolution {img.size} is below 1080x1920")
-                            shutil.move(temp_path, image_path)
+                            # Save validated image
+                            img.save(image_path)
                             logger.info(f"✅ Image saved and validated: {image_path}")
                             image_paths.append(image_path)
                             break  # Success, move to next image
