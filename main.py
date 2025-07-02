@@ -10,11 +10,13 @@ Update Notes:
 - Enhanced system health check with memory and CPU usage monitoring (optional via psutil).
 - Added debug logging for video creation steps to diagnose quality issues.
 - Improved documentation for maintainability and debugging.
+- Enhanced video creation with professional effects (text animations, transitions, color grading).
 
 Dependencies:
 - os, sys, traceback, shutil, signal, datetime, pathlib, logging, json, time, typing, importlib.util, dotenv
 - Utils modules: topic_rotator, scripting, voice, video, thumbnail_generator, youtube_uploader
 - Optional: psutil (for enhanced system health monitoring)
+- moviepy (for advanced video editing)
 """
 
 import os
@@ -30,6 +32,7 @@ import time
 from typing import Optional, Tuple, Dict, Any
 import importlib.util
 from dotenv import load_dotenv
+from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, vfx, transitions
 
 try:
     import psutil  # Added for system health monitoring, optional
@@ -565,7 +568,50 @@ Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()
         logger.info("🎬 Creating video...")
         output_dir = str(OUTPUT_DIR)
         logger.debug(f"Video creation started with output_dir: {output_dir}, audio_path: {audio_path}, image_paths: {image_paths}")
-        video_path = create_video(audio_path, image_paths, output_dir, script)
+        
+        # Load the first image as base video clip
+        video_clip = VideoFileClip(image_paths[0]).set_duration(1).resize(height=1080)  # Vertical 9:16 for Shorts
+        
+        # Create a list to hold all clips
+        final_clips = []
+        
+        # Add transitions and text animations
+        for i, img_path in enumerate(image_paths):
+            img_clip = VideoFileClip(img_path).set_duration(2).resize(height=1080)
+            
+            # Apply color grading (e.g., slight contrast boost)
+            img_clip = img_clip.fx(vfx.colorx, factor=1.2)
+            
+            # Add animated text (e.g., topic title)
+            txt_clip = TextClip(
+                f"{topic} - Part {i+1}",
+                fontsize=50,
+                color='white',
+                bg_color='black',
+                size=(video_clip.w, None),
+                method='caption'
+            ).set_position('bottom').set_duration(2)
+            
+            # Composite image and text
+            composite = CompositeVideoClip([img_clip.set_position('center'), txt_clip])
+            
+            # Add transition (e.g., crossfade)
+            if i > 0:
+                transition = transitions.crossfadein(final_clips[-1], 0.5)
+                composite = CompositeVideoClip([transition, composite.set_start(transition.duration)])
+            
+            final_clips.append(composite)
+        
+        # Concatenate all clips
+        final_video = concatenate_videoclips(final_clips, method="compose")
+        
+        # Sync audio
+        final_video = final_video.set_audio(VideoFileClip(audio_path).audio)
+        
+        # Define output path
+        video_path = os.path.join(output_dir, f"short_{topic.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4")
+        final_video.write_videofile(video_path, codec="libx264", audio_codec="aac", fps=30)
+        
         if not video_path or not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not created: {video_path}")
         logger.debug(f"Video file created at: {video_path}, size: {os.path.getsize(video_path) / (2**20):.1f} MB")
