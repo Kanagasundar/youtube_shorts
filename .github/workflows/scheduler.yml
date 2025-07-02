@@ -170,6 +170,7 @@ jobs:
         python -m pip cache purge
         python -m pip install --upgrade pip==24.2 setuptools==70.3.0 wheel==0.43.0
         pip install --no-cache-dir -r requirements.txt
+        pip install moviepy==1.0.3  # Explicitly install compatible moviepy version
         pip install replicate  # Add Replicate for Llama API fallback
         pip list  # Log installed packages for debugging
         echo "✅ All dependencies installed successfully"
@@ -351,7 +352,7 @@ jobs:
                 subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], 
                              capture_output=True, check=False)
                 subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              '--no-deps', 'moviepy==1.0.2'], 
+                              '--no-deps', 'moviepy>=1.0.3'], 
                              capture_output=True, check=True)
                 
                 # Clear module cache
@@ -369,7 +370,7 @@ jobs:
                 try:
                     print('🔧 MoviePy Strategy 3: Different version...')
                     subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                                  '--force-reinstall', 'moviepy==1.0.2'], 
+                                  '--force-reinstall', 'moviepy>=1.0.3'], 
                                  capture_output=True, check=True)
                     
                     # Clear module cache again
@@ -378,7 +379,7 @@ jobs:
                             del sys.modules[mod]
                     
                     import moviepy.editor as mpe
-                    print('✅ MoviePy Strategy 3 (v1.0.2): Success')
+                    print('✅ MoviePy Strategy 3 (v1.0.3): Success')
                     moviepy_success = True
                 except Exception as e3:
                     print(f'❌ MoviePy Strategy 3 failed: {e3}')
@@ -654,7 +655,7 @@ jobs:
         except Exception as e:
             print(f'🔧 Final MoviePy fix attempt... Error: {e}')
             subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], check=False)
-            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'moviepy==1.0.2'], check=False)
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'moviepy>=1.0.3'], check=False)
             try:
                 import moviepy.editor
                 print('✅ MoviePy installed successfully')

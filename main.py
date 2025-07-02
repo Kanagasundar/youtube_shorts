@@ -11,7 +11,7 @@ Update Notes:
 - Added debug logging for video creation steps to diagnose quality issues.
 - Improved documentation for maintainability and debugging.
 - Enhanced video creation with professional effects (text animations, transitions, color grading).
-- Fixed import error for transitions by using moviepy.video.fx.all.
+- Fixed transition import issue with fallback to manual fade effect.
 
 Dependencies:
 - os, sys, traceback, shutil, signal, datetime, pathlib, logging, json, time, typing, importlib.util, dotenv
@@ -33,13 +33,20 @@ import time
 from typing import Optional, Tuple, Dict, Any
 import importlib.util
 from dotenv import load_dotenv
-from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, vfx
-from moviepy.video.fx.all import crossfadein  # Corrected import for transitions
+from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, vfx, concatenate_videoclips
 
 try:
     import psutil  # Added for system health monitoring, optional
 except ImportError:
     psutil = None  # Set to None if not available
+
+# Attempt to import crossfadein, fall back if not available
+try:
+    from moviepy.video.fx.all import crossfadein
+    has_crossfadein = True
+except ImportError:
+    logger.warning("⚠️ crossfadein not available in moviepy.video.fx.all. Using manual fade effect.")
+    has_crossfadein = False
 
 # Load environment variables from .env file
 load_dotenv()
@@ -597,10 +604,16 @@ Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()
             # Composite image and text
             composite = CompositeVideoClip([img_clip.set_position('center'), txt_clip])
             
-            # Add transition (e.g., crossfade)
+            # Add transition (e.g., manual fade if crossfadein is unavailable)
             if i > 0:
-                transition = crossfadein(final_clips[-1], 0.5)
-                composite = CompositeVideoClip([transition, composite.set_start(transition.duration)])
+                if has_crossfadein:
+                    transition = crossfadein(final_clips[-1], 0.5)
+                    composite = CompositeVideoClip([transition, composite.set_start(transition.duration)])
+                else:
+                    # Manual fade effect by overlaying with opacity
+                    fade_duration = 0.5
+                    overlap_clip = final_clips[-1].crossfadeout(fade_duration)
+                    composite = CompositeVideoClip([overlap_clip, composite.set_start(overlap_clip.duration - fade_duration)])
             
             final_clips.append(composite)
         
