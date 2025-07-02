@@ -12,15 +12,19 @@ moviepy==1.0.3
 gtts==2.5.3
 pydub==0.25.1
 numpy==1.26.4
+opencv-python==4.10.0  # Added for image processing and overlays
+manim==0.18.1  # Added for animated captions
 
 # Image and file handling
 Pillow==10.4.0
 python-dotenv==1.0.1
 requests==2.32.3
+nltk==3.9.1  # Added for keyword extraction
 
 # Google API and OAuth
 google-auth==2.32.0
 google-auth-oauthlib==1.2.1
 google-api-python-client==2.149.0
 
-# Additional utilities
+# Optional: system health monitoring
+psutil==6.0.0

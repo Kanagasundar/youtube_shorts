@@ -1,19 +1,13 @@
 import os
 import logging
-from datetime import datetime
+import cv2
+import numpy as np
 from pathlib import Path
 import moviepy.editor as mpe
 from moviepy.config import change_settings
-import numpy as np
-
-# PIL compatibility fix
-try:
-    from PIL import Image
-    if not hasattr(Image, 'ANTIALIAS'):
-        Image.ANTIALIAS = Image.Resampling.LANCZOS
-        logging.info("Applied PIL compatibility fix: Image.ANTIALIAS -> Image.Resampling.LANCZOS")
-except ImportError:
-    pass
+from PIL import Image
+from manim import *
+import random
 
 # Configure logging
 logging.basicConfig(
@@ -33,11 +27,108 @@ if IMAGEMAGICK_BINARY:
     change_settings({"IMAGEMAGICK_BINARY": IMAGEMAGICK_BINARY})
     logger.info(f"Found ImageMagick binary at: {IMAGEMAGICK_BINARY}")
 else:
-    logger.warning("ImageMagick binary not found, text rendering may fail")
+    logger.warning("ImageMagick binary not found, text rendering may rely on Manim")
 
-def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_text: str, max_retries: int = 5) -> str:
+def add_overlays(image, text, logo_path=None, sticker_path=None):
     """
-    Create a YouTube Shorts video using a sequence of images and narration with professionally edited effects.
+    Add text, logo, and sticker overlays to an image using OpenCV.
+    
+    Args:
+        image: NumPy array of the image
+        text (str): Text to overlay
+        logo_path (str): Path to logo image
+        sticker_path (str): Path to sticker image
+    
+    Returns:
+        NumPy array with overlays
+    """
+    img = image.copy()
+    h, w = img.shape[:2]
+    
+    # Add text overlay
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 1.5
+    font_color = (255, 255, 255)  # White text
+    font_thickness = 2
+    text_size, _ = cv2.getTextSize(text, font, font_scale, font_thickness)
+    text_x = (w - text_size[0]) // 2
+    text_y = h - 50
+    cv2.putText(img, text, (text_x, text_y), font, font_scale, (0, 0, 0), font_thickness + 2, cv2.LINE_AA)  # Black outline
+    cv2.putText(img, text, (text_x, text_y), font, font_scale, font_color, font_thickness, cv2.LINE_AA)  # White text
+    
+    # Add logo (top-left corner)
+    if logo_path and os.path.exists(logo_path):
+        logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
+        if logo is not None:
+            logo_h, logo_w = logo.shape[:2]
+            logo = cv2.resize(logo, (int(logo_w * 0.2), int(logo_h * 0.2)))
+            logo_h, logo_w = logo.shape[:2]
+            roi = img[10:10+logo_h, 10:10+logo_w]
+            if logo.shape[2] == 4:  # Handle transparency
+                alpha = logo[:, :, 3] / 255.0
+                for c in range(3):
+                    roi[:, :, c] = roi[:, :, c] * (1 - alpha) + logo[:, :, c] * alpha
+            else:
+                roi[:] = logo
+            img[10:10+logo_h, 10:10+logo_w] = roi
+    
+    # Add sticker (top-right corner)
+    if sticker_path and os.path.exists(sticker_path):
+        sticker = cv2.imread(sticker_path, cv2.IMREAD_UNCHANGED)
+        if sticker is not None:
+            sticker_h, sticker_w = sticker.shape[:2]
+            sticker = cv2.resize(sticker, (int(sticker_w * 0.2), int(sticker_h * 0.2)))
+            sticker_h, sticker_w = sticker.shape[:2]
+            roi = img[10:10+sticker_h, w-sticker_w-10:w-10]
+            if sticker.shape[2] == 4:  # Handle transparency
+                alpha = sticker[:, :, 3] / 255.0
+                for c in range(3):
+                    roi[:, :, c] = roi[:, :, c] * (1 - alpha) + sticker[:, :, c] * alpha
+            else:
+                roi[:] = sticker
+            img[10:10+sticker_h, w-sticker_w-10:w-10] = roi
+    
+    return img
+
+def create_caption_clip(text, duration):
+    """
+    Create animated caption using Manim.
+    
+    Args:
+        text (str): Caption text
+        duration (float): Duration of the caption
+    
+    Returns:
+        MoviePy clip with animated caption
+    """
+    class CaptionScene(Scene):
+        def construct(self):
+            caption = Text(text, font="Arial", font_size=40, color=WHITE)
+            caption.move_to(ORIGIN)
+            self.add(caption)
+            self.wait(duration)
+    
+    config.output_file = "temp_caption.mp4"
+    config.transparent = True
+    config.resolution = (1080, 1920)
+    scene = CaptionScene()
+    scene.render()
+    
+    return mpe.VideoFileClip("temp_caption.mp4").set_duration(duration).set_position(('center', 'bottom'))
+
+def create_video(audio_path: str, thumbnail_path: list, output_dir: str, script_text: str, max_retries: int = 5) -> str:
+    """
+    Create a YouTube Shorts video with overlays, transitions, captions, and 9:16 aspect ratio.
+    
+    Args:
+        audio_path (str): Path to narration audio
+        thumbnail_path (list): List of image paths
+        output_dir (str): Directory to save video
+        script_text (str): Script text for captions
+        max_retries (int): Maximum retry attempts
+    
+    Returns:
+        str: Path to generated video
     """
     try:
         logger.info("🎬 Starting video creation...")
@@ -56,99 +147,117 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
         audio = mpe.AudioFileClip(audio_path)
         audio_duration = audio.duration
         
-        # Determine number of images and target duration (25-60s as per requirement)
+        # Ensure video duration is 15-40 seconds
+        target_duration = max(15, min(40, audio_duration))
         image_paths = thumbnail_path
         num_images = len(image_paths)
-        target_duration = max(25, min(60, audio_duration * 1.5))  # Ensure 25-60 seconds
-        duration_per_image = target_duration / num_images if num_images > 0 else target_duration
         
-        # Pre-resize images with debug logging
+        # Calculate variable image durations (0.5-6s)
+        if num_images > 0:
+            min_duration_per_image = 0.5
+            max_duration_per_image = 6.0
+            durations = [random.uniform(min_duration_per_image, max_duration_per_image) for _ in range(num_images)]
+            total_image_duration = sum(durations)
+            if total_image_duration < target_duration:
+                scale_factor = target_duration / total_image_duration
+                durations = [d * scale_factor for d in durations]
+            elif total_image_duration > target_duration:
+                scale_factor = target_duration / total_image_duration
+                durations = [min(d * scale_factor, max_duration_per_image) for d in durations]
+        else:
+            durations = [target_duration]
+        
+        # Process images with OpenCV
         logger.info(f"🖼️ Pre-processing {num_images} images...")
         clips = []
-        for i, image_path in enumerate(image_paths):
-            logger.info(f"🖼️ Loading image {i+1}: {image_path}")
-            img = Image.open(image_path).convert("RGB").resize((1080, 1920), Image.Resampling.LANCZOS)
-            # Save debug image to verify quality
+        logo_path = os.path.join(output_dir, "logo.png")  # Placeholder for logo
+        sticker_path = os.path.join(output_dir, "sticker.png")  # Placeholder for sticker
+        
+        for i, (image_path, duration) in enumerate(zip(image_paths, durations)):
+            logger.info(f"🖼️ Processing image {i+1}: {image_path}")
+            # Load and resize to 9:16 (1080x1920)
+            img = Image.open(image_path).convert("RGB")
+            img_w, img_h = img.size
+            target_w, target_h = 1080, 1920
+            if img_w / img_h > target_w / target_h:
+                new_w = int(target_h * img_w / img_h)
+                img = img.resize((new_w, target_h), Image.Resampling.LANCZOS)
+                left = (new_w - target_w) // 2
+                img = img.crop((left, 0, left + target_w, target_h))
+            else:
+                new_h = int(target_w * img_h / img_w)
+                img = img.resize((target_w, new_h), Image.Resampling.LANCZOS)
+                top = (new_h - target_h) // 2
+                img = img.crop((0, top, target_w, top + target_h))
+            
+            # Convert to NumPy array for OpenCV
+            img_np = np.array(img)
+            img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+            
+            # Add overlays
+            overlay_text = f"Part {i+1}: {script_text.split('.')[i % len(script_text.split('.'))].strip()}"
+            img_np = add_overlays(img_np, overlay_text, logo_path, sticker_path)
+            
+            # Save debug image
             debug_path = os.path.join(output_dir, f"debug_frame_{i+1}.png")
-            img.save(debug_path, format='PNG')
+            cv2.imwrite(debug_path, img_np)
             logger.info(f"🖼️ Saved debug image: {debug_path}")
-            clip = mpe.ImageClip(np.array(img)).set_duration(duration_per_image)
+            
+            # Convert back to MoviePy clip
+            clip = mpe.ImageClip(img_np).set_duration(duration)
+            
+            # Apply transitions
             if i > 0:
-                clip = clip.crossfadein(duration_per_image * 0.1)  # Reduced crossfade to 10%
+                transition_type = random.choice(['fade', 'zoom', 'slide'])
+                if transition_type == 'fade':
+                    clip = clip.crossfadein(0.5)
+                elif transition_type == 'zoom':
+                    clip = clip.resize(lambda t: 1 + 0.1 * t / duration)
+                elif transition_type == 'slide':
+                    clip = clip.set_position(lambda t: ('center', -100 + 100 * t / duration))
+            
             clips.append(clip)
-            logger.info(f"🖼️ Frame {i+1} processed, size: {img.size}")
         
-        # Concatenate clips with padding for smoother transitions
-        video = mpe.concatenate_videoclips(clips, method="compose", padding=-duration_per_image * 0.1)
+        # Concatenate clips
+        video = mpe.concatenate_videoclips(clips, method="compose", padding=-0.5)
         video = video.set_audio(audio)
+        video = video.set_duration(target_duration)
         
-        # Simplified gradient background (disabled for testing)
-        # def gradient_frame(t):
-        #     r = int(25 + 20 * np.sin(t))
-        #     g = int(25 + 20 * np.cos(t))
-        #     b = int(112 + 20 * np.sin(t + 1))
-        #     return np.array([[[r, g, b]] * 1080] * 1920, dtype=np.uint8)
-        # animated_bg = mpe.VideoClip(gradient_frame, duration=target_duration).resize((1080, 1920)).set_opacity(0.5)
-        # video = mpe.CompositeVideoClip([animated_bg, video])
-        
-        # Create subtitles with full script support
-        logger.info("📝 Generating subtitles...")
+        # Generate animated captions with Manim
+        logger.info("📝 Generating captions...")
         words = script_text.split()
+        word_duration = target_duration / max(len(words), 1)
         subtitles = []
         current_time = 0
-        word_duration = target_duration / max(len(words), 1)
-        
         for word in words:
             subtitles.append(((current_time, current_time + word_duration), word))
             current_time += word_duration
         
         try:
+            subtitle_clips = [create_caption_clip(word, duration) for (start, end), word in subtitles]
+            subtitle_clip = mpe.concatenate_videoclips(subtitle_clips, method="compose")
+            video = mpe.CompositeVideoClip([video, subtitle_clip.set_duration(target_duration)])
+        except Exception as e:
+            logger.warning(f"⚠️ Manim caption generation failed: {str(e)}")
+            # Fallback to MoviePy subtitles
             subtitle_clip = mpe.SubtitlesClip(subtitles, lambda txt: mpe.TextClip(
-                txt,
-                fontsize=60,  # Slightly reduced for readability
-                color='white',
-                stroke_color='black',
-                stroke_width=1,
-                size=(1000, None),  # Adjusted size to fit more text
-                method='caption',
-                align='center'
+                txt, fontsize=60, color='white', stroke_color='black', stroke_width=1,
+                size=(1000, None), method='caption', align='center'
             ).set_position(('center', 'bottom')).set_duration(word_duration).fadein(0.3).fadeout(0.3))
             video = mpe.CompositeVideoClip([video, subtitle_clip.set_duration(target_duration)])
-        except AttributeError:
-            logger.warning("⚠️ SubtitlesClip not available, using text overlay")
-            # Fallback: Display full script with scrolling effect
-            try:
-                text_clip = mpe.TextClip(
-                    script_text,
-                    fontsize=45,
-                    color='white',
-                    bg_color='rgba(0, 0, 0, 0.5)',
-                    size=(1000, 300),  # Increased height for more text
-                    method='caption',
-                    align='center'
-                ).set_position(('center', 'bottom')).set_duration(target_duration)
-                # Add scrolling effect for longer text
-                if len(script_text) > 100:
-                    text_clip = text_clip.set_pos(lambda t: ('center', 1920 - 300 + t * (300 / target_duration) % 300))
-                video = mpe.CompositeVideoClip([video, text_clip])
-            except Exception as e:
-                logger.warning(f"⚠️ Fallback text overlay failed: {str(e)}")
-
-        # Minimal dynamic effects (disabled for testing)
-        # video = video.resize(lambda t: 1 + 0.05 * np.sin(t / 2))  # Reduced amplitude and frequency
         
         # Generate output path
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = str(Path(output_dir) / f"video_{timestamp}.mp4")
         
-        # Write video with optimized settings
+        # Write video
         logger.info(f"💾 Writing video to {output_path}...")
         video.write_videofile(
             output_path,
             codec="libx264",
             audio_codec="aac",
-            preset="medium",  # Changed from ultrafast to medium for better quality
-            bitrate="4000k",  # Increased bitrate for better quality
+            preset="medium",
+            bitrate="4000k",
             threads=2,
             fps=30,
             logger=None
@@ -157,6 +266,8 @@ def create_video(audio_path: str, thumbnail_path: str, output_dir: str, script_t
         # Clean up resources
         audio.close()
         video.close()
+        if os.path.exists("temp_caption.mp4"):
+            os.remove("temp_caption.mp4")
         logger.info(f"✅ Video created successfully: {output_path}")
         return output_path
     
@@ -170,7 +281,7 @@ def cleanup():
     """
     try:
         logger.info("🧹 Cleaning up temporary files...")
-        temp_files = [f for f in os.listdir() if f.startswith('temp-') or f.endswith('.m4a')]
+        temp_files = [f for f in os.listdir() if f.startswith('temp-') or f.endswith('.m4a') or f == 'temp_caption.mp4']
         for file in temp_files:
             try:
                 os.remove(file)

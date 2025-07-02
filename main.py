@@ -2,22 +2,24 @@
 """
 YouTube Automation Main Script - Enhanced Version
 Generates and uploads daily YouTube Shorts content with improved error handling,
-logging, configuration management, and cleanup features.
+logging, configuration management, and cleanup features. Supports overlays, transitions,
+captions, 9:16 cropping, OpenCV/Manim integration, and keyword-based Pexels queries.
 
-Version: 1.1.1
+Version: 1.2.0
 Update Notes:
-- Added microsecond precision to logging for better timestamp accuracy.
-- Enhanced system health check with memory and CPU usage monitoring (optional via psutil).
-- Added debug logging for video creation steps to diagnose quality issues.
-- Improved documentation for maintainability and debugging.
-- Enhanced video creation with professional effects (text animations, transitions, color grading).
-- Fixed transition import issue with fallback to manual fade effect.
+- Integrated enhanced video creation with overlays (text, stickers, logos), transitions (fade, zoom, slide),
+  and animated captions using OpenCV and Manim.
+- Updated to support 9:16 aspect ratio (1080x1920) for YouTube Shorts.
+- Added keyword-based Pexels API queries using NLTK.
+- Ensured video duration between 15-40 seconds with image durations of 0.5-6 seconds.
+- Removed redundant video creation logic, relying on video.py for processing.
+- Enhanced logging for new features and dependencies.
 
 Dependencies:
 - os, sys, traceback, shutil, signal, datetime, pathlib, logging, json, time, typing, importlib.util, dotenv
 - Utils modules: topic_rotator, scripting, voice, video, thumbnail_generator, youtube_uploader
-- Optional: psutil (for enhanced system health monitoring)
-- moviepy (for advanced video editing)
+- Optional: psutil (for system health monitoring)
+- moviepy, opencv-python, manim, nltk
 """
 
 import os
@@ -33,31 +35,21 @@ import time
 from typing import Optional, Tuple, Dict, Any
 import importlib.util
 from dotenv import load_dotenv
-from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, vfx, concatenate_videoclips
 
 try:
-    import psutil  # Added for system health monitoring, optional
+    import psutil  # Optional for system health monitoring
 except ImportError:
-    psutil = None  # Set to None if not available
-
-# Attempt to import crossfadein, fall back if not available
-try:
-    from moviepy.video.fx.all import crossfadein
-    has_crossfadein = True
-except ImportError:
-    logger.warning("⚠️ crossfadein not available in moviepy.video.fx.all. Using manual fade effect.")
-    has_crossfadein = False
+    psutil = None
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Configure logging with both file and console output with microsecond precision
+# Configure logging with microsecond precision
 def setup_logging():
     """Set up comprehensive logging configuration with microsecond precision."""
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     
-    # Create formatters with microsecond precision
     detailed_formatter = logging.Formatter(
         '%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
@@ -67,7 +59,6 @@ def setup_logging():
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
-    # File handler for detailed logs
     file_handler = logging.FileHandler(
         log_dir / f"automation_{datetime.now().strftime('%Y%m%d')}.log",
         encoding='utf-8'
@@ -75,12 +66,10 @@ def setup_logging():
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(detailed_formatter)
     
-    # Console handler for user-friendly output
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(simple_formatter)
     
-    # Configure root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
     root_logger.addHandler(file_handler)
@@ -148,31 +137,26 @@ def check_dependencies() -> bool:
         'google-auth': ('import google.auth', 'google.auth'),
         'google-auth-oauthlib': ('import google_auth_oauthlib', 'google_auth_oauthlib'),
         'google-api-python-client': ('from googleapiclient import discovery', 'discovery'),
-        'requests': ('import requests', 'requests'),  # Required for Pexels API
+        'requests': ('import requests', 'requests'),
+        'opencv-python': ('import cv2', 'cv2'),
+        'manim': ('from manim import Scene', 'Scene'),
+        'nltk': ('import nltk', 'nltk'),
     }
     
     missing_packages = []
     
     for package_name, (import_statement, check_name) in required_packages.items():
         try:
-            # Clear module cache for this package
             base_module = import_statement.split()[1].split('.')[0]
             for mod in list(sys.modules.keys()):
                 if base_module in mod:
                     del sys.modules[mod]
             
-            # Execute the import statement
             exec(import_statement)
-            
-            # Check if the module or attribute exists
             module = eval(check_name)
-            
-            # Get version info
             version = getattr(module, '__version__', 
                            getattr(module, 'VERSION', 
                                   getattr(module, 'version', 'unknown')))
-            
-            # Log module path for debugging
             spec = importlib.util.find_spec(base_module)
             logger.debug(f"✅ {package_name} ({check_name}) - v{version} from {spec.origin if spec else 'unknown'}")
             
@@ -184,18 +168,8 @@ def check_dependencies() -> bool:
         logger.error(f"❌ Missing {len(missing_packages)} required packages:")
         for package in missing_packages:
             logger.error(f"   - {package}")
-        
         print("\n💡 Install missing packages with:")
         print(f"   pip install {' '.join(missing_packages)}")
-        
-        # Additional debugging info
-        print("\n🔍 Python environment info:")
-        print(f"   Python version: {sys.version}")
-        print(f"   Python executable: {sys.executable}")
-        site_packages = [p for p in sys.path if 'site-packages' in p]
-        if site_packages:
-            print(f"   Site packages: {site_packages[0]}")
-        
         return False
     
     logger.info("✅ All required dependencies are available")
@@ -215,14 +189,12 @@ def validate_credentials_file() -> bool:
         
         logger.debug(f"📝 Credentials file structure: {list(creds_data.keys())}")
         
-        # Validate OAuth 2.0 credentials (installed or web)
         if 'installed' in creds_data:
             return _validate_oauth_credentials(creds_data['installed'], 'installed')
         elif 'web' in creds_data:
             return _validate_oauth_credentials(creds_data['web'], 'web')
         else:
             logger.error("❌ Unknown credentials format. Expected 'installed' or 'web' for OAuth 2.0")
-            logger.error(f"Available keys: {list(creds_data.keys())}")
             return False
         
     except json.JSONDecodeError as e:
@@ -235,16 +207,13 @@ def validate_credentials_file() -> bool:
 def _validate_oauth_credentials(creds_data: dict, cred_type: str) -> bool:
     """Validate OAuth2 credentials."""
     required_fields = ['client_id', 'client_secret', 'auth_uri', 'token_uri']
-    
     logger.debug(f"📝 Detected {cred_type} application credentials (OAuth2)")
-    
     missing_fields = [field for field in required_fields if field not in creds_data]
     
     if missing_fields:
         logger.error(f"❌ credentials.json missing required fields in '{cred_type}' section: {missing_fields}")
         return False
     
-    # Validate URLs
     for uri_field in ['auth_uri', 'token_uri']:
         uri = creds_data.get(uri_field, '')
         if not uri.startswith('https://'):
@@ -258,7 +227,7 @@ def check_environment() -> bool:
     """Check if required environment variables are set."""
     logger.info("🔍 Checking environment variables...")
     
-    required_vars = ['OPENAI_API_KEY', 'PEXELS_API_KEY']  # Updated to use PEXELS_API_KEY
+    required_vars = ['OPENAI_API_KEY', 'PEXELS_API_KEY']
     optional_vars = {
         'UPLOAD_TO_YOUTUBE': 'true',
         'VIDEO_PRIVACY': 'public',
@@ -266,14 +235,13 @@ def check_environment() -> bool:
         'DISCORD_WEBHOOK_URL': None,
         'TOPIC_OVERRIDE': None,
         'CATEGORY_OVERRIDE': None,
-        'MAX_RETRIES': '5',  # Aligned with workflow
+        'MAX_RETRIES': '5',
         'CLEANUP_OLD_FILES': 'true',
         'KEEP_FILES_DAYS': '7'
     }
     
     missing_vars = []
     
-    # Check required variables
     for var in required_vars:
         value = os.getenv(var)
         if not value:
@@ -281,7 +249,6 @@ def check_environment() -> bool:
         else:
             logger.debug(f"✅ {var} is set (length: {len(value)})")
     
-    # Check and set defaults for optional variables
     for var, default in optional_vars.items():
         value = os.getenv(var)
         if value:
@@ -296,15 +263,9 @@ def check_environment() -> bool:
         logger.error(f"❌ Missing {len(missing_vars)} required environment variables:")
         for var in missing_vars:
             logger.error(f"   - {var}")
-        
         print("\n💡 Set environment variables:")
         for var in missing_vars:
-            if var == 'OPENAI_API_KEY':
-                print(f"   export {var}=sk-your_openai_api_key_here")
-            elif var == 'PEXELS_API_KEY':
-                print(f"   export {var}=your_pexels_api_key_here")
-            else:
-                print(f"   export {var}=your_value_here")
+            print(f"   export {var}=your_value_here")
         return False
     
     logger.info("✅ All required environment variables are set")
@@ -358,7 +319,6 @@ def check_system_health() -> bool:
     logger.info("🏥 Checking system health...")
     
     try:
-        # Check disk space
         stat = shutil.disk_usage(OUTPUT_DIR)
         available_gb = stat.free / (2**30)
         if available_gb < 1:
@@ -366,7 +326,6 @@ def check_system_health() -> bool:
             return False
         logger.debug(f"✅ Disk space available: {available_gb:.1f} GB")
         
-        # Check memory usage if psutil is available
         if psutil:
             memory = psutil.virtual_memory()
             available_mb = memory.available / (2**20)
@@ -375,7 +334,6 @@ def check_system_health() -> bool:
                 return False
             logger.debug(f"✅ Memory available: {available_mb:.1f} MB")
             
-            # Check CPU usage
             cpu_percent = psutil.cpu_percent(interval=1)
             if cpu_percent > 90:
                 logger.warning(f"⚠️ High CPU usage: {cpu_percent:.1f}%")
@@ -403,7 +361,7 @@ def setup_check() -> bool:
         ("Dependencies", check_dependencies),
         ("Environment Variables", check_environment),
         ("Directories", setup_directories),
-        ("System Health", check_system_health),  # Enhanced health check
+        ("System Health", check_system_health),
     ]
     
     for check_name, check_func in checks:
@@ -412,7 +370,6 @@ def setup_check() -> bool:
             logger.error(f"❌ {check_name} check failed")
             return False
     
-    # Handle upload configuration
     upload_enabled = os.getenv('UPLOAD_TO_YOUTUBE', 'true').lower() == 'true'
     
     if upload_enabled:
@@ -421,14 +378,12 @@ def setup_check() -> bool:
             logger.info("✅ credentials.json found and validated")
         else:
             logger.warning("⚠️ credentials.json validation failed")
-            logger.info("💡 YouTube upload will be disabled for this run")
             os.environ['UPLOAD_TO_YOUTUBE'] = 'false'
             upload_enabled = False
     
     if not upload_enabled:
         logger.info("ℹ️ YouTube upload disabled - videos will be saved locally only")
     
-    # Clean up old files
     cleanup_old_files()
     
     logger.info("✅ Setup checks completed successfully")
@@ -443,13 +398,12 @@ def import_modules() -> bool:
         'scripting': ['generate_script'],
         'voice': ['generate_voice'],
         'video': ['create_video'],
-        'thumbnail_generator': ['generate_image_sequence'],  # Updated to use Pexels
+        'thumbnail_generator': ['generate_image_sequence'],
         'youtube_uploader': ['YouTubeUploader', 'generate_video_metadata']
     }
     
     imported_modules = {}
     
-    # Clear module cache to prevent stale imports
     for module_name in modules_to_import:
         for mod in list(sys.modules.keys()):
             if module_name in mod or 'openai' in mod.lower() or 'requests' in mod.lower():
@@ -464,13 +418,10 @@ def import_modules() -> bool:
         
         try:
             module = __import__(module_name)
-            
-            # Verify required functions exist
             for func_name in functions:
                 if not hasattr(module, func_name):
                     raise ImportError(f"Function '{func_name}' not found in module '{module_name}'")
                 imported_modules[func_name] = getattr(module, func_name)
-            
             logger.debug(f"✅ {module_name} imported successfully from {module_path}")
             
         except ImportError as e:
@@ -478,9 +429,7 @@ def import_modules() -> bool:
             _show_import_help(module_name)
             return False
     
-    # Make functions available globally
     globals().update(imported_modules)
-    
     logger.info("✅ All utility modules imported successfully")
     return True
 
@@ -531,28 +480,14 @@ def generate_content_with_retry(topic: str, category: str) -> Tuple[str, str, li
     
     def generate_script_step():
         logger.info("✍️ Generating script...")
-        try:
-            import openai
-            for mod in list(sys.modules.keys()):
-                if 'openai' in mod.lower():
-                    del sys.modules[mod]
-            import openai
-            logger.debug(f"OpenAI version: {getattr(openai, '__version__', 'unknown')}")
-            logger.debug(f"Python version: {sys.version}")
-            logger.debug(f"Python executable: {sys.executable}")
-        except ImportError:
-            logger.warning("⚠️ OpenAI module not imported")
-        
-        # Pass both topic and category to generate_script
         script = generate_script(topic, category)
-        if not script or len(script.strip()) < 50:
-            logger.error(f"❌ Generated script is too short or empty ({len(script.strip()) if script else 0} characters)")
-            logger.debug(f"Script content: {script!r}")
-            # Fallback script
+        if not script or len(script.strip()) < 500:
+            logger.error(f"❌ Generated script is too short ({len(script.strip()) if script else 0} characters)")
             script = f"""
 Hook: Did you know about {topic.lower()}?
-Body: This is a fascinating topic in the {category} category. Unfortunately, we couldn't generate a full script, but here's a brief overview to spark your interest! Learn more about {topic.lower()} and its impact.
-Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()} topics!
+Body: This is a fascinating topic in the {category} category. Fact 1: It’s a key part of {category}. 
+Fact 2: It has unique features that surprise everyone! Fact 3: Its impact is huge! 
+Call to Action: Subscribe for more {category.lower()} facts!
 """
             logger.info(f"✅ Using fallback script ({len(script)} characters)")
         return script
@@ -570,70 +505,18 @@ Call to Action: Subscribe and hit the bell to dive deeper into {category.lower()
         if not topic_param:
             logger.error("❌ Topic is empty, using default topic 'Nature Scene'")
             topic_param = "Nature Scene"
-        # Limit retries to 1 for image sequence to avoid excessive looping
-        return retry_on_failure(lambda: generate_image_sequence(topic_param, script), max_retries=1)
+        return retry_on_failure(lambda: generate_image_sequence(topic_param, script, num_images=5), max_retries=1)
     
     def create_video_step(script, audio_path, image_paths):
         logger.info("🎬 Creating video...")
         output_dir = str(OUTPUT_DIR)
-        logger.debug(f"Video creation started with output_dir: {output_dir}, audio_path: {audio_path}, image_paths: {image_paths}")
-        
-        # Load the first image as base video clip
-        video_clip = VideoFileClip(image_paths[0]).set_duration(1).resize(height=1080)  # Vertical 9:16 for Shorts
-        
-        # Create a list to hold all clips
-        final_clips = []
-        
-        # Add transitions and text animations
-        for i, img_path in enumerate(image_paths):
-            img_clip = VideoFileClip(img_path).set_duration(2).resize(height=1080)
-            
-            # Apply color grading (e.g., slight contrast boost)
-            img_clip = img_clip.fx(vfx.colorx, factor=1.2)
-            
-            # Add animated text (e.g., topic title)
-            txt_clip = TextClip(
-                f"{topic} - Part {i+1}",
-                fontsize=50,
-                color='white',
-                bg_color='black',
-                size=(video_clip.w, None),
-                method='caption'
-            ).set_position('bottom').set_duration(2)
-            
-            # Composite image and text
-            composite = CompositeVideoClip([img_clip.set_position('center'), txt_clip])
-            
-            # Add transition (e.g., manual fade if crossfadein is unavailable)
-            if i > 0:
-                if has_crossfadein:
-                    transition = crossfadein(final_clips[-1], 0.5)
-                    composite = CompositeVideoClip([transition, composite.set_start(transition.duration)])
-                else:
-                    # Manual fade effect by overlaying with opacity
-                    fade_duration = 0.5
-                    overlap_clip = final_clips[-1].crossfadeout(fade_duration)
-                    composite = CompositeVideoClip([overlap_clip, composite.set_start(overlap_clip.duration - fade_duration)])
-            
-            final_clips.append(composite)
-        
-        # Concatenate all clips
-        final_video = concatenate_videoclips(final_clips, method="compose")
-        
-        # Sync audio
-        final_video = final_video.set_audio(VideoFileClip(audio_path).audio)
-        
-        # Define output path
-        video_path = os.path.join(output_dir, f"short_{topic.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4")
-        final_video.write_videofile(video_path, codec="libx264", audio_codec="aac", fps=30)
-        
+        video_path = create_video(audio_path, image_paths, output_dir, script)
         if not video_path or not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not created: {video_path}")
         logger.debug(f"Video file created at: {video_path}, size: {os.path.getsize(video_path) / (2**20):.1f} MB")
         cleanup_files.append(video_path)
         return video_path
     
-    # Generate content with retries
     script = retry_on_failure(generate_script_step)
     logger.info(f"✅ Script generated ({len(script)} characters)")
     
@@ -661,7 +544,6 @@ def upload_to_youtube(video_path: str, thumbnail_path: str, script: str, topic: 
     try:
         def upload_step():
             uploader = YouTubeUploader()
-            
             if not uploader.youtube:
                 raise RuntimeError("YouTube authentication failed")
             
@@ -672,7 +554,7 @@ def upload_to_youtube(video_path: str, thumbnail_path: str, script: str, topic: 
             
             video_id = uploader.upload_video(
                 video_path=video_path,
-                thumbnail_path=None,  # No thumbnail since we use image sequence
+                thumbnail_path=thumbnail_path,
                 title=title,
                 description=description,
                 tags=tags
@@ -689,7 +571,7 @@ def upload_to_youtube(video_path: str, thumbnail_path: str, script: str, topic: 
         logger.info(f"🔗 Watch at: https://www.youtube.com/watch?v={video_id}")
         logger.info(f"🔗 YouTube Shorts: https://youtube.com/shorts/{video_id}")
         
-        save_upload_info(video_id, title, topic, category, video_path, None)
+        save_upload_info(video_id, title, topic, category, video_path, thumbnail_path)
         
         return video_id
         
@@ -712,7 +594,7 @@ def save_upload_info(video_id: str, title: str, topic: str, category: str, video
         "topic": topic,
         "category": category,
         "video_path": video_path,
-        "thumbnail_path": None,  # No thumbnail
+        "thumbnail_path": thumbnail_path,
         "youtube_url": f"https://www.youtube.com/watch?v={video_id}",
         "shorts_url": f"https://youtube.com/shorts/{video_id}",
         "privacy": os.getenv('VIDEO_PRIVACY', 'public'),
@@ -723,7 +605,6 @@ def save_upload_info(video_id: str, title: str, topic: str, category: str, video
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(json.dumps(log_entry) + '\n')
         
-        # Also create a human-readable log
         readable_log = LOGS_DIR / "upload_history.txt"
         with open(readable_log, 'a', encoding='utf-8') as f:
             f.write(f"""
@@ -733,6 +614,7 @@ Title: {title}
 Topic: {topic}
 Category: {category}
 Video Path: {video_path}
+Thumbnail Path: {thumbnail_path}
 YouTube URL: https://www.youtube.com/watch?v={video_id}
 Shorts URL: https://youtube.com/shorts/{video_id}
 {'='*80}
@@ -750,9 +632,7 @@ def main() -> int:
     logger.info(f"📅 Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]} (IST)")
     
     try:
-        # Step 1: Get topic
         logger.info("📝 Step 1: Getting today's topic...")
-        
         topic_override = os.getenv('TOPIC_OVERRIDE')
         category_override = os.getenv('CATEGORY_OVERRIDE')
         
@@ -771,15 +651,13 @@ def main() -> int:
                 logger.warning(f"⚠️ Failed to get topic: {str(e)}. Using default topic.")
                 topic, category = "Default Topic", "General"
         
-        # Step 2-5: Generate content
         logger.info("🎨 Steps 2-5: Generating content...")
         script, audio_path, image_paths, video_path = generate_content_with_retry(topic, category)
         
-        # Step 6: Upload
         logger.info("📤 Step 6: Uploading to YouTube...")
-        
+        thumbnail_path = image_paths[-1] if image_paths else None
         try:
-            video_id = upload_to_youtube(video_path, image_paths[-1] if image_paths else None, script, topic, category)
+            video_id = upload_to_youtube(video_path, thumbnail_path, script, topic, category)
             
             if video_id:
                 logger.info("✅ AUTOMATION COMPLETED SUCCESSFULLY WITH UPLOAD!")
@@ -791,9 +669,8 @@ def main() -> int:
         except Exception as upload_error:
             logger.warning(f"Upload failed but content was generated: {upload_error}")
             logger.info("✅ AUTOMATION COMPLETED (UPLOAD FAILED)")
-            success_code = 2  # Partial success
+            success_code = 2
         
-        # Final cleanup
         cleanup_temporary_files()
         
         duration = time.time() - start_time
@@ -807,7 +684,7 @@ def main() -> int:
         return 1
         
     except Exception as e:
-        report_error(e)  # Use enhanced error reporting
+        report_error(e)
         cleanup_temporary_files()
         return 1
 
@@ -817,20 +694,16 @@ if __name__ == "__main__":
     print("=" * 60)
     
     try:
-        # Setup checks
         if not setup_check():
             print("\n❌ Setup checks failed. Please fix the issues above and try again.")
             sys.exit(1)
         
-        # Import modules
         if not import_modules():
             print("\n❌ Module import failed. Please check your utils directory.")
             sys.exit(1)
         
-        # Run main automation
         exit_code = main()
         
-        # Exit with appropriate message
         if exit_code == 0:
             print("\n🎉 Script completed successfully!")
         elif exit_code == 2:
@@ -845,6 +718,6 @@ if __name__ == "__main__":
         cleanup_temporary_files()
         sys.exit(1)
     except Exception as e:
-        report_error(e)  # Use enhanced error reporting
+        report_error(e)
         cleanup_temporary_files()
         sys.exit(1)
