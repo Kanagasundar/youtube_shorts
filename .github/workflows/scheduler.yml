@@ -138,7 +138,19 @@ jobs:
             exit 1
           }
         }
-        python -c "import nltk; print('NLTK imported successfully')" || { echo "❌ NLTK not installed correctly"; exit 1; }
+        python -c "import nltk; print('NLTK imported successfully')" || {
+          echo "❌ NLTK not installed correctly, attempting reinstall..."
+          pip uninstall -y nltk
+          pip install --no-cache-dir nltk==3.9.1 2> nltk_install.log || {
+            echo "❌ NLTK reinstall failed"
+            cat nltk_install.log
+            exit 1
+          }
+          python -c "import nltk; print('NLTK imported successfully')" || {
+            echo "❌ NLTK verification failed after reinstall"
+            exit 1
+          }
+        }
         echo "✅ FFmpeg, ImageMagick, OpenCV, Manim, and NLTK verified"
 
     - name: Check disk space and memory
@@ -164,14 +176,34 @@ jobs:
           cat manim_install.log
           exit 1
         }
-        pip install --no-cache-dir nltk==3.9.1
-        python -m nltk.downloader punkt averaged_perceptron_tagger
+        pip install --no-cache-dir nltk==3.9.1 2> nltk_install.log || {
+          echo "❌ NLTK installation failed"
+          cat nltk_install.log
+          exit 1
+        }
+        pip install --no-cache-dir Pillow==10.4.0 2> pillow_install.log || {
+          echo "❌ Pillow installation failed"
+          cat pillow_install.log
+          exit 1
+        }
+        echo "🔍 Downloading NLTK data with retries..."
+        for attempt in {1..3}; do
+          python -m nltk.downloader punkt averaged_perceptron_tagger && break
+          echo "⚠️ NLTK data download attempt $attempt failed, retrying..."
+          sleep 2
+        done || {
+          echo "❌ NLTK data download failed after 3 attempts"
+          exit 1
+        }
         pip list
         echo "✅ All dependencies installed successfully"
 
     - name: Verify Python dependencies
       run: |
         echo "🔍 Verifying Python dependencies..."
+        find . -name "*.pyc" -delete
+        find . -name "__pycache__" -type d -exec rm -rf {} +
+        echo "🧹 Python module cache cleared"
         python -c "import sys; print('Python version:', sys.version)"
         python -c "import sys; print('Python executable:', sys.executable)"
         python -c "import sys; print('Python path:', sys.path)"
@@ -201,7 +233,19 @@ jobs:
             exit 1
           }
         }
-        python -c "import nltk; print('NLTK version:', nltk.__version__)"
+        python -c "import nltk; print('NLTK version:', nltk.__version__)" || {
+          echo "❌ NLTK verification failed, attempting reinstall..."
+          pip uninstall -y nltk
+          pip install --no-cache-dir nltk==3.9.1 2> nltk_install.log || {
+            echo "❌ NLTK reinstall failed"
+            cat nltk_install.log
+            exit 1
+          }
+          python -c "import nltk; print('NLTK version:', nltk.__version__)" || {
+            echo "❌ NLTK verification failed after reinstall"
+            exit 1
+          }
+        }
         echo "✅ Python dependencies verified"
 
     - name: Search for proxies references in code
@@ -317,6 +361,10 @@ jobs:
                     modules_to_clear = [mod for mod in sys.modules.keys() if 'manim' in mod]
                     for mod in modules_to_clear:
                         del sys.modules[mod]
+                elif module_name == 'nltk':
+                    modules_to_clear = [mod for mod in sys.modules.keys() if 'nltk' in mod]
+                    for mod in modules_to_clear:
+                        del sys.modules[mod]
                 exec(import_statement)
                 print(f'✅ {display_name}: Import successful')
                 test_results.append((display_name, True, 'OK'))
@@ -374,7 +422,7 @@ jobs:
                 except Exception as e3:
                     print(f'❌ MoviePy Strategy 3 failed: {e3}')
         test_results.append(('MoviePy', moviepy_success, 'OK' if moviepy_success else 'Failed'))
-        print('\n🔍 Testing Google Auth with namespace fixes...')
+        print('\n🔍 Testing Google Auth with fallback strategies...')
         google_success = False
         try:
             import google.auth
@@ -496,6 +544,29 @@ jobs:
             except Exception as e2:
                 print(f'❌ Manim Strategy 2 failed: {e2}')
         test_results.append(('Manim', manim_success, 'OK' if manim_success else 'Failed'))
+        print('\n🔍 Testing NLTK with fallback strategies...')
+        nltk_success = False
+        try:
+            import nltk
+            print(f'✅ NLTK Strategy 1 (direct): Success (version: {nltk.__version__})')
+            nltk_success = True
+        except Exception as e:
+            print(f'❌ NLTK Strategy 1 failed: {e}')
+            try:
+                print('🔧 NLTK Strategy 2: Reinstalling...')
+                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'nltk'], 
+                             capture_output=True, check=False)
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                              'nltk==3.9.1'], capture_output=True, check=True)
+                for mod in list(sys.modules.keys()):
+                    if 'nltk' in mod:
+                        del sys.modules[mod]
+                import nltk
+                print(f'✅ NLTK Strategy 2 (reinstall): Success (version: {nltk.__version__})')
+                nltk_success = True
+            except Exception as e2:
+                print(f'❌ NLTK Strategy 2 failed: {e2}')
+        test_results.append(('NLTK', nltk_success, 'OK' if nltk_success else 'Failed'))
         failed = [name for name, success, _ in test_results if not success]
         if failed:
             print(f'\n❌ Failed imports: {failed}')
@@ -731,6 +802,22 @@ jobs:
                 print(f'✅ Manim installed successfully (version: {manim.__version__})')
             except Exception as e2:
                 print(f'❌ Manim installation failed: {e2}')
+        for mod in list(sys.modules.keys()):
+            if 'nltk' in mod:
+                del sys.modules[mod]
+        try:
+            import nltk
+            print(f'✅ NLTK ready (version: {nltk.__version__})')
+        except Exception as e:
+            print(f'🔧 Final NLTK fix attempt... Error: {e}')
+            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'nltk'], check=False)
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                          'nltk==3.9.1'], check=False)
+            try:
+                import nltk
+                print(f'✅ NLTK installed successfully (version: {nltk.__version__})')
+            except Exception as e2:
+                print(f'❌ NLTK installation failed: {e2}')
         print('🚀 Ready to execute main script')
         "
         set -o pipefail
