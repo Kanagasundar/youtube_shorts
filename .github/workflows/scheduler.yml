@@ -53,6 +53,7 @@ jobs:
           python3-dev python3-pip python3-venv \
           libffi-dev libssl-dev libxml2-dev libxslt-dev \
           libasound2-dev portaudio19-dev \
+          libcairo2-dev libpango1.0-dev \
           jq
         end_time=$(date +%s)
         duration=$((end_time - start_time))
@@ -113,14 +114,30 @@ jobs:
         convert -version || { echo "❌ ImageMagick not installed correctly"; exit 1; }
         python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
           echo "❌ OpenCV not installed correctly, attempting reinstall..."
-          pip uninstall -y opencv-python
-          pip install --no-cache-dir opencv-python==4.10.0.84
-          python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
+          pip uninstall -y opencv-python numpy
+          pip install --no-cache-dir opencv-python==4.10.0.84 numpy==1.26.4 2> opencv_install.log || {
             echo "❌ OpenCV reinstall failed"
+            cat opencv_install.log
+            exit 1
+          }
+          python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
+            echo "❌ OpenCV verification failed after reinstall"
             exit 1
           }
         }
-        python -c "from manim import *; print('Manim imported successfully')" || { echo "❌ Manim not installed correctly"; exit 1; }
+        python -c "from manim import *; print('Manim imported successfully')" || {
+          echo "❌ Manim not installed correctly, attempting reinstall..."
+          pip uninstall -y manim
+          pip install --no-cache-dir manim==0.18.1 2> manim_install.log || {
+            echo "❌ Manim reinstall failed"
+            cat manim_install.log
+            exit 1
+          }
+          python -c "from manim import *; print('Manim imported successfully')" || {
+            echo "❌ Manim verification failed after reinstall"
+            exit 1
+          }
+        }
         python -c "import nltk; print('NLTK imported successfully')" || { echo "❌ NLTK not installed correctly"; exit 1; }
         echo "✅ FFmpeg, ImageMagick, OpenCV, Manim, and NLTK verified"
 
@@ -137,8 +154,16 @@ jobs:
         python -m pip cache purge
         python -m pip install --upgrade pip==24.2 setuptools==70.3.0 wheel==0.43.0
         pip install --no-cache-dir -r requirements.txt
-        pip install --no-cache-dir opencv-python==4.10.0.84  # Updated to available version
-        pip install --no-cache-dir manim==0.18.1
+        pip install --no-cache-dir opencv-python==4.10.0.84 numpy==1.26.4 2> opencv_install.log || {
+          echo "❌ OpenCV installation failed"
+          cat opencv_install.log
+          exit 1
+        }
+        pip install --no-cache-dir manim==0.18.1 2> manim_install.log || {
+          echo "❌ Manim installation failed"
+          cat manim_install.log
+          exit 1
+        }
         pip install --no-cache-dir nltk==3.9.1
         python -m nltk.downloader punkt averaged_perceptron_tagger
         pip list
@@ -152,14 +177,30 @@ jobs:
         python -c "import sys; print('Python path:', sys.path)"
         python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
           echo "❌ OpenCV verification failed, attempting reinstall..."
-          pip uninstall -y opencv-python
-          pip install --no-cache-dir opencv-python==4.10.0.84
-          python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
+          pip uninstall -y opencv-python numpy
+          pip install --no-cache-dir opencv-python==4.10.0.84 numpy==1.26.4 2> opencv_install.log || {
             echo "❌ OpenCV reinstall failed"
+            cat opencv_install.log
+            exit 1
+          }
+          python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
+            echo "❌ OpenCV verification failed after reinstall"
             exit 1
           }
         }
-        python -c "from manim import *; print('Manim version:', __version__)"
+        python -c "from manim import *; print('Manim version:', __version__)" || {
+          echo "❌ Manim verification failed, attempting reinstall..."
+          pip uninstall -y manim
+          pip install --no-cache-dir manim==0.18.1 2> manim_install.log || {
+            echo "❌ Manim reinstall failed"
+            cat manim_install.log
+            exit 1
+          }
+          python -c "from manim import *; print('Manim version:', __version__)" || {
+            echo "❌ Manim verification failed after reinstall"
+            exit 1
+          }
+        }
         python -c "import nltk; print('NLTK version:', nltk.__version__)"
         echo "✅ Python dependencies verified"
 
@@ -270,6 +311,10 @@ jobs:
                         del sys.modules[mod]
                 elif module_name == 'cv2':
                     modules_to_clear = [mod for mod in sys.modules.keys() if 'cv2' in mod or 'opencv' in mod]
+                    for mod in modules_to_clear:
+                        del sys.modules[mod]
+                elif module_name == 'manim':
+                    modules_to_clear = [mod for mod in sys.modules.keys() if 'manim' in mod]
                     for mod in modules_to_clear:
                         del sys.modules[mod]
                 exec(import_statement)
@@ -415,10 +460,10 @@ jobs:
             print(f'❌ OpenCV Strategy 1 failed: {e}')
             try:
                 print('🔧 OpenCV Strategy 2: Reinstalling...')
-                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python'], 
+                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'], 
                              capture_output=True, check=False)
                 subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              'opencv-python==4.10.0.84'], capture_output=True, check=True)
+                              'opencv-python==4.10.0.84', 'numpy==1.26.4'], capture_output=True, check=True)
                 for mod in list(sys.modules.keys()):
                     if 'cv2' in mod or 'opencv' in mod:
                         del sys.modules[mod]
@@ -428,6 +473,29 @@ jobs:
             except Exception as e2:
                 print(f'❌ OpenCV Strategy 2 failed: {e2}')
         test_results.append(('OpenCV', opencv_success, 'OK' if opencv_success else 'Failed'))
+        print('\n🔍 Testing Manim with fallback strategies...')
+        manim_success = False
+        try:
+            import manim
+            print(f'✅ Manim Strategy 1 (direct): Success (version: {manim.__version__})')
+            manim_success = True
+        except Exception as e:
+            print(f'❌ Manim Strategy 1 failed: {e}')
+            try:
+                print('🔧 Manim Strategy 2: Reinstalling...')
+                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'manim'], 
+                             capture_output=True, check=False)
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                              'manim==0.18.1'], capture_output=True, check=True)
+                for mod in list(sys.modules.keys()):
+                    if 'manim' in mod:
+                        del sys.modules[mod]
+                import manim
+                print(f'✅ Manim Strategy 2 (reinstall): Success (version: {manim.__version__})')
+                manim_success = True
+            except Exception as e2:
+                print(f'❌ Manim Strategy 2 failed: {e2}')
+        test_results.append(('Manim', manim_success, 'OK' if manim_success else 'Failed'))
         failed = [name for name, success, _ in test_results if not success]
         if failed:
             print(f'\n❌ Failed imports: {failed}')
@@ -639,14 +707,30 @@ jobs:
             print(f'✅ OpenCV ready (version: {cv2.__version__})')
         except Exception as e:
             print(f'🔧 Final OpenCV fix attempt... Error: {e}')
-            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python'], check=False)
+            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'], check=False)
             subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                          'opencv-python==4.10.0.84'], check=False)
+                          'opencv-python==4.10.0.84', 'numpy==1.26.4'], check=False)
             try:
                 import cv2
                 print(f'✅ OpenCV installed successfully (version: {cv2.__version__})')
             except Exception as e2:
                 print(f'❌ OpenCV installation failed: {e2}')
+        for mod in list(sys.modules.keys()):
+            if 'manim' in mod:
+                del sys.modules[mod]
+        try:
+            import manim
+            print(f'✅ Manim ready (version: {manim.__version__})')
+        except Exception as e:
+            print(f'🔧 Final Manim fix attempt... Error: {e}')
+            subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'manim'], check=False)
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                          'manim==0.18.1'], check=False)
+            try:
+                import manim
+                print(f'✅ Manim installed successfully (version: {manim.__version__})')
+            except Exception as e2:
+                print(f'❌ Manim installation failed: {e2}')
         print('🚀 Ready to execute main script')
         "
         set -o pipefail
