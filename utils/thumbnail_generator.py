@@ -44,7 +44,7 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
     base_url = "https://api.pexels.com/v1/search"
     image_paths = []
     
-    logger.info(f"🖼️ Generating {num_images} images for topic: {topic}")
+    logger.info(f"🖼️ Generating up to {num_images} images for topic: {topic}")
     
     try:
         # Split script into key phrases for diverse image queries
@@ -68,8 +68,10 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                 if response.status_code != 200:
                     logger.error(f"❌ Failed to fetch images for query '{query}': {response.status_code} - {response.text}")
                     attempt += 1
-                    if attempt < max_retries:
-                        time.sleep(2 ** attempt)  # Exponential backoff
+                    if attempt < max_retries and response.status_code in [429, 503]:  # Rate limit or server error
+                        time.sleep(2 ** attempt + 2)  # Extended backoff for API issues
+                    elif attempt < max_retries:
+                        time.sleep(2 ** attempt)
                     continue
                 
                 data = response.json()
@@ -99,13 +101,16 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                             time.sleep(2 ** attempt)
                         continue
                     
+                    # Write to temporary file
                     with open(temp_path, 'wb') as f:
                         for chunk in img_response.iter_content(1024):
                             f.write(chunk)
+                    f.close()  # Ensure file is closed
                     
                     # Validate image
                     try:
-                        with Image.open(temp_path) as img:
+                        with open(temp_path, 'rb') as f:
+                            img = Image.open(f)
                             img.verify()  # Check if the file is a valid image
                             img = img.convert("RGB")
                             if img.size[0] < 1080 or img.size[1] < 1920:
@@ -115,7 +120,7 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                             image_paths.append(image_path)
                             break  # Success, move to next image
                     except (IOError, SyntaxError, AttributeError) as e:
-                        logger.error(f"❌ Invalid image downloaded for query '{query}': {str(e)}")
+                        logger.error(f"❌ Invalid image downloaded for query '{query}': {str(e)} - File size: {os.path.getsize(temp_path)} bytes")
                         if os.path.exists(temp_path):
                             os.remove(temp_path)
                         attempt += 1
@@ -131,7 +136,7 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
                 logger.error(f"❌ Failed to generate image {i} after {max_retries} attempts")
         
         if not image_paths:
-            logger.error("❌ No images generated")
+            logger.error("❌ No images generated after all attempts")
             return []
         
         total_duration = len(image_paths) * duration_per_image
