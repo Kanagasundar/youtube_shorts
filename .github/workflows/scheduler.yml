@@ -100,26 +100,26 @@ jobs:
           # Configure ImageMagick policy
           POLICY_FILE="/etc/ImageMagick-6/policy.xml"
           sudo bash -c "cat > $POLICY_FILE << EOF
-<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE policymap [
-  <!ELEMENT policymap (policy)+>
-  <!ELEMENT policy EMPTY>
-  <!ATTLIST policy domain CDATA #REQUIRED>
-  <!ATTLIST policy name CDATA #IMPLIED>
-  <!ATTLIST policy pattern CDATA #IMPLIED>
-  <!ATTLIST policy rights CDATA #IMPLIED>
-  <!ATTLIST policy value CDATA #IMPLIED>
-]>
-<policymap>
-  <policy domain=\"path\" rights=\"read|write\" pattern=\"@*\"/>
-  <policy domain=\"coder\" rights=\"read|write\" pattern=\"*\"/>
-  <policy domain=\"delegate\" rights=\"read|write\" pattern=\"*\"/>
-  <policy domain=\"filter\" rights=\"read|write\" pattern=\"*\"/>
-  <policy domain=\"system\" name=\"memory\" value=\"512MiB\"/>
-  <policy domain=\"system\" name=\"disk\" value=\"1GiB\"/>
-  <policy domain=\"system\" name=\"thread\" value=\"2\"/>
-</policymap>
-EOF"
+          <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+          <!DOCTYPE policymap [
+            <!ELEMENT policymap (policy)+>
+            <!ELEMENT policy EMPTY>
+            <!ATTLIST policy domain CDATA #REQUIRED>
+            <!ATTLIST policy name CDATA #IMPLIED>
+            <!ATTLIST policy pattern CDATA #IMPLIED>
+            <!ATTLIST policy rights CDATA #IMPLIED>
+            <!ATTLIST policy value CDATA #IMPLIED>
+          ]>
+          <policymap>
+            <policy domain=\"path\" rights=\"read|write\" pattern=\"@*\"/>
+            <policy domain=\"coder\" rights=\"read|write\" pattern=\"*\"/>
+            <policy domain=\"delegate\" rights=\"read|write\" pattern=\"*\"/>
+            <policy domain=\"filter\" rights=\"read|write\" pattern=\"*\"/>
+            <policy domain=\"system\" name=\"memory\" value=\"512MiB\"/>
+            <policy domain=\"system\" name=\"disk\" value=\"1GiB\"/>
+            <policy domain=\"system\" name=\"thread\" value=\"2\"/>
+          </policymap>
+          EOF"
           sudo chmod 644 "$POLICY_FILE"
           echo "✅ ImageMagick policy configured at $POLICY_FILE"
           echo "🔍 ImageMagick policy file contents:"
@@ -291,293 +291,293 @@ EOF"
         run: |
           echo "🔧 Fixing namespace packages and performing comprehensive verification..."
           python -c "
-import sys
-import subprocess
-import importlib
-import os
-print('🐍 Python version:', sys.version)
-print('🔍 Python executable:', sys.executable)
-print('📁 Python path:')
-for path in sys.path:
-    print(f'   {path}')
-print('\n🔧 Fixing Google namespace packages...')
-site_packages_dirs = []
-for path in sys.path:
-    if path and 'site-packages' in path and os.path.exists(path):
-        site_packages_dirs.append(path)
-print(f'Found site-packages directories: {site_packages_dirs}')
-google_packages = []
-for site_dir in site_packages_dirs:
-    try:
-        packages = [pkg for pkg in os.listdir(site_dir)
-                    if pkg.startswith('google') and os.path.isdir(os.path.join(site_dir, pkg))]
-        google_packages.extend(packages)
-    except (OSError, PermissionError) as e:
-        print(f'Could not list {site_dir}: {e}')
-print(f'Found Google packages: {list(set(google_packages))}')
-import shutil
-for site_packages in site_packages_dirs:
-    gridfs_dir = os.path.join(site_packages, 'gridfs')
-    if os.path.exists(gridfs_dir):
-        pycache_dir = os.path.join(gridfs_dir, '__pycache__')
-        if os.path.exists(pycache_dir):
-            try:
-                shutil.rmtree(pycache_dir)
-                print(f'✅ Removed {pycache_dir}')
-            except Exception as e:
-                print(f'⚠️ Could not remove {pycache_dir}: {e}')
-test_results = []
-def test_import_advanced(module_name, import_statement, display_name=None):
-    if display_name is None:
-        display_name = module_name
-    try:
-        if module_name in sys.modules:
-            del sys.modules[module_name]
-        if module_name == 'moviepy':
-            modules_to_clear = [mod for mod in sys.modules.keys() if 'moviepy' in mod]
-            for mod in modules_to_clear:
-                del sys.modules[mod]
-        elif module_name.startswith('google'):
-            modules_to_clear = [mod for mod in sys.modules.keys() if mod.startswith('google')]
-            for mod in modules_to_clear:
-                del sys.modules[mod]
-        elif module_name == 'openai':
-            modules_to_clear = [mod for mod in sys.modules.keys() if 'openai' in mod]
-            for mod in modules_to_clear:
-                del sys.modules[mod]
-        elif module_name == 'replicate':
-            modules_to_clear = [mod for mod in sys.modules.keys() if 'replicate' in mod]
-            for mod in modules_to_clear:
-                del sys.modules[mod]
-        elif module_name == 'cv2':
-            modules_to_clear = [mod for mod in sys.modules.keys() if 'cv2' in mod or 'opencv' in mod]
-            for mod in modules_to_clear:
-                del sys.modules[mod]
-        elif module_name == 'manim':
-            modules_to_clear = [mod for mod in sys.modules.keys() if 'manim' in mod]
-            for mod in modules_to_clear:
-                del sys.modules[mod]
-        elif module_name == 'nltk':
-            modules_to_clear = [mod for mod in sys.modules.keys() if 'nltk' in mod]
-            for mod in modules_to_clear:
-                del sys.modules[mod]
-        exec(import_statement)
-        print(f'✅ {display_name}: Import successful')
-        test_results.append((display_name, True, 'OK'))
-        return True
-    except Exception as e:
-        print(f'❌ {display_name}: {str(e)}')
-        test_results.append((display_name, False, str(e)))
-        return False
-print('\n🔍 Testing imports with advanced verification...')
-test_import_advanced('numpy', 'import numpy')
-test_import_advanced('PIL', 'from PIL import Image')
-test_import_advanced('openai', 'import openai')
-test_import_advanced('gtts', 'from gtts import gTTS')
-test_import_advanced('pydub', 'from pydub import AudioSegment')
-test_import_advanced('requests', 'import requests')
-test_import_advanced('replicate', 'import replicate')
-test_import_advanced('cv2', 'import cv2', 'OpenCV')
-test_import_advanced('manim', 'from manim import *')
-test_import_advanced('nltk', 'import nltk')
-print('\n🎬 Testing MoviePy with fallback strategies...')
-moviepy_success = False
-try:
-    import moviepy
-    import moviepy.editor as mpe
-    print(f'✅ MoviePy Strategy 1 (direct): Success')
-    moviepy_success = True
-except Exception as e:
-    print(f'❌ MoviePy Strategy 1 failed: {e}')
-    try:
-        print('🔧 MoviePy Strategy 2: Reinstalling...')
-        subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'],
-                     capture_output=True, check=False)
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                      '--no-deps', 'moviepy>=1.0.3'],
-                     capture_output=True, check=True)
-        for mod in list(sys.modules.keys()):
-            if 'moviepy' in mod:
-                del sys.modules[mod]
-        import moviepy.editor as mpe
-        print('✅ MoviePy Strategy 2 (reinstall): Success')
-        moviepy_success = True
-    except Exception as e2:
-        print(f'❌ MoviePy Strategy 2 failed: {e2}')
-        try:
-            print('🔧 MoviePy Strategy 3: Different version...')
-            subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                          '--force-reinstall', 'moviepy>=1.0.3'],
-                         capture_output=True, check=True)
-            for mod in list(sys.modules.keys()):
-                if 'moviepy' in mod:
-                    del sys.modules[mod]
-            import moviepy.editor as mpe
-            print('✅ MoviePy Strategy 3 (v1.0.3): Success')
-            moviepy_success = True
-        except Exception as e3:
-            print(f'❌ MoviePy Strategy 3 failed: {e3}')
-test_results.append(('MoviePy', moviepy_success, 'OK' if moviepy_success else 'Failed'))
-print('\n🔍 Testing Google Auth with fallback strategies...')
-google_success = False
-try:
-    import google.auth
-    import google_auth_oauthlib
-    import googleapiclient.discovery
-    print('✅ Google Auth Strategy 1 (direct): Success')
-    google_success = True
-except Exception as e:
-    print(f'❌ Google Auth Strategy 1 failed: {e}')
-    try:
-        print('🔧 Google Auth Strategy 2: Namespace fix...')
-        for mod in list(sys.modules.keys()):
-            if mod.startswith('google'):
-                del sys.modules[mod]
-        subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y',
-                      'google-auth', 'google-auth-oauthlib', 'google-api-python-client'],
-                     capture_output=True, check=False)
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                      'google-auth'], capture_output=True, check=True)
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                      'google-auth-oauthlib'], capture_output=True, check=True)
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                      'google-api-python-client'], capture_output=True, check=True)
-        import google.auth
-        print('✅ Google Auth Strategy 2 (namespace fix): Success')
-        google_success = True
-    except Exception as e2:
-        print(f'❌ Google Auth Strategy 2 failed: {e2}')
-test_results.append(('Google Auth', google_success, 'OK' if google_success else 'Failed'))
-print('\n🔍 Testing OpenAI with fallback strategies...')
-openai_success = False
-try:
-    import openai
-    print('✅ OpenAI Strategy 1 (direct): Success')
-    openai_success = True
-except Exception as e:
-    print(f'❌ OpenAI Strategy 1 failed: {e}')
-    try:
-        print('🔧 OpenAI Strategy 2: Reinstalling...')
-        subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai'],
-                     capture_output=True, check=False)
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                      'openai==1.93.0'], capture_output=True, check=True)
-        for mod in list(sys.modules.keys()):
-            if 'openai' in mod:
-                del sys.modules[mod]
-        import openai
-        print('✅ OpenAI Strategy 2 (reinstall): Success')
-        openai_success = True
-    except Exception as e2:
-        print(f'❌ OpenAI Strategy 2 failed: {e2}')
-test_results.append(('OpenAI', openai_success, 'OK' if openai_success else 'Failed'))
-print('\n🔍 Testing Replicate with fallback strategies...')
-replicate_success = False
-try:
-    import replicate
-    print('✅ Replicate Strategy 1 (direct): Success')
-    replicate_success = True
-except Exception as e:
-    print(f'❌ Replicate Strategy 1 failed: {e}')
-    try:
-        print('🔧 Replicate Strategy 2: Reinstalling...')
-        subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'replicate'],
-                     capture_output=True, check=False)
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                      'replicate'], capture_output=True, check=True)
-        for mod in list(sys.modules.keys()):
-            if 'replicate' in mod:
-                del sys.modules[mod]
-        import replicate
-        print('✅ Replicate Strategy 2 (reinstall): Success')
-        replicate_success = True
-    except Exception as e2:
-        print(f'❌ Replicate Strategy 2 failed: {e2}')
-test_results.append(('Replicate', replicate_success, 'OK' if replicate_success else 'Failed'))
-print('\n🔍 Testing OpenCV with fallback strategies...')
-opencv_success = False
-try:
-    import cv2
-    print(f'✅ OpenCV Strategy 1 (direct): Success (version: {cv2.__version__})')
-    opencv_success = True
-except Exception as e:
-    print(f'❌ OpenCV Strategy 1 failed: {e}')
-    try:
-        print('🔧 OpenCV Strategy 2: Reinstalling...')
-        subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'],
-                     capture_output=True, check=False)
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                      'opencv-python==4.10.0.84', 'numpy==1.26.4'], capture_output=True, check=True)
-        for mod in list(sys.modules.keys()):
-            if 'cv2' in mod or 'opencv' in mod:
-                del sys.modules[mod]
-        import cv2
-        print(f'✅ OpenCV Strategy 2 (reinstall): Success (version: {cv2.__version__})')
-        opencv_success = True
-    except Exception as e2:
-        print(f'❌ OpenCV Strategy 2 failed: {e2}')
-test_results.append(('OpenCV', opencv_success, 'OK' if opencv_success else 'Failed'))
-print('\n🔍 Testing Manim with fallback strategies...')
-manim_success = False
-try:
-    import manim
-    print(f'✅ Manim Strategy 1 (direct): Success (version: {manim.__version__})')
-    manim_success = True
-except Exception as e:
-    print(f'❌ Manim Strategy 1 failed: {e}')
-    try:
-        print('🔧 Manim Strategy 2: Reinstalling...')
-        subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'manim'],
-                     capture_output=True, check=False)
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                      'manim==0.18.1'], capture_output=True, check=True)
-        for mod in list(sys.modules.keys()):
-            if 'manim' in mod:
-                del sys.modules[mod]
-        import manim
-        print(f'✅ Manim Strategy 2 (reinstall): Success (version: {manim.__version__})')
-        manim_success = True
-    except Exception as e2:
-        print(f'❌ Manim Strategy 2 failed: {e2}')
-test_results.append(('Manim', manim_success, 'OK' if manim_success else 'Failed'))
-print('\n🔍 Testing NLTK with fallback strategies...')
-nltk_success = False
-try:
-    import nltk
-    print(f'✅ NLTK Strategy 1 (direct): Success (version: {nltk.__version__})')
-    nltk_success = True
-except Exception as e:
-    print(f'❌ NLTK Strategy 1 failed: {e}')
-    try:
-        print('🔧 NLTK Strategy 2: Reinstalling...')
-        subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'nltk'],
-                     capture_output=True, check=False)
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                      'nltk==3.9.1'], capture_output=True, check=True)
-        for mod in list(sys.modules.keys()):
-            if 'nltk' in mod:
-                del sys.modules[mod]
-        import nltk
-        print(f'✅ NLTK Strategy 2 (reinstall): Success (version: {nltk.__version__})')
-        nltk_success = True
-    except Exception as e2:
-        print(f'❌ NLTK Strategy 2 failed: {e2}')
-test_results.append(('NLTK', nltk_success, 'OK' if nltk_success else 'Failed'))
-failed = [name for name, success, _ in test_results if not success]
-if failed:
-    print(f'\n❌ Failed imports: {failed}')
-    print('\n⚠️ Some packages failed to import. The script will attempt to continue...')
-    print('\nDiagnostic information:')
-    print('Available packages:')
-    result = subprocess.run([sys.executable, '-m', 'pip', 'list'],
-                          capture_output=True, text=True)
-    if result.returncode == 0:
-        for line in result.stdout.split('\n'):
-            if any(pkg in line.lower() for pkg in ['moviepy', 'google', 'openai', 'requests', 'replicate', 'opencv', 'manim', 'nltk']):
-                print(f'   {line}')
-else:
-    print('\n✅ All critical packages verified successfully!')
-"
+          import sys
+          import subprocess
+          import importlib
+          import os
+          print('🐍 Python version:', sys.version)
+          print('🔍 Python executable:', sys.executable)
+          print('📁 Python path:')
+          for path in sys.path:
+              print(f'   {path}')
+          print('\n🔧 Fixing Google namespace packages...')
+          site_packages_dirs = []
+          for path in sys.path:
+              if path and 'site-packages' in path and os.path.exists(path):
+                  site_packages_dirs.append(path)
+          print(f'Found site-packages directories: {site_packages_dirs}')
+          google_packages = []
+          for site_dir in site_packages_dirs:
+              try:
+                  packages = [pkg for pkg in os.listdir(site_dir)
+                              if pkg.startswith('google') and os.path.isdir(os.path.join(site_dir, pkg))]
+                  google_packages.extend(packages)
+              except (OSError, PermissionError) as e:
+                  print(f'Could not list {site_dir}: {e}')
+          print(f'Found Google packages: {list(set(google_packages))}')
+          import shutil
+          for site_packages in site_packages_dirs:
+              gridfs_dir = os.path.join(site_packages, 'gridfs')
+              if os.path.exists(gridfs_dir):
+                  pycache_dir = os.path.join(gridfs_dir, '__pycache__')
+                  if os.path.exists(pycache_dir):
+                      try:
+                          shutil.rmtree(pycache_dir)
+                          print(f'✅ Removed {pycache_dir}')
+                      except Exception as e:
+                          print(f'⚠️ Could not remove {pycache_dir}: {e}')
+          test_results = []
+          def test_import_advanced(module_name, import_statement, display_name=None):
+              if display_name is None:
+                  display_name = module_name
+              try:
+                  if module_name in sys.modules:
+                      del sys.modules[module_name]
+                  if module_name == 'moviepy':
+                      modules_to_clear = [mod for mod in sys.modules.keys() if 'moviepy' in mod]
+                      for mod in modules_to_clear:
+                          del sys.modules[mod]
+                  elif module_name.startswith('google'):
+                      modules_to_clear = [mod for mod in sys.modules.keys() if mod.startswith('google')]
+                      for mod in modules_to_clear:
+                          del sys.modules[mod]
+                  elif module_name == 'openai':
+                      modules_to_clear = [mod for mod in sys.modules.keys() if 'openai' in mod]
+                      for mod in modules_to_clear:
+                          del sys.modules[mod]
+                  elif module_name == 'replicate':
+                      modules_to_clear = [mod for mod in sys.modules.keys() if 'replicate' in mod]
+                      for mod in modules_to_clear:
+                          del sys.modules[mod]
+                  elif module_name == 'cv2':
+                      modules_to_clear = [mod for mod in sys.modules.keys() if 'cv2' in mod or 'opencv' in mod]
+                      for mod in modules_to_clear:
+                          del sys.modules[mod]
+                  elif module_name == 'manim':
+                      modules_to_clear = [mod for mod in sys.modules.keys() if 'manim' in mod]
+                      for mod in modules_to_clear:
+                          del sys.modules[mod]
+                  elif module_name == 'nltk':
+                      modules_to_clear = [mod for mod in sys.modules.keys() if 'nltk' in mod]
+                      for mod in modules_to_clear:
+                          del sys.modules[mod]
+                  exec(import_statement)
+                  print(f'✅ {display_name}: Import successful')
+                  test_results.append((display_name, True, 'OK'))
+                  return True
+              except Exception as e:
+                  print(f'❌ {display_name}: {str(e)}')
+                  test_results.append((display_name, False, str(e)))
+                  return False
+          print('\n🔍 Testing imports with advanced verification...')
+          test_import_advanced('numpy', 'import numpy')
+          test_import_advanced('PIL', 'from PIL import Image')
+          test_import_advanced('openai', 'import openai')
+          test_import_advanced('gtts', 'from gtts import gTTS')
+          test_import_advanced('pydub', 'from pydub import AudioSegment')
+          test_import_advanced('requests', 'import requests')
+          test_import_advanced('replicate', 'import replicate')
+          test_import_advanced('cv2', 'import cv2', 'OpenCV')
+          test_import_advanced('manim', 'from manim import *')
+          test_import_advanced('nltk', 'import nltk')
+          print('\n🎬 Testing MoviePy with fallback strategies...')
+          moviepy_success = False
+          try:
+              import moviepy
+              import moviepy.editor as mpe
+              print(f'✅ MoviePy Strategy 1 (direct): Success')
+              moviepy_success = True
+          except Exception as e:
+              print(f'❌ MoviePy Strategy 1 failed: {e}')
+              try:
+                  print('🔧 MoviePy Strategy 2: Reinstalling...')
+                  subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'],
+                              capture_output=True, check=False)
+                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                                '--no-deps', 'moviepy>=1.0.3'],
+                              capture_output=True, check=True)
+                  for mod in list(sys.modules.keys()):
+                      if 'moviepy' in mod:
+                          del sys.modules[mod]
+                  import moviepy.editor as mpe
+                  print('✅ MoviePy Strategy 2 (reinstall): Success')
+                  moviepy_success = True
+              except Exception as e2:
+                  print(f'❌ MoviePy Strategy 2 failed: {e2}')
+                  try:
+                      print('🔧 MoviePy Strategy 3: Different version...')
+                      subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                                    '--force-reinstall', 'moviepy>=1.0.3'],
+                                  capture_output=True, check=True)
+                      for mod in list(sys.modules.keys()):
+                          if 'moviepy' in mod:
+                              del sys.modules[mod]
+                      import moviepy.editor as mpe
+                      print('✅ MoviePy Strategy 3 (v1.0.3): Success')
+                      moviepy_success = True
+                  except Exception as e3:
+                      print(f'❌ MoviePy Strategy 3 failed: {e3}')
+          test_results.append(('MoviePy', moviepy_success, 'OK' if moviepy_success else 'Failed'))
+          print('\n🔍 Testing Google Auth with fallback strategies...')
+          google_success = False
+          try:
+              import google.auth
+              import google_auth_oauthlib
+              import googleapiclient.discovery
+              print('✅ Google Auth Strategy 1 (direct): Success')
+              google_success = True
+          except Exception as e:
+              print(f'❌ Google Auth Strategy 1 failed: {e}')
+              try:
+                  print('🔧 Google Auth Strategy 2: Namespace fix...')
+                  for mod in list(sys.modules.keys()):
+                      if mod.startswith('google'):
+                          del sys.modules[mod]
+                  subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y',
+                                'google-auth', 'google-auth-oauthlib', 'google-api-python-client'],
+                              capture_output=True, check=False)
+                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                                'google-auth'], capture_output=True, check=True)
+                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                                'google-auth-oauthlib'], capture_output=True, check=True)
+                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                                'google-api-python-client'], capture_output=True, check=True)
+                  import google.auth
+                  print('✅ Google Auth Strategy 2 (namespace fix): Success')
+                  google_success = True
+              except Exception as e2:
+                  print(f'❌ Google Auth Strategy 2 failed: {e2}')
+          test_results.append(('Google Auth', google_success, 'OK' if google_success else 'Failed'))
+          print('\n🔍 Testing OpenAI with fallback strategies...')
+          openai_success = False
+          try:
+              import openai
+              print('✅ OpenAI Strategy 1 (direct): Success')
+              openai_success = True
+          except Exception as e:
+              print(f'❌ OpenAI Strategy 1 failed: {e}')
+              try:
+                  print('🔧 OpenAI Strategy 2: Reinstalling...')
+                  subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai'],
+                              capture_output=True, check=False)
+                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                                'openai==1.93.0'], capture_output=True, check=True)
+                  for mod in list(sys.modules.keys()):
+                      if 'openai' in mod:
+                          del sys.modules[mod]
+                  import openai
+                  print('✅ OpenAI Strategy 2 (reinstall): Success')
+                  openai_success = True
+              except Exception as e2:
+                  print(f'❌ OpenAI Strategy 2 failed: {e2}')
+          test_results.append(('OpenAI', openai_success, 'OK' if openai_success else 'Failed'))
+          print('\n🔍 Testing Replicate with fallback strategies...')
+          replicate_success = False
+          try:
+              import replicate
+              print('✅ Replicate Strategy 1 (direct): Success')
+              replicate_success = True
+          except Exception as e:
+              print(f'❌ Replicate Strategy 1 failed: {e}')
+              try:
+                  print('🔧 Replicate Strategy 2: Reinstalling...')
+                  subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'replicate'],
+                              capture_output=True, check=False)
+                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                                'replicate'], capture_output=True, check=True)
+                  for mod in list(sys.modules.keys()):
+                      if 'replicate' in mod:
+                          del sys.modules[mod]
+                  import replicate
+                  print('✅ Replicate Strategy 2 (reinstall): Success')
+                  replicate_success = True
+              except Exception as e2:
+                  print(f'❌ Replicate Strategy 2 failed: {e2}')
+          test_results.append(('Replicate', replicate_success, 'OK' if replicate_success else 'Failed'))
+          print('\n🔍 Testing OpenCV with fallback strategies...')
+          opencv_success = False
+          try:
+              import cv2
+              print(f'✅ OpenCV Strategy 1 (direct): Success (version: {cv2.__version__})')
+              opencv_success = True
+          except Exception as e:
+              print(f'❌ OpenCV Strategy 1 failed: {e}')
+              try:
+                  print('🔧 OpenCV Strategy 2: Reinstalling...')
+                  subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'],
+                              capture_output=True, check=False)
+                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                                'opencv-python==4.10.0.84', 'numpy==1.26.4'], capture_output=True, check=True)
+                  for mod in list(sys.modules.keys()):
+                      if 'cv2' in mod or 'opencv' in mod:
+                          del sys.modules[mod]
+                  import cv2
+                  print(f'✅ OpenCV Strategy 2 (reinstall): Success (version: {cv2.__version__})')
+                  opencv_success = True
+              except Exception as e2:
+                  print(f'❌ OpenCV Strategy 2 failed: {e2}')
+          test_results.append(('OpenCV', opencv_success, 'OK' if opencv_success else 'Failed'))
+          print('\n🔍 Testing Manim with fallback strategies...')
+          manim_success = False
+          try:
+              import manim
+              print(f'✅ Manim Strategy 1 (direct): Success (version: {manim.__version__})')
+              manim_success = True
+          except Exception as e:
+              print(f'❌ Manim Strategy 1 failed: {e}')
+              try:
+                  print('🔧 Manim Strategy 2: Reinstalling...')
+                  subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'manim'],
+                              capture_output=True, check=False)
+                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                                'manim==0.18.1'], capture_output=True, check=True)
+                  for mod in list(sys.modules.keys()):
+                      if 'manim' in mod:
+                          del sys.modules[mod]
+                  import manim
+                  print(f'✅ Manim Strategy 2 (reinstall): Success (version: {manim.__version__})')
+                  manim_success = True
+              except Exception as e2:
+                  print(f'❌ Manim Strategy 2 failed: {e2}')
+          test_results.append(('Manim', manim_success, 'OK' if manim_success else 'Failed'))
+          print('\n🔍 Testing NLTK with fallback strategies...')
+          nltk_success = False
+          try:
+              import nltk
+              print(f'✅ NLTK Strategy 1 (direct): Success (version: {nltk.__version__})')
+              nltk_success = True
+          except Exception as e:
+              print(f'❌ NLTK Strategy 1 failed: {e}')
+              try:
+                  print('🔧 NLTK Strategy 2: Reinstalling...')
+                  subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'nltk'],
+                              capture_output=True, check=False)
+                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                                'nltk==3.9.1'], capture_output=True, check=True)
+                  for mod in list(sys.modules.keys()):
+                      if 'nltk' in mod:
+                          del sys.modules[mod]
+                  import nltk
+                  print(f'✅ NLTK Strategy 2 (reinstall): Success (version: {nltk.__version__})')
+                  nltk_success = True
+              except Exception as e2:
+                  print(f'❌ NLTK Strategy 2 failed: {e2}')
+          test_results.append(('NLTK', nltk_success, 'OK' if nltk_success else 'Failed'))
+          failed = [name for name, success, _ in test_results if not success]
+          if failed:
+              print(f'\n❌ Failed imports: {failed}')
+              print('\n⚠️ Some packages failed to import. The script will attempt to continue...')
+              print('\nDiagnostic information:')
+              print('Available packages:')
+              result = subprocess.run([sys.executable, '-m', 'pip', 'list'],
+                                    capture_output=True, text=True)
+              if result.returncode == 0:
+                  for line in result.stdout.split('\n'):
+                      if any(pkg in line.lower() for pkg in ['moviepy', 'google', 'openai', 'requests', 'replicate', 'opencv', 'manim', 'nltk']):
+                          print(f'   {line}')
+          else:
+              print('\n✅ All critical packages verified successfully!')
+          "
 
       - name: Clear Python module cache
         run: |
@@ -641,13 +641,13 @@ else:
             echo "⚠️ REPLICATE_API_KEY is not set - Llama fallback will be disabled"
           fi
           cat > .env << EOF
-OPENAI_API_KEY=$OPENAI_API_KEY
-PEXELS_API_KEY=$PEXELS_API_KEY
-REPLICATE_API_KEY=$REPLICATE_API_KEY
-VIDEO_PRIVACY=$VIDEO_PRIVACY
-VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID
-UPLOAD_TO_YOUTUBE=true
-EOF
+          OPENAI_API_KEY=$OPENAI_API_KEY
+          PEXELS_API_KEY=$PEXELS_API_KEY
+          REPLICATE_API_KEY=$REPLICATE_API_KEY
+          VIDEO_PRIVACY=$VIDEO_PRIVACY
+          VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID
+          UPLOAD_TO_YOUTUBE=true
+          EOF
           if [ -n "$DISCORD_WEBHOOK_URL" ]; then
             echo "DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL" >> .env
             echo "DISCORD_NOTIFICATIONS_ENABLED=true" >> $GITHUB_ENV
@@ -681,131 +681,131 @@ EOF
           echo "   - Video privacy: ${{ vars.VIDEO_PRIVACY || 'public' }}"
           echo "🔍 Environment variables (sensitive values masked):"
           python -c "
-import os
-for key, value in sorted(os.environ.items()):
-    if key in ['OPENAI_API_KEY', 'PEXELS_API_KEY', 'REPLICATE_API_KEY', 'YOUTUBE_CREDENTIALS', 'YOUTUBE_TOKEN', 'DISCORD_WEBHOOK_URL']:
-        print(f'   - {key}: ***')
-    else:
-        print(f'   - {key}: {value}')
-"
-          python -c "
-import sys
-import subprocess
-print('🔧 Final pre-execution checks...')
-for mod in list(sys.modules.keys()):
-    if 'moviepy' in mod:
-        del sys.modules[mod]
-try:
-    import moviepy.editor
-    print('✅ MoviePy ready')
-except Exception as e:
-    print(f'🔧 Final MoviePy fix attempt... Error: {e}')
-    subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], check=False)
-    subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'moviepy>=1.0.3'], check=False)
-    try:
-        import moviepy.editor
-        print('✅ MoviePy installed successfully')
-    except Exception as e2:
-        print(f'❌ MoviePy installation failed: {e2}')
-for mod in list(sys.modules.keys()):
-    if mod.startswith('google'):
-        del sys.modules[mod]
-try:
-    import google.auth
-    print('✅ Google Auth ready')
-except Exception as e:
-    print(f'🔧 Final Google Auth fix attempt... Error: {e}')
-    subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y',
-                  'google-auth', 'google-auth-oauthlib', 'google-api-python-client'], check=False)
-    subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                  'google-auth', 'google-auth-oauthlib', 'google-api-python-client'], check=False)
-    try:
-        import google.auth
-        print('✅ Google Auth installed successfully')
-    except Exception as e2:
-        print(f'❌ Google Auth installation failed: {e2}')
-for mod in list(sys.modules.keys()):
-    if 'openai' in mod:
-        del sys.modules[mod]
-try:
-    import openai
-    print('✅ OpenAI ready')
-except Exception as e:
-    print(f'🔧 Final OpenAI fix attempt... Error: {e}')
-    subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai'], check=False)
-    subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                  'openai==1.93.0'], check=False)
-    try:
-        import openai
-        print('✅ OpenAI installed successfully')
-    except Exception as e2:
-        print(f'❌ OpenAI installation failed: {e2}')
-for mod in list(sys.modules.keys()):
-    if 'replicate' in mod:
-        del sys.modules[mod]
-try:
-    import replicate
-    print('✅ Replicate ready')
-except Exception as e:
-    print(f'🔧 Final Replicate fix attempt... Error: {e}')
-    subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'replicate'], check=False)
-    subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                  'replicate'], check=False)
-    try:
-        import replicate
-        print('✅ Replicate installed successfully')
-    except Exception as e2:
-        print(f'❌ Replicate installation failed: {e2}')
-for mod in list(sys.modules.keys()):
-    if 'cv2' in mod or 'opencv' in mod:
-        del sys.modules[mod]
-try:
-    import cv2
-    print(f'✅ OpenCV ready (version: {cv2.__version__})')
-except Exception as e:
-    print(f'🔧 Final OpenCV fix attempt... Error: {e}')
-    subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'], check=False)
-    subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                  'opencv-python==4.10.0.84', 'numpy==1.26.4'], check=False)
-    try:
-        import cv2
-        print(f'✅ OpenCV installed successfully (version: {cv2.__version__})')
-    except Exception as e2:
-        print(f'❌ OpenCV installation failed: {e2}')
-for mod in list(sys.modules.keys()):
-    if 'manim' in mod:
-        del sys.modules[mod]
-try:
-    import manim
-    print(f'✅ Manim ready (version: {manim.__version__})')
-except Exception as e:
-    print(f'🔧 Final Manim fix attempt... Error: {e}')
-    subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'manim'], check=False)
-    subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                  'manim==0.18.1'], check=False)
-    try:
-        import manim
-        print(f'✅ Manim installed successfully (version: {manim.__version__})')
-    except Exception as e2:
-        print(f'❌ Manim installation failed: {e2}')
-for mod in list(sys.modules.keys()):
-    if 'nltk' in mod:
-        del sys.modules[mod]
-try:
-    import nltk
-    print(f'✅ NLTK ready (version: {nltk.__version__})')
-except Exception as e:
-    print(f'🔧 Final NLTK fix attempt... Error: {e}')
-    subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'nltk'], check=False)
-    subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                  'nltk==3.9.1'], check=False)
-    try:
-        import nltk
-        print(f'✅ NLTK installed successfully (version: {nltk.__version__})')
-    except Exception as e2:
-        print(f'❌ NLTK installation failed: {e2}')
-print('🚀 Ready to execute main script')
-"
+          import os
+          for key, value in sorted(os.environ.items()):
+              if key in ['OPENAI_API_KEY', 'PEXELS_API_KEY', 'REPLICATE_API_KEY', 'YOUTUBE_CREDENTIALS', 'YOUTUBE_TOKEN', 'DISCORD_WEBHOOK_URL']:
+                  print(f'   - {key}: ***')
+              else:
+                  print(f'   - {key}: {value}')
+          "
+                    python -c "
+          import sys
+          import subprocess
+          print('🔧 Final pre-execution checks...')
+          for mod in list(sys.modules.keys()):
+              if 'moviepy' in mod:
+                  del sys.modules[mod]
+          try:
+              import moviepy.editor
+              print('✅ MoviePy ready')
+          except Exception as e:
+              print(f'🔧 Final MoviePy fix attempt... Error: {e}')
+              subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], check=False)
+              subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'moviepy>=1.0.3'], check=False)
+              try:
+                  import moviepy.editor
+                  print('✅ MoviePy installed successfully')
+              except Exception as e2:
+                  print(f'❌ MoviePy installation failed: {e2}')
+          for mod in list(sys.modules.keys()):
+              if mod.startswith('google'):
+                  del sys.modules[mod]
+          try:
+              import google.auth
+              print('✅ Google Auth ready')
+          except Exception as e:
+              print(f'🔧 Final Google Auth fix attempt... Error: {e}')
+              subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y',
+                            'google-auth', 'google-auth-oauthlib', 'google-api-python-client'], check=False)
+              subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                            'google-auth', 'google-auth-oauthlib', 'google-api-python-client'], check=False)
+              try:
+                  import google.auth
+                  print('✅ Google Auth installed successfully')
+              except Exception as e2:
+                  print(f'❌ Google Auth installation failed: {e2}')
+          for mod in list(sys.modules.keys()):
+              if 'openai' in mod:
+                  del sys.modules[mod]
+          try:
+              import openai
+              print('✅ OpenAI ready')
+          except Exception as e:
+              print(f'🔧 Final OpenAI fix attempt... Error: {e}')
+              subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai'], check=False)
+              subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                            'openai==1.93.0'], check=False)
+              try:
+                  import openai
+                  print('✅ OpenAI installed successfully')
+              except Exception as e2:
+                  print(f'❌ OpenAI installation failed: {e2}')
+          for mod in list(sys.modules.keys()):
+              if 'replicate' in mod:
+                  del sys.modules[mod]
+          try:
+              import replicate
+              print('✅ Replicate ready')
+          except Exception as e:
+              print(f'🔧 Final Replicate fix attempt... Error: {e}')
+              subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'replicate'], check=False)
+              subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                            'replicate'], check=False)
+              try:
+                  import replicate
+                  print('✅ Replicate installed successfully')
+              except Exception as e2:
+                  print(f'❌ Replicate installation failed: {e2}')
+          for mod in list(sys.modules.keys()):
+              if 'cv2' in mod or 'opencv' in mod:
+                  del sys.modules[mod]
+          try:
+              import cv2
+              print(f'✅ OpenCV ready (version: {cv2.__version__})')
+          except Exception as e:
+              print(f'🔧 Final OpenCV fix attempt... Error: {e}')
+              subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'], check=False)
+              subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                            'opencv-python==4.10.0.84', 'numpy==1.26.4'], check=False)
+              try:
+                  import cv2
+                  print(f'✅ OpenCV installed successfully (version: {cv2.__version__})')
+              except Exception as e2:
+                  print(f'❌ OpenCV installation failed: {e2}')
+          for mod in list(sys.modules.keys()):
+              if 'manim' in mod:
+                  del sys.modules[mod]
+          try:
+              import manim
+              print(f'✅ Manim ready (version: {manim.__version__})')
+          except Exception as e:
+              print(f'🔧 Final Manim fix attempt... Error: {e}')
+              subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'manim'], check=False)
+              subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                            'manim==0.18.1'], check=False)
+              try:
+                  import manim
+                  print(f'✅ Manim installed successfully (version: {manim.__version__})')
+              except Exception as e2:
+                  print(f'❌ Manim installation failed: {e2}')
+          for mod in list(sys.modules.keys()):
+              if 'nltk' in mod:
+                  del sys.modules[mod]
+          try:
+              import nltk
+              print(f'✅ NLTK ready (version: {nltk.__version__})')
+          except Exception as e:
+              print(f'🔧 Final NLTK fix attempt... Error: {e}')
+              subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'nltk'], check=False)
+              subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                            'nltk==3.9.1'], check=False)
+              try:
+                  import nltk
+                  print(f'✅ NLTK installed successfully (version: {nltk.__version__})')
+              except Exception as e2:
+                  print(f'❌ NLTK installation failed: {e2}')
+          print('🚀 Ready to execute main script')
+          "
           set -o pipefail
           python main.py 2>&1 | tee automation.log
           EXIT_CODE=$PIPESTATUS[0]
