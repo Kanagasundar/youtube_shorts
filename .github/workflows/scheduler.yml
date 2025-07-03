@@ -83,6 +83,7 @@ jobs:
             libopencv-dev python3-opencv \
             texlive texlive-latex-extra texlive-fonts-extra \
             imagemagick \
+            fonts-freefont-ttf fonts-liberation fonts-dejavu \
             python3-dev python3-pip python3-venv \
             libffi-dev libssl-dev libxml2-dev libxslt-dev \
             libasound2-dev portaudio19-dev \
@@ -111,13 +112,14 @@ jobs:
             <!ATTLIST policy value CDATA #IMPLIED>
           ]>
           <policymap>
-            <policy domain=\"path\" rights=\"read|write\" pattern=\"@*\"/>
+            <policy domain=\"path\" rights=\"read|write\" pattern=\" Facet normal
             <policy domain=\"coder\" rights=\"read|write\" pattern=\"*\"/>
             <policy domain=\"delegate\" rights=\"read|write\" pattern=\"*\"/>
             <policy domain=\"filter\" rights=\"read|write\" pattern=\"*\"/>
             <policy domain=\"system\" name=\"memory\" value=\"512MiB\"/>
             <policy domain=\"system\" name=\"disk\" value=\"1GiB\"/>
             <policy domain=\"system\" name=\"thread\" value=\"2\"/>
+            <policy domain=\"system\" name=\"font\" value=\"read|write\"/>
           </policymap>
           EOF"
           sudo chmod 644 "$POLICY_FILE"
@@ -132,7 +134,7 @@ jobs:
             exit 1
           fi
           echo "Test" > test.txt
-          convert label:@test.txt test.png 2> imagemagick_test_error.log || {
+          convert label:@test.txt -font DejaVu-Sans test.png 2> imagemagick_test_error.log || {
             echo "❌ ImageMagick text rendering test failed"
             echo "🔍 ImageMagick test error output:"
             cat imagemagick_test_error.log

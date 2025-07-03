@@ -37,31 +37,39 @@ class ScriptGenerator:
             logger.warning("OpenAI client not initialized")
             return None
             
-        try:
-            prompt = (
-                f"Create a detailed script (500-1000 characters) for a YouTube Short video "
-                f"about '{topic}' in the {category} category. Make it engaging, clear, and "
-                f"suitable for a 15-40 second video. Include a hook, detailed body with at least "
-                f"3 key facts or points, and a call to action."
-            )
-            
-            response = self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a creative scriptwriter for YouTube Shorts."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=300,
-                temperature=0.7
-            )
-            
-            script = response.choices[0].message.content.strip()
-            logger.info(f"✅ OpenAI script generated: {len(script)} characters")
-            return script
-            
-        except Exception as e:
-            logger.warning(f"OpenAI generation failed: {str(e)}")
-            return None
+        for attempt in range(3):  # Add retry logic for quota issues
+            try:
+                prompt = (
+                    f"Create a detailed script (500-1000 characters) for a YouTube Short video "
+                    f"about '{topic}' in the {category} category. Make it engaging, clear, and "
+                    f"suitable for a 15-40 second video. Include a hook, detailed body with at least "
+                    f"3 key facts or points, and a call to action."
+                )
+                
+                response = self.openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a creative scriptwriter for YouTube Shorts."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=300,
+                    temperature=0.7
+                )
+                
+                script = response.choices[0].message.content.strip()
+                if len(script) >= 200:  # Ensure script is reasonably long
+                    logger.info(f"✅ OpenAI script generated: {len(script)} characters")
+                    return script
+                logger.warning(f"OpenAI script too short: {len(script)} characters")
+                return None
+                
+            except Exception as e:
+                logger.warning(f"OpenAI generation failed (attempt {attempt + 1}/3): {str(e)}")
+                if "429" in str(e):  # Handle quota errors specifically
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                else:
+                    break
+        return None
 
     def generate_with_llama(self, topic: str, category: str) -> Optional[str]:
         """Generate script using free Llama API (Replicate)"""
@@ -94,8 +102,11 @@ class ScriptGenerator:
                 result_response = requests.get(result_url, headers=headers, timeout=30)
                 if result_response.json()["status"] == "succeeded":
                     script = " ".join(result_response.json()["output"]).strip()
-                    logger.info(f"✅ Llama script generated: {len(script)} characters")
-                    return script
+                    if len(script) >= 200:  # Ensure script is reasonably long
+                        logger.info(f"✅ Llama script generated: {len(script)} characters")
+                        return script
+                    logger.warning(f"Llama script too short: {len(script)} characters")
+                    return None
                 time.sleep(2)
             return None
             
@@ -124,8 +135,11 @@ class ScriptGenerator:
                     f"First, it's a key part of {category}. Second, it has unique features that surprise everyone! "
                     f"Third, its impact is huge! Subscribe for more {category} facts!"
                 )
-                logger.info(f"✅ Pexels-inspired script generated: {len(script)} characters")
-                return script
+                if len(script) >= 200:  # Ensure script is reasonably long
+                    logger.info(f"✅ Pexels-inspired script generated: {len(script)} characters")
+                    return script
+                logger.warning(f"Pexels script too short: {len(script)} characters")
+                return None
             return None
             
         except Exception as e:
@@ -170,46 +184,46 @@ class ScriptGenerator:
         return script
 
     def generate_script(self, topic: str, category: str) -> str:
-        """Generate script with multiple fallback options, selecting the longest valid script"""
+        """Generate script with multiple fallback options, prioritizing quality and length"""
         logger.info(f"✍️ Generating script for: {topic} ({category})")
         
         scripts = []
         
-        # Try OpenAI
+        # Try OpenAI (preferred for quality)
         script = self.generate_with_openai(topic, category)
         if script:
-            scripts.append(("OpenAI", script))
+            scripts.append(("OpenAI", script, 1.0))  # Highest priority
             
-        # Try Llama
+        # Try Llama (secondary option)
         script = self.generate_with_llama(topic, category)
         if script:
-            scripts.append(("Llama", script))
+            scripts.append(("Llama", script, 0.8))  # Slightly lower priority
                 
-        # Try Pexels
+        # Try Pexels (tertiary option)
         script = self.generate_with_pexels(topic, category)
         if script:
-            scripts.append(("Pexels", script))
+            scripts.append(("Pexels", script, 0.6))  # Lower priority
                 
         # Always generate fallback
         script = self.generate_script_fallback(topic, category)
-        scripts.append(("Fallback", script))
+        scripts.append(("Fallback", script, 0.4))  # Lowest priority
         
-        # Select the longest script
+        # Select the best script (highest priority * length)
         if scripts:
-            selected_method, selected_script = max(scripts, key=lambda x: len(x[1]))
+            selected_method, selected_script, _ = max(scripts, key=lambda x: len(x[1]) * x[2])
             logger.info(f"✅ Selected {selected_method} script: {len(selected_script)} characters")
             return selected_script
         else:
-            logger.warning("⚠️ No scripts generated, using fallback")
+            logger.error("⚠️ No scripts generated, using default fallback")
             script = self.generate_script_fallback(topic, category)
-            logger.info(f"✅ Fallback script selected: {len(script)} characters")
+            logger.info(f"✅ Default fallback script selected: {len(script)} characters")
             return script
 
 def generate_script(topic: str, category: str) -> str:
     """Public interface for script generation"""
     generator = ScriptGenerator()
     script = generator.generate_script(topic, category)
-    if not script or len(script) < 300:  # Adjusted threshold to accept 339-character script
+    if not script or len(script) < 200:  # Lowered threshold to accept 339-character Pexels script
         logger.error(f"Generated script is invalid or too short ({len(script) if script else 0} characters), using default fallback")
         script = (
             f"🤔 {topic} is fascinating! Fact 1: It’s a key topic in {category}. "
