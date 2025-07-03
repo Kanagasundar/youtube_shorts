@@ -233,7 +233,7 @@ jobs:
         run: |
           echo "📥 Downloading NLTK data..."
           for attempt in {1..5}; do
-            python -c "import nltk; nltk.download('punkt', download_dir='/home/runner/nltk_data'); nltk.download('punkt_tab', download_dir='/home/runner/nltk_data'); nltk.download('averaged_perceptron_tagger', download_dir='/home/runner/nltk_data')" 2> nltk_download.log && break
+            python -c "import nltk; nltk.download('punkt', download_dir='/home/runner/nltk_data'); nltk.download('punkt_tab', download_dir='/home/runner/nltk_data'); nltk.download('averaged_perceptron_tagger', download_dir='/home/runner/nltk_data'); nltk.download('averaged_perceptron_tagger_eng', download_dir='/home/runner/nltk_data')" 2> nltk_download.log && break
             echo "⚠️ NLTK data download attempt $attempt failed, retrying after 5 seconds..."
             cat nltk_download.log
             sleep 5
@@ -243,7 +243,7 @@ jobs:
             exit 1
           }
           echo "🔍 Verifying NLTK data..."
-          python -c "import nltk; nltk.data.find('tokenizers/punkt'); nltk.data.find('tokenizers/punkt_tab'); nltk.data.find('taggers/averaged_perceptron_tagger')" 2> nltk_verify.log || {
+          python -c "import nltk; nltk.data.find('tokenizers/punkt'); nltk.data.find('tokenizers/punkt_tab'); nltk.data.find('taggers/averaged_perceptron_tagger'); nltk.data.find('taggers/averaged_perceptron_tagger_eng')" 2> nltk_verify.log || {
             echo "❌ NLTK data verification failed"
             cat nltk_verify.log
             exit 1
