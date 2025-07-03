@@ -316,8 +316,7 @@ jobs:
           google_packages = []
           for site_dir in site_packages_dirs:
               try:
-                  packages = [pkg for pkg in os.listdir(site_dir)
-                              if pkg.startswith('google') and os.path.isdir(os.path.join(site_dir, pkg))]
+                  packages = [pkg for pkg in os.listdir(site_dir) if pkg.startswith('google') and os.path.isdir(os.path.join(site_dir, pkg))]
                   google_packages.extend(packages)
               except (OSError, PermissionError) as e:
                   print(f'Could not list {site_dir}: {e}')
@@ -698,26 +697,10 @@ jobs:
           find . -name "__pycache__" -type d -exec rm -rf {} +
           echo "✅ Module cache cleared"
 
-      - name: Run YouTube automation
-        id: automation
+      - name: Validate pre-execution script
         run: |
-          echo "🚀 Starting YouTube automation..."
-          echo "📅 Timestamp: $(date)"
-          echo "🐍 Python version: $(python --version)"
-          echo "📁 Working directory: $(pwd)"
-          echo "📋 Final configuration:"
-          echo "   - Upload enabled: true"
-          echo "   - Video privacy: ${{ vars.VIDEO_PRIVACY || 'public' }}"
-          echo "🔍 Environment variables (sensitive values masked):"
-          python -c "
-          import os
-          for key, value in sorted(os.environ.items()):
-              if key in ['OPENAI_API_KEY', 'PEXELS_API_KEY', 'REPLICATE_API_KEY', 'YOUTUBE_CREDENTIALS', 'YOUTUBE_TOKEN', 'DISCORD_WEBHOOK_URL']:
-                  print(f'   - {key}: ***')
-              else:
-                  print(f'   - {key}: {value}')
-          "
-          python -c "
+          echo "🔍 Validating pre-execution script syntax..."
+          cat > logs/pre_execution_script.py << 'EOF'
           import sys
           import subprocess
           print('🔧 Final pre-execution checks...')
@@ -817,7 +800,7 @@ jobs:
               print(f'🔧 Final Manim fix attempt... Error: {e}')
               subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'manim'], check=False)
               subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                            'manim==0.18.1], check=False)
+                            'manim==0.18.1'], check=False)
               try:
                   import manim
                   print(f'✅ Manim installed successfully (version: {manim.__version__})')
@@ -840,7 +823,34 @@ jobs:
               except Exception as e2:
                   print(f'❌ NLTK installation failed: {e2}')
           print('🚀 Ready to execute main script')
+          EOF
+          python -m py_compile logs/pre_execution_script.py || {
+            echo "❌ Syntax error in pre-execution script"
+            cat logs/pre_execution_script.py
+            exit 1
+          }
+          echo "✅ Pre-execution script syntax validated"
+
+      - name: Run YouTube automation
+        id: automation
+        run: |
+          echo "🚀 Starting YouTube automation..."
+          echo "📅 Timestamp: $(date)"
+          echo "🐍 Python version: $(python --version)"
+          echo "📁 Working directory: $(pwd)"
+          echo "📋 Final configuration:"
+          echo "   - Upload enabled: true"
+          echo "   - Video privacy: ${{ vars.VIDEO_PRIVACY || 'public' }}"
+          echo "🔍 Environment variables (sensitive values masked):"
+          python -c "
+          import os
+          for key, value in sorted(os.environ.items()):
+              if key in ['OPENAI_API_KEY', 'PEXELS_API_KEY', 'REPLICATE_API_KEY', 'YOUTUBE_CREDENTIALS', 'YOUTUBE_TOKEN', 'DISCORD_WEBHOOK_URL']:
+                  print(f'   - {key}: ***')
+              else:
+                  print(f'   - {key}: {value}')
           "
+          python logs/pre_execution_script.py
           set -o pipefail
           python main.py 2>&1 | tee automation.log
           EXIT_CODE=$PIPESTATUS[0]
