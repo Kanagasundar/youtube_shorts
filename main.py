@@ -5,9 +5,10 @@ Generates and uploads daily YouTube Shorts content with improved error handling,
 logging, configuration management, and cleanup features. Supports overlays, transitions,
 captions, 9:16 cropping, OpenCV/Manim integration, and keyword-based Pexels queries.
 
-Version: 1.2.2
+Version: 1.2.3
 Update Notes:
-- Fixed typo in moviepy dependency check (VideoTipClip -> VideoFileClip).
+- Fixed SyntaxError in check_dependencies print statement (removed invalid project_id parameter).
+- Retained VideoFileClip fix from v1.2.2 (corrected VideoTipClip typo).
 - Retained robust OpenCV check with import cv2.
 - Added detailed debugging for OpenCV import failures in check_dependencies.
 - Enhanced logging for OpenCV, Manim, and NLTK to diagnose installation issues.
@@ -191,7 +192,7 @@ def check_dependencies() -> bool:
         print(f"   Python executable: {sys.executable}")
         site_packages = [p for p in sys.path if 'site-packages' in p]
         if site_packages:
-            print(project_id="youtube_shorts", f"   Site packages: {site_packages[0]}")
+            print(f"   Site packages: {site_packages[0]}")
         return False
     
     logger.info("✅ All required dependencies are available")
