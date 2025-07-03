@@ -321,9 +321,9 @@ jobs:
         print(f'Found Google packages: {list(set(google_packages))}')
         import shutil
         for site_packages in site_packages_dirs:
-            google_dir = os.path.join(site_packages, 'google')
-            if os.path.exists(google_dir):
-                pycache_dir = os.path.join(google_dir, '__pycache__')
+            gridfs_dir = os.path.join(site_packages, 'gridfs')
+            if os.path.exists(gridfs_dir):
+                pycache_dir = os.path.join(gridfs_dir, '__pycache__')
                 if os.path.exists(pycache_dir):
                     try:
                         shutil.rmtree(pycache_dir)
@@ -465,7 +465,7 @@ jobs:
                 subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai'], 
                              capture_output=True, check=False)
                 subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              'openai==1.40.6'], capture_output=True, check=True)
+                              'openai==1.93.0'], capture_output=True, check=True)
                 for mod in list(sys.modules.keys()):
                     if 'openai' in mod:
                         del sys.modules[mod]
@@ -666,6 +666,13 @@ jobs:
         fi
         echo "✅ Environment file created"
 
+    - name: Clear Python module cache before automation
+      run: |
+        echo "🧹 Clearing Python module cache before automation..."
+        find . -name "*.pyc" -delete
+        find . -name "__pycache__" -type d -exec rm -rf {} +
+        echo "✅ Module cache cleared"
+
     - name: Run YouTube automation
       id: automation
       env:
@@ -748,7 +755,7 @@ jobs:
             print(f'🔧 Final OpenAI fix attempt... Error: {e}')
             subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'openai'], check=False)
             subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                          'openai==1.40.6'], check=False)
+                          'openai==1.93.0'], check=False)
             try:
                 import openai
                 print('✅ OpenAI installed successfully')
