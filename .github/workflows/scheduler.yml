@@ -112,7 +112,7 @@ jobs:
             <!ATTLIST policy value CDATA #IMPLIED>
           ]>
           <policymap>
-            <policy domain=\"path\" rights=\"read|write\" pattern=\" Facet normal
+            <policy domain=\"path\" rights=\"read|write\" pattern=\"@*\"/>
             <policy domain=\"coder\" rights=\"read|write\" pattern=\"*\"/>
             <policy domain=\"delegate\" rights=\"read|write\" pattern=\"*\"/>
             <policy domain=\"filter\" rights=\"read|write\" pattern=\"*\"/>
@@ -126,7 +126,7 @@ jobs:
           echo "✅ ImageMagick policy configured at $POLICY_FILE"
           echo "🔍 ImageMagick policy file contents:"
           cat "$POLICY_FILE" || echo "❌ Failed to read $POLICY_FILE"
-          if grep -q 'domain="path"' "$POLICY_FILE" && grep -q 'rights="read|write"' "$POLICY_FILE" && grep -q 'pattern="@' "$POLICY_FILE"; then
+          if grep -q 'domain="path"' "$POLICY_FILE" && grep -q 'rights="read|write"' "$POLICY_FILE" && grep -q 'pattern=\"@*\"' "$POLICY_FILE"; then
             echo "✅ ImageMagick policy verified for @* read|write"
           else
             echo "❌ ImageMagick policy verification failed"
@@ -145,7 +145,7 @@ jobs:
       - name: Verify system dependencies
         run: |
           echo "🔍 Verifying system dependencies..."
-          ffmpeg -version || { echo "❌ FFmpeg not installed correctly"; exit 1; }
+          ffmpeg -version || { echoStuart: echo "❌ FFmpeg not installed correctly"; exit 1; }
           convert -version || { echo "❌ ImageMagick not installed correctly"; exit 1; }
           python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
             echo "❌ OpenCV not installed correctly, attempting reinstall..."
