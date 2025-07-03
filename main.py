@@ -1,30 +1,3 @@
-#!/usr/bin/env python3
-"""
-YouTube Automation Main Script - Enhanced Version
-Generates and uploads daily YouTube Shorts content with improved error handling,
-logging, configuration management, and cleanup features. Supports overlays, transitions,
-captions, 9:16 cropping, OpenCV/Manim integration, and keyword-based Pexels queries.
-
-Version: 1.2.3
-Update Notes:
-- Fixed SyntaxError in check_dependencies print statement (removed invalid project_id parameter).
-- Retained VideoFileClip fix from v1.2.2 (corrected VideoTipClip typo).
-- Retained robust OpenCV check with import cv2.
-- Added detailed debugging for OpenCV import failures in check_dependencies.
-- Enhanced logging for OpenCV, Manim, and NLTK to diagnose installation issues.
-- Integrated enhanced video creation with overlays (text, stickers, logos), transitions (fade, zoom, slide),
-  and animated captions using OpenCV and Manim.
-- Updated to support 9:16 aspect ratio (1080x1920) for YouTube Shorts.
-- Added keyword-based Pexels API queries using NLTK.
-- Ensured video duration between 15-40 seconds with image durations of 0.5-6 seconds.
-
-Dependencies:
-- os, sys, traceback, shutil, signal, datetime, pathlib, logging, json, time, typing, importlib.util, dotenv
-- Utils modules: topic_rotator, scripting, voice, video, thumbnail_generator, youtube_uploader
-- Optional: psutil (for system health monitoring)
-- moviepy, opencv-python, manim, nltk
-"""
-
 import os
 import sys
 import traceback
@@ -37,6 +10,7 @@ import json
 import time
 from typing import Optional, Tuple, Dict, Any
 import importlib.util
+import importlib
 from dotenv import load_dotenv
 import subprocess
 
@@ -142,6 +116,7 @@ def check_dependencies() -> bool:
         'google-auth-oauthlib': ('import google_auth_oauthlib', 'google_auth_oauthlib'),
         'google-api-python-client': ('from googleapiclient import discovery', 'discovery'),
         'requests': ('import requests', 'requests'),
+        'replicate': ('import replicate', 'replicate'),
         'opencv-python': ('import cv2', 'cv2'),
         'manim': ('from manim import Scene', 'Scene'),
         'nltk': ('import nltk', 'nltk'),
@@ -151,11 +126,13 @@ def check_dependencies() -> bool:
     
     for package_name, (import_statement, check_name) in required_packages.items():
         try:
+            # Clear related modules from cache
             base_module = import_statement.split()[1].split('.')[0]
             for mod in list(sys.modules.keys()):
-                if base_module in mod:
+                if base_module in mod or (package_name == 'opencv-python' and 'cv2' in mod):
                     del sys.modules[mod]
             
+            # Execute import
             exec(import_statement)
             module = eval(check_name)
             version = getattr(module, '__version__', 
@@ -164,22 +141,47 @@ def check_dependencies() -> bool:
             spec = importlib.util.find_spec(base_module)
             logger.debug(f"✅ {package_name} ({check_name}) - v{version} from {spec.origin if spec else 'unknown'}")
             
-            # Additional diagnostics for OpenCV
+            # Additional diagnostics for opencv-python
             if package_name == 'opencv-python':
                 logger.debug(f"OpenCV details: sys.path={sys.path}")
-                pip_list = subprocess.run([sys.executable, '-m', 'pip', 'list'], capture_output=True, text=True)
+                pip_show = subprocess.run([sys.executable, '-m', 'pip', 'show', 'opencv-python'], 
+                                        capture_output=True, text=True)
+                logger.debug(f"pip show opencv-python:\n{pip_show.stdout}")
+                pip_list = subprocess.run([sys.executable, '-m', 'pip', 'list'], 
+                                        capture_output=True, text=True)
                 logger.debug(f"pip list output:\n{pip_list.stdout}")
             
-        except (ImportError, AttributeError) as e:
-            logger.error(f"❌ {package_name} ({check_name}) - Failed: {str(e)}")
+        except (ImportError, AttributeError, Exception) as e:
+            logger.error(f"❌ {package_name} ({check_name}) - Failed: {str(e)}", exc_info=True)
             if package_name == 'opencv-python':
                 logger.error("OpenCV diagnostic info:")
                 logger.error(f"sys.path: {sys.path}")
-                pip_list = subprocess.run([sys.executable, '-m', 'pip', 'list'], capture_output=True, text=True)
-                logger.error(f"pip list:\n{pip_list.stdout}")
                 logger.error(f"Python executable: {sys.executable}")
                 logger.error(f"Python version: {sys.version}")
-            missing_packages.append(package_name)
+                pip_show = subprocess.run([sys.executable, '-m', 'pip', 'show', 'opencv-python'], 
+                                        capture_output=True, text=True)
+                logger.error(f"pip show opencv-python:\n{pip_show.stdout}")
+                pip_list = subprocess.run([sys.executable, '-m', 'pip', 'list'], 
+                                        capture_output=True, text=True)
+                logger.error(f"pip list:\n{pip_list.stdout}")
+                # Attempt to reinstall opencv-python
+                logger.info("🔧 Attempting to reinstall opencv-python...")
+                subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'], 
+                             capture_output=True, check=False)
+                subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
+                              'opencv-python==4.10.0.84', 'numpy==1.26.4'], 
+                             capture_output=True, check=True)
+                try:
+                    for mod in list(sys.modules.keys()):
+                        if 'cv2' in mod or 'opencv' in mod:
+                            del sys.modules[mod]
+                    import cv2
+                    logger.info(f"✅ OpenCV reinstalled successfully: v{cv2.__version__}")
+                except Exception as re_e:
+                    logger.error(f"❌ OpenCV reinstall failed: {str(re_e)}", exc_info=True)
+                    missing_packages.append(package_name)
+            else:
+                missing_packages.append(package_name)
     
     if missing_packages:
         logger.error(f"❌ Missing {len(missing_packages)} required packages:")
