@@ -209,8 +209,8 @@ def generate_script(topic: str, category: str) -> str:
     """Public interface for script generation"""
     generator = ScriptGenerator()
     script = generator.generate_script(topic, category)
-    if not script or len(script) < 200:  # Minimum threshold to ensure usability
-        logger.error("Generated script is invalid or too short, using default fallback")
+    if not script or len(script) < 300:  # Adjusted threshold to accept 339-character script
+        logger.error(f"Generated script is invalid or too short ({len(script) if script else 0} characters), using default fallback")
         script = (
             f"🤔 {topic} is fascinating! Fact 1: It’s a key topic in {category}. "
             f"Fact 2: Experts are still exploring its depths. Fact 3: It sparks curiosity everywhere! "

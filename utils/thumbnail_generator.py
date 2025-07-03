@@ -9,6 +9,7 @@ import io
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
+import random
 
 # Download NLTK data
 try:
