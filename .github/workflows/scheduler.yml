@@ -220,7 +220,7 @@ jobs:
             exit 1
           }
         }
-        python -c "from manim import *; print('Manim version:', __version__)" || {
+        python -c "import manim; print('Manim version:', manim.__version__)" || {
           echo "❌ Manim verification failed, attempting reinstall..."
           pip uninstall -y manim
           pip install --no-cache-dir manim==0.18.1 2> manim_install.log || {
@@ -228,7 +228,7 @@ jobs:
             cat manim_install.log
             exit 1
           }
-          python -c "from manim import *; print('Manim version:', __version__)" || {
+          python -c "import manim; print('Manim version:', manim.__version__)" || {
             echo "❌ Manim verification failed after reinstall"
             exit 1
           }
