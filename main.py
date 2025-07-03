@@ -143,6 +143,10 @@ def check_dependencies() -> bool:
             
             # Additional diagnostics for opencv-python
             if package_name == 'opencv-python':
+                # Verify basic OpenCV functionality
+                if not hasattr(module, 'imread') or not hasattr(module, 'cvtColor'):
+                    raise AttributeError("OpenCV missing critical attributes (imread, cvtColor)")
+                logger.debug(f"✅ OpenCV basic functionality verified (imread, cvtColor available)")
                 logger.debug(f"OpenCV details: sys.path={sys.path}")
                 pip_show = subprocess.run([sys.executable, '-m', 'pip', 'show', 'opencv-python'], 
                                         capture_output=True, text=True)
@@ -151,7 +155,23 @@ def check_dependencies() -> bool:
                                         capture_output=True, text=True)
                 logger.debug(f"pip list output:\n{pip_list.stdout}")
             
-        except (ImportError, AttributeError, Exception) as e:
+        except Exception as e:
+            if package_name == 'opencv-python' and "cv2.gapi.wip.draw' has no attribute 'Text'" in str(e):
+                logger.warning(f"⚠️ {package_name} ({check_name}) - G-API typing error: {str(e)}")
+                logger.info("Attempting to verify OpenCV functionality despite G-API issue...")
+                try:
+                    import cv2
+                    if hasattr(cv2, 'imread') and hasattr(cv2, 'cvtColor'):
+                        logger.info(f"✅ OpenCV basic functionality verified (imread, cvtColor available)")
+                        logger.debug(f"OpenCV details: sys.path={sys.path}")
+                        pip_show = subprocess.run([sys.executable, '-m', 'pip', 'show', 'opencv-python'], 
+                                                capture_output=True, text=True)
+                        logger.debug(f"pip show opencv-python:\n{pip_show.stdout}")
+                        continue  # Proceed as OpenCV is functional
+                    else:
+                        logger.error("❌ OpenCV missing critical attributes (imread, cvtColor)")
+                except Exception as cv2_e:
+                    logger.error(f"❌ OpenCV verification failed: {str(cv2_e)}", exc_info=True)
             logger.error(f"❌ {package_name} ({check_name}) - Failed: {str(e)}", exc_info=True)
             if package_name == 'opencv-python':
                 logger.error("OpenCV diagnostic info:")
@@ -164,21 +184,25 @@ def check_dependencies() -> bool:
                 pip_list = subprocess.run([sys.executable, '-m', 'pip', 'list'], 
                                         capture_output=True, text=True)
                 logger.error(f"pip list:\n{pip_list.stdout}")
-                # Attempt to reinstall opencv-python
-                logger.info("🔧 Attempting to reinstall opencv-python...")
+                # Attempt to downgrade opencv-python to 4.9.0.80
+                logger.info("🔧 Attempting to downgrade opencv-python to 4.9.0.80...")
                 subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'], 
                              capture_output=True, check=False)
                 subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 
-                              'opencv-python==4.10.0.84', 'numpy==1.26.4'], 
+                              'opencv-python==4.9.0.80', 'numpy==1.26.4'], 
                              capture_output=True, check=True)
                 try:
                     for mod in list(sys.modules.keys()):
                         if 'cv2' in mod or 'opencv' in mod:
                             del sys.modules[mod]
                     import cv2
-                    logger.info(f"✅ OpenCV reinstalled successfully: v{cv2.__version__}")
+                    if hasattr(cv2, 'imread') and hasattr(cv2, 'cvtColor'):
+                        logger.info(f"✅ OpenCV downgraded successfully: v{cv2.__version__}")
+                        continue  # Proceed as OpenCV is now functional
+                    else:
+                        logger.error("❌ Downgraded OpenCV missing critical attributes (imread, cvtColor)")
                 except Exception as re_e:
-                    logger.error(f"❌ OpenCV reinstall failed: {str(re_e)}", exc_info=True)
+                    logger.error(f"❌ OpenCV downgrade failed: {str(re_e)}", exc_info=True)
                     missing_packages.append(package_name)
             else:
                 missing_packages.append(package_name)

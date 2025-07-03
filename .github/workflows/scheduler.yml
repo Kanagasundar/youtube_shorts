@@ -50,7 +50,7 @@ jobs:
       - name: Upgrade pip
         run: |
           echo "🔍 Upgrading pip..."
-          pip install --upgrade pip
+          pip install --upgrade pip==25.1.1
           echo "✅ pip upgraded to $(pip --version)"
 
       - name: Clear Python cache
@@ -148,7 +148,7 @@ jobs:
           python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
             echo "❌ OpenCV not installed correctly, attempting reinstall..."
             pip uninstall -y opencv-python numpy
-            pip install --no-cache-dir opencv-python==4.10.0.84 numpy==1.26.4 2> opencv_install.log || {
+            pip install --no-cache-dir opencv-python==4.9.0.80 numpy==1.26.4 2> opencv_install.log || {
               echo "❌ OpenCV reinstall failed"
               cat opencv_install.log
               exit 1
@@ -204,7 +204,7 @@ jobs:
             cat pip_install.log
             exit 1
           }
-          pip install --no-cache-dir opencv-python==4.10.0.84 numpy==1.26.4 2> opencv_install.log || {
+          pip install --no-cache-dir opencv-python==4.9.0.80 numpy==1.26.4 2> opencv_install.log || {
             echo "❌ OpenCV installation failed"
             cat opencv_install.log
             exit 1
@@ -362,12 +362,27 @@ jobs:
                       for mod in modules_to_clear:
                           del sys.modules[mod]
                   exec(import_statement)
+                  if module_name == 'cv2':
+                      import cv2
+                      if not hasattr(cv2, 'imread') or not hasattr(cv2, 'cvtColor'):
+                          raise AttributeError('OpenCV missing critical attributes (imread, cvtColor)')
                   print(f'✅ {display_name}: Import successful')
                   test_results.append((display_name, True, 'OK'))
                   return True
               except Exception as e:
                   print(f'❌ {display_name}: {str(e)}')
                   test_results.append((display_name, False, str(e)))
+                  if module_name == 'cv2' and 'cv2.gapi.wip.draw' in str(e):
+                      try:
+                          import cv2
+                          if hasattr(cv2, 'imread') and hasattr(cv2, 'cvtColor'):
+                              print(f'✅ {display_name}: Functional despite G-API error')
+                              test_results.append((display_name, True, 'OK despite G-API error'))
+                              return True
+                          else:
+                              print(f'❌ {display_name}: Missing critical attributes after G-API error')
+                      except Exception as e2:
+                          print(f'❌ {display_name}: Verification failed: {e2}')
                   return False
           print('\n🔍 Testing imports with advanced verification...')
           test_import_advanced('numpy', 'import numpy')
@@ -503,17 +518,20 @@ jobs:
           except Exception as e:
               print(f'❌ OpenCV Strategy 1 failed: {e}')
               try:
-                  print('🔧 OpenCV Strategy 2: Reinstalling...')
+                  print('🔧 OpenCV Strategy 2: Installing 4.9.0.80...')
                   subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'],
                               capture_output=True, check=False)
                   subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                                'opencv-python==4.10.0.84', 'numpy==1.26.4'], capture_output=True, check=True)
+                                'opencv-python==4.9.0.80', 'numpy==1.26.4'], capture_output=True, check=True)
                   for mod in list(sys.modules.keys()):
                       if 'cv2' in mod or 'opencv' in mod:
                           del sys.modules[mod]
                   import cv2
-                  print(f'✅ OpenCV Strategy 2 (reinstall): Success (version: {cv2.__version__})')
-                  opencv_success = True
+                  if hasattr(cv2, 'imread') and hasattr(cv2, 'cvtColor'):
+                      print(f'✅ OpenCV Strategy 2 (4.9.0.80): Success (version: {cv2.__version__})')
+                      opencv_success = True
+                  else:
+                      print('❌ OpenCV Strategy 2: Missing critical attributes (imread, cvtColor)')
               except Exception as e2:
                   print(f'❌ OpenCV Strategy 2 failed: {e2}')
           test_results.append(('OpenCV', opencv_success, 'OK' if opencv_success else 'Failed'))
@@ -579,9 +597,9 @@ jobs:
               print('\n✅ All critical packages verified successfully!')
           "
 
-      - name: Clear Python module cache
+      - name: Clear Python module cache before automation
         run: |
-          echo "🧹 Clearing Python module cache..."
+          echo "🧹 Clearing Python module cache before automation..."
           find . -name "*.pyc" -delete
           find . -name "__pycache__" -type d -exec rm -rf {} +
           echo "✅ Module cache cleared"
@@ -688,7 +706,7 @@ jobs:
               else:
                   print(f'   - {key}: {value}')
           "
-                    python -c "
+          python -c "
           import sys
           import subprocess
           print('🔧 Final pre-execution checks...')
@@ -761,15 +779,21 @@ jobs:
                   del sys.modules[mod]
           try:
               import cv2
-              print(f'✅ OpenCV ready (version: {cv2.__version__})')
+              if hasattr(cv2, 'imread') and hasattr(cv2, 'cvtColor'):
+                  print(f'✅ OpenCV ready (version: {cv2.__version__})')
+              else:
+                  raise AttributeError('OpenCV missing critical attributes (imread, cvtColor)')
           except Exception as e:
               print(f'🔧 Final OpenCV fix attempt... Error: {e}')
               subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'], check=False)
               subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                            'opencv-python==4.10.0.84', 'numpy==1.26.4'], check=False)
+                            'opencv-python==4.9.0.80', 'numpy==1.26.4'], check=False)
               try:
                   import cv2
-                  print(f'✅ OpenCV installed successfully (version: {cv2.__version__})')
+                  if hasattr(cv2, 'imread') and hasattr(cv2, 'cvtColor'):
+                      print(f'✅ OpenCV installed successfully (version: {cv2.__version__})')
+                  else:
+                      print(f'❌ OpenCV installation failed: Missing critical attributes')
               except Exception as e2:
                   print(f'❌ OpenCV installation failed: {e2}')
           for mod in list(sys.modules.keys()):
