@@ -9,7 +9,7 @@ import io
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
-import random
+import random  # Added to fix 'name "random" is not defined' error
 
 # Download NLTK data
 try:
