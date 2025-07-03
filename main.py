@@ -191,7 +191,7 @@ def check_dependencies() -> bool:
         print(f"   Python executable: {sys.executable}")
         site_packages = [p for p in sys.path if 'site-packages' in p]
         if site_packages:
-            print(f"   Site packages: {site_packages[0]}")
+            print(project_id="youtube_shorts", f"   Site packages: {site_packages[0]}")
         return False
     
     logger.info("✅ All required dependencies are available")
