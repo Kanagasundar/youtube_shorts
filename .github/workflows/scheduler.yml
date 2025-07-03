@@ -103,7 +103,7 @@ jobs:
           sudo bash -c "cat > $POLICY_FILE << 'EOF'
           <?xml version=\"1.0\" encoding=\"UTF-8\"?>
           <policymap>
-            <policy domain=\"path\" rights=\"read|write\" pattern=\"@*\" />
+            <policy domain=\"path\" rights=\"read|write\" pattern=\"@/*\" />
             <policy domain=\"coder\" rights=\"read|write\" pattern=\"*\" />
             <policy domain=\"delegate\" rights=\"read|write\" pattern=\"*\" />
             <policy domain=\"filter\" rights=\"read|write\" pattern=\"*\" />
@@ -117,7 +117,7 @@ jobs:
           echo "✅ ImageMagick policy configured at $POLICY_FILE"
           echo "🔍 ImageMagick policy file contents:"
           cat "$POLICY_FILE" || { echo "❌ Failed to read $POLICY_FILE"; exit 1; }
-          if xmllint --noout "$POLICY_FILE" 2>/dev/null && grep -q 'domain="path".*rights="read|write".*pattern="@*"' "$POLICY_FILE"; then
+          if xmllint --noout "$POLICY_FILE" 2>/dev/null && grep -q 'domain="path".*rights="read|write".*pattern="@/*"' "$POLICY_FILE"; then
             echo "✅ ImageMagick policy verified for path read|write"
           else
             echo "❌ ImageMagick policy verification failed"
