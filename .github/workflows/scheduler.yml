@@ -173,6 +173,20 @@ jobs:
             }
           }
           echo "✅ Manim ready (version: $(python -c 'import manim; print(manim.__version__)'))"
+          python -c "import moviepy; print('MoviePy version:', moviepy.__version__)" || {
+            echo "❌ MoviePy not installed correctly, attempting reinstall..."
+            pip uninstall -y moviepy
+            pip install --no-cache-dir moviepy==1.0.3 2> moviepy_install.log || {
+              echo "❌ MoviePy reinstall failed"
+              cat moviepy_install.log
+              exit 1
+            }
+            python -c "import moviepy; print('MoviePy version:', moviepy.__version__)" || {
+              echo "❌ MoviePy verification failed after reinstall"
+              exit 1
+            }
+          }
+          echo "✅ MoviePy ready (version: $(python -c 'import moviepy; print(moviepy.__version__)'))"
           python -c "import nltk; print('NLTK version:', nltk.__version__)" || {
             echo "❌ NLTK not installed correctly, attempting reinstall..."
             pip uninstall -y nltk
@@ -212,6 +226,11 @@ jobs:
           pip install --no-cache-dir manim==0.18.1 2> manim_install.log || {
             echo "❌ Manim installation failed"
             cat manim_install.log
+            exit 1
+          }
+          pip install --no-cache-dir moviepy==1.0.3 2> moviepy_install.log || {
+            echo "❌ MoviePy installation failed"
+            cat moviepy_install.log
             exit 1
           }
           pip install --no-cache-dir nltk==3.9.1 2> nltk_install.log || {
@@ -415,8 +434,7 @@ jobs:
                   subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'],
                               capture_output=True, check=False)
                   subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                                '--no-deps', 'moviepy>=1.0.3'],
-                              capture_output=True, check=True)
+                                'moviepy==1.0.3'], capture_output=True, check=True)
                   for mod in list(sys.modules.keys()):
                       if 'moviepy' in mod:
                           del sys.modules[mod]
@@ -428,7 +446,7 @@ jobs:
                   try:
                       print('🔧 MoviePy Strategy 3: Different version...')
                       subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                                    '--force-reinstall', 'moviepy>=1.0.3'],
+                                    '--force-reinstall', 'moviepy==1.0.3'],
                                   capture_output=True, check=True)
                       for mod in list(sys.modules.keys()):
                           if 'moviepy' in mod:
@@ -713,7 +731,7 @@ jobs:
           except Exception as e:
               print(f'🔧 Final MoviePy fix attempt... Error: {e}')
               subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'moviepy'], check=False)
-              subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'moviepy>=1.0.3'], check=False)
+              subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', 'moviepy==1.0.3'], check=False)
               try:
                   import moviepy.editor
                   print('✅ MoviePy installed successfully')

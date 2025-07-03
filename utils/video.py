@@ -108,13 +108,31 @@ def create_caption_clip(text, duration):
             self.add(caption)
             self.wait(duration)
     
-    config.output_file = "temp_caption.mp4"
-    config.transparent = True
-    config.resolution = (1080, 1920)
-    scene = CaptionScene()
-    scene.render()
-    
-    return mpe.VideoFileClip("temp_caption.mp4").set_duration(duration).set_position(('center', 'bottom'))
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_file = f"output/temp_caption_{timestamp}.mp4"
+    try:
+        config.output_file = output_file
+        config.transparent = False  # Disable transparency to avoid serialization issues
+        config.resolution = (1080, 1920)
+        config.quality = "medium_quality"  # Reduce rendering complexity
+        scene = CaptionScene()
+        scene.render()
+        logger.info(f"✅ Caption clip created: {output_file}")
+        return mpe.VideoFileClip(output_file).set_duration(duration).set_position(('center', 'bottom'))
+    except Exception as e:
+        logger.warning(f"⚠️ Manim caption generation failed: {str(e)}")
+        # Fallback to MoviePy TextClip
+        logger.info("Falling back to MoviePy TextClip for caption")
+        return mpe.TextClip(
+            text,
+            fontsize=60,
+            color='white',
+            stroke_color='black',
+            stroke_width=1,
+            size=(1000, None),
+            method='caption',
+            align='center'
+        ).set_duration(duration).set_position(('center', 'bottom')).fadein(0.3).fadeout(0.3)
 
 def create_video(audio_path: str, thumbnail_path: list, output_dir: str, script_text: str, max_retries: int = 5) -> str:
     """
@@ -234,17 +252,30 @@ def create_video(audio_path: str, thumbnail_path: list, output_dir: str, script_
             current_time += word_duration
         
         try:
-            subtitle_clips = [create_caption_clip(word, duration) for (start, end), word in subtitles]
-            subtitle_clip = mpe.concatenate_videoclips(subtitle_clips, method="compose")
-            video = mpe.CompositeVideoClip([video, subtitle_clip.set_duration(target_duration)])
+            subtitle_clips = []
+            for (start, end), word in subtitles:
+                caption_clip = create_caption_clip(word, end - start)
+                caption_clip = caption_clip.set_start(start)
+                subtitle_clips.append(caption_clip)
+            video = mpe.CompositeVideoClip([video] + subtitle_clips)
         except Exception as e:
-            logger.warning(f"⚠️ Manim caption generation failed: {str(e)}")
-            # Fallback to MoviePy subtitles
-            subtitle_clip = mpe.SubtitlesClip(subtitles, lambda txt: mpe.TextClip(
-                txt, fontsize=60, color='white', stroke_color='black', stroke_width=1,
-                size=(1000, None), method='caption', align='center'
-            ).set_position(('center', 'bottom')).set_duration(word_duration).fadein(0.3).fadeout(0.3))
-            video = mpe.CompositeVideoClip([video, subtitle_clip.set_duration(target_duration)])
+            logger.warning(f"⚠️ Caption compositing failed: {str(e)}")
+            # Fallback to MoviePy TextClip
+            logger.info("Falling back to MoviePy TextClip for subtitles")
+            subtitle_clips = [
+                mpe.TextClip(
+                    word,
+                    fontsize=60,
+                    color='white',
+                    stroke_color='black',
+                    stroke_width=1,
+                    size=(1000, None),
+                    method='caption',
+                    align='center'
+                ).set_position(('center', 'bottom')).set_start(start).set_duration(end - start).fadein(0.3).fadeout(0.3)
+                for (start, end), word in subtitles
+            ]
+            video = mpe.CompositeVideoClip([video] + subtitle_clips)
         
         # Generate output path
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -266,8 +297,10 @@ def create_video(audio_path: str, thumbnail_path: list, output_dir: str, script_
         # Clean up resources
         audio.close()
         video.close()
-        if os.path.exists("temp_caption.mp4"):
-            os.remove("temp_caption.mp4")
+        for clip in subtitle_clips:
+            clip.close()
+        if os.path.exists(output_file):
+            os.remove(output_file)
         logger.info(f"✅ Video created successfully: {output_path}")
         return output_path
     
@@ -281,7 +314,7 @@ def cleanup():
     """
     try:
         logger.info("🧹 Cleaning up temporary files...")
-        temp_files = [f for f in os.listdir() if f.startswith('temp-') or f.endswith('.m4a') or f == 'temp_caption.mp4']
+        temp_files = [f for f in os.listdir() if f.startswith('temp-') or f.endswith('.m4a') or f.startswith('temp_caption')]
         for file in temp_files:
             try:
                 os.remove(file)
