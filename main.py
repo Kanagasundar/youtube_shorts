@@ -5,8 +5,10 @@ Generates and uploads daily YouTube Shorts content with improved error handling,
 logging, configuration management, and cleanup features. Supports overlays, transitions,
 captions, 9:16 cropping, OpenCV/Manim integration, and keyword-based Pexels queries.
 
-Version: 1.2.1
+Version: 1.2.2
 Update Notes:
+- Fixed typo in moviepy dependency check (VideoTipClip -> VideoFileClip).
+- Retained robust OpenCV check with import cv2.
 - Added detailed debugging for OpenCV import failures in check_dependencies.
 - Enhanced logging for OpenCV, Manim, and NLTK to diagnose installation issues.
 - Integrated enhanced video creation with overlays (text, stickers, logos), transitions (fade, zoom, slide),
@@ -133,7 +135,7 @@ def check_dependencies() -> bool:
         'gtts': ('from gtts import gTTS', 'gTTS'),
         'pydub': ('from pydub import AudioSegment', 'AudioSegment'),
         'Pillow': ('from PIL import Image', 'Image'),
-        'moviepy': ('from moviepy.editor import VideoTipClip', 'VideoFileClip'),
+        'moviepy': ('from moviepy.editor import VideoFileClip', 'VideoFileClip'),
         'numpy': ('import numpy', 'numpy'),
         'google-auth': ('import google.auth', 'google.auth'),
         'google-auth-oauthlib': ('import google_auth_oauthlib', 'google_auth_oauthlib'),
