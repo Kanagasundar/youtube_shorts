@@ -100,26 +100,26 @@ jobs:
           # Configure ImageMagick policy
           POLICY_FILE="/etc/ImageMagick-6/policy.xml"
           sudo bash -c "cat > $POLICY_FILE << EOF
-<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE policymap [
-  <!ELEMENT policymap (policy)+>
-  <!ELEMENT policy EMPTY>
-  <!ATTLIST policy domain CDATA #REQUIRED>
-  <!ATTLIST policy name CDATA #IMPLIED>
-  <!ATTLIST policy pattern CDATA #IMPLIED>
-  <!ATTLIST policy rights CDATA #IMPLIED>
-  <!ATTLIST policy value CDATA #IMPLIED>
-]>
-<policymap>
-  <policy domain=\"path\" rights=\"read|write\" pattern=\"@*\"/>
-  <policy domain=\"coder\" rights=\"read|write\" pattern=\"*\"/>
-  <policy domain=\"delegate\" rights=\"read|write\" pattern=\"*\"/>
-  <policy domain=\"filter\" rights=\"read|write\" pattern=\"*\"/>
-  <policy domain=\"system\" name=\"memory\" value=\"512MiB\"/>
-  <policy domain=\"system\" name=\"disk\" value=\"1GiB\"/>
-  <policy domain=\"system\" name=\"thread\" value=\"2\"/>
-</policymap>
-EOF"
+          <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+          <!DOCTYPE policymap [
+            <!ELEMENT policymap (policy)+>
+            <!ELEMENT policy EMPTY>
+            <!ATTLIST policy domain CDATA #REQUIRED>
+            <!ATTLIST policy name CDATA #IMPLIED>
+            <!ATTLIST policy pattern CDATA #IMPLIED>
+            <!ATTLIST policy rights CDATA #IMPLIED>
+            <!ATTLIST policy value CDATA #IMPLIED>
+          ]>
+          <policymap>
+            <policy domain=\"path\" rights=\"read|write\" pattern=\"@*\"/>
+            <policy domain=\"coder\" rights=\"read|write\" pattern=\"*\"/>
+            <policy domain=\"delegate\" rights=\"read|write\" pattern=\"*\"/>
+            <policy domain=\"filter\" rights=\"read|write\" pattern=\"*\"/>
+            <policy domain=\"system\" name=\"memory\" value=\"512MiB\"/>
+            <policy domain=\"system\" name=\"disk\" value=\"1GiB\"/>
+            <policy domain=\"system\" name=\"thread\" value=\"2\"/>
+          </policymap>
+          EOF"
           sudo chmod 644 "$POLICY_FILE"
           echo "✅ ImageMagick policy configured at $POLICY_FILE"
           echo "🔍 ImageMagick policy file contents:"
@@ -641,13 +641,13 @@ EOF"
             echo "⚠️ REPLICATE_API_KEY is not set - Llama fallback will be disabled"
           fi
           cat > .env << EOF
-OPENAI_API_KEY=$OPENAI_API_KEY
-PEXELS_API_KEY=$PEXELS_API_KEY
-REPLICATE_API_KEY=$REPLICATE_API_KEY
-VIDEO_PRIVACY=$VIDEO_PRIVACY
-VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID
-UPLOAD_TO_YOUTUBE=true
-EOF
+          OPENAI_API_KEY=$OPENAI_API_KEY
+          PEXELS_API_KEY=$PEXELS_API_KEY
+          REPLICATE_API_KEY=$REPLICATE_API_KEY
+          VIDEO_PRIVACY=$VIDEO_PRIVACY
+          VIDEO_CATEGORY_ID=$VIDEO_CATEGORY_ID
+          UPLOAD_TO_YOUTUBE=true
+          EOF
           if [ -n "$DISCORD_WEBHOOK_URL" ]; then
             echo "DISCORD_WEBHOOK_URL=$DISCORD_WEBHOOK_URL" >> .env
             echo "DISCORD_NOTIFICATIONS_ENABLED=true" >> $GITHUB_ENV
