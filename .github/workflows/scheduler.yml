@@ -113,8 +113,22 @@ jobs:
           
           # Verify font availability
           echo "🔍 Available fonts:"
-          fc-list | grep -i "DejaVu Sans" || echo "⚠️ DejaVu Sans not found"
-          fc-list | grep -i "FreeSans" || echo "⚠️ FreeSans not found"
+          fc-list | grep -i "FreeSans\|LiberationSans\|DejaVu" || echo "⚠️ No FreeSans, LiberationSans, or DejaVu fonts found"
+          if fc-list | grep -qi "FreeSans"; then
+            echo "✅ FreeSans font found"
+          else
+            echo "⚠️ FreeSans font not found"
+          fi
+          if fc-list | grep -qi "LiberationSans"; then
+            echo "✅ LiberationSans font found"
+          else
+            echo "⚠️ LiberationSans font not found"
+          fi
+          if fc-list | grep -qi "DejaVu"; then
+            echo "✅ DejaVu Sans font found"
+          else
+            echo "⚠️ DejaVu Sans font not found"
+          fi
           
           # Configure ImageMagick policy
           POLICY_FILE="/etc/ImageMagick-6/policy.xml"
@@ -144,6 +158,7 @@ jobs:
             
             <!-- Allow font access -->
             <policy domain="path" rights="read|write" pattern="/usr/share/fonts/*" />
+            <policy domain="path" rights="read|write" pattern="/usr/local/share/fonts/*" />
             
             <!-- System resource limits -->
             <policy domain="system" name="memory" value="512MiB" />
@@ -151,7 +166,7 @@ jobs:
             <policy domain="system" name="thread" value="2" />
             <policy domain="system" name="time" value="120" />
             
-            <!-- Security policies - be more restrictive -->
+            <!-- Security policies -->
             <policy domain="path" rights="none" pattern="/etc/*" />
             <policy domain="path" rights="none" pattern="/usr/bin/*" />
             <policy domain="path" rights="none" pattern="/usr/local/bin/*" />
@@ -180,32 +195,32 @@ jobs:
           echo "🔍 Testing ImageMagick with @ syntax..."
           echo "Test Label" > test_label.txt
           
-          # Test basic label creation with DejaVu Sans
-          if convert -size 200x50 xc:white -font DejaVu-Sans -pointsize 16 -fill black -gravity center -annotate +0+0 "Test" test_basic.png; then
-            echo "✅ Basic ImageMagick text rendering with DejaVu Sans works"
+          # Test basic label creation with FreeSans
+          if convert -size 200x50 xc:white -font FreeSans -pointsize 16 -fill black -gravity center -annotate +0+0 "Test" test_basic.png; then
+            echo "✅ Basic ImageMagick text rendering with FreeSans works"
           else
-            echo "⚠️ Basic ImageMagick text rendering with DejaVu Sans failed, trying FreeSans..."
-            if convert -size 200x50 xc:white -font FreeSans -pointsize 16 -fill black -gravity center -annotate +0+0 "Test" test_basic.png; then
-              echo "✅ Basic ImageMagick text rendering with FreeSans works"
+            echo "⚠️ Basic ImageMagick text rendering with FreeSans failed, trying LiberationSans..."
+            if convert -size 200x50 xc:white -font LiberationSans -pointsize 16 -fill black -gravity center -annotate +0+0 "Test" test_basic.png; then
+              echo "✅ Basic ImageMagick text rendering with LiberationSans works"
             else
-              echo "❌ Basic ImageMagick text rendering failed for both DejaVu Sans and FreeSans"
+              echo "❌ Basic ImageMagick text rendering failed for both FreeSans and LiberationSans"
               exit 1
             fi
           fi
           
           # Test @ syntax
-          if convert -size 200x50 xc:white -font DejaVu-Sans -pointsize 16 -fill black -gravity center -annotate +0+0 @test_label.txt test_at_syntax.png 2> imagemagick_test_error.log; then
-            echo "✅ ImageMagick @ syntax test with DejaVu Sans passed"
+          if convert -size 200x50 xc:white -font FreeSans -pointsize 16 -fill black -gravity center -annotate +0+0 @test_label.txt test_at_syntax.png 2> imagemagick_test_error.log; then
+            echo "✅ ImageMagick @ syntax test with FreeSans passed"
           else
-            echo "⚠️ ImageMagick @ syntax test with DejaVu Sans failed, trying FreeSans..."
-            if convert -size 200x50 xc:white -font FreeSans -pointsize 16 -fill black -gravity center -annotate +0+0 @test_label.txt test_at_syntax.png 2> imagemagick_test_error.log; then
-              echo "✅ ImageMagick @ syntax test with FreeSans passed"
+            echo "⚠️ ImageMagick @ syntax test with FreeSans failed, trying LiberationSans..."
+            if convert -size 200x50 xc:white -font LiberationSans -pointsize 16 -fill black -gravity center -annotate +0+0 @test_label.txt test_at_syntax.png 2> imagemagick_test_error.log; then
+              echo "✅ ImageMagick @ syntax test with LiberationSans passed"
             else
-              echo "❌ ImageMagick @ syntax test failed for both DejaVu Sans and FreeSans"
+              echo "❌ ImageMagick @ syntax test failed for both FreeSans and LiberationSans"
               echo "🔍 Error output:"
               cat imagemagick_test_error.log
               echo "🔍 Available fonts:"
-              convert -list font | grep -i "dejavu\|freesans" || echo "No DejaVu or FreeSans fonts found"
+              convert -list font | grep -i "freesans\|liberationsans\|dejavu" || echo "No FreeSans, LiberationSans, or DejaVu fonts found"
               exit 1
             fi
           fi
@@ -234,20 +249,6 @@ jobs:
             }
           }
           echo "✅ OpenCV installed successfully (version: $(python -c 'import cv2; print(cv2.__version__)'))"
-          python -c "import manim; print('Manim version:', manim.__version__)" || {
-            echo "❌ Manim not installed correctly, attempting reinstall..."
-            pip uninstall -y manim
-            pip install --no-cache-dir manim==0.18.1 2> manim_install.log || {
-              echo "❌ Manim reinstall failed"
-              cat manim_install.log
-              exit 1
-            }
-            python -c "import manim; print('Manim version:', manim.__version__)" || {
-              echo "❌ Manim verification failed after reinstall"
-              exit 1
-            }
-          }
-          echo "✅ Manim ready (version: $(python -c 'import manim; print(manim.__version__)'))"
           python -c "import moviepy; print('MoviePy version:', moviepy.__version__)" || {
             echo "❌ MoviePy not installed correctly, attempting reinstall..."
             pip uninstall -y moviepy
@@ -296,11 +297,6 @@ jobs:
           pip install --no-cache-dir opencv-python==4.10.0.84 numpy==1.26.4 2> opencv_install.log || {
             echo "❌ OpenCV installation failed"
             cat opencv_install.log
-            exit 1
-          }
-          pip install --no-cache-dir manim==0.18.1 2> manim_install.log || {
-            echo "❌ Manim installation failed"
-            cat manim_install.log
             exit 1
           }
           pip install --no-cache-dir moviepy==1.0.3 2> moviepy_install.log || {
@@ -458,10 +454,6 @@ jobs:
                       modules_to_clear = [mod for mod in sys.modules.keys() if 'cv2' in mod or 'opencv' in mod]
                       for mod in modules_to_clear:
                           del sys.modules[mod]
-                  elif module_name == 'manim':
-                      modules_to_clear = [mod for mod in sys.modules.keys() if 'manim' in mod]
-                      for mod in modules_to_clear:
-                          del sys.modules[mod]
                   elif module_name == 'nltk':
                       modules_to_clear = [mod for mod in sys.modules.keys() if 'nltk' in mod]
                       for mod in modules_to_clear:
@@ -502,7 +494,6 @@ jobs:
           test_import_advanced('requests', 'import requests')
           test_import_advanced('replicate', 'import replicate')
           test_import_advanced('cv2', 'import cv2', 'OpenCV')
-          test_import_advanced('manim', 'from manim import *')
           test_import_advanced('nltk', 'import nltk')
           
           print('\n🎬 Testing MoviePy with fallback strategies...')
@@ -649,30 +640,6 @@ jobs:
                   print(f'❌ OpenCV Strategy 2 failed: {e2}')
           test_results.append(('OpenCV', opencv_success, 'OK' if opencv_success else 'Failed'))
           
-          print('\n🔍 Testing Manim with fallback strategies...')
-          manim_success = False
-          try:
-              import manim
-              print(f'✅ Manim Strategy 1 (direct): Success (version: {manim.__version__})')
-              manim_success = True
-          except Exception as e:
-              print(f'❌ Manim Strategy 1 failed: {e}')
-              try:
-                  print('🔧 Manim Strategy 2: Reinstalling...')
-                  subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'manim'],
-                              capture_output=True, check=False)
-                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                                'manim==0.18.1'], capture_output=True, check=True)
-                  for mod in list(sys.modules.keys()):
-                      if 'manim' in mod:
-                          del sys.modules[mod]
-                  import manim
-                  print(f'✅ Manim Strategy 2 (reinstall): Success (version: {manim.__version__})')
-                  manim_success = True
-              except Exception as e2:
-                  print(f'❌ Manim Strategy 2 failed: {e2}')
-          test_results.append(('Manim', manim_success, 'OK' if manim_success else 'Failed'))
-          
           print('\n🔍 Testing NLTK with fallback strategies...')
           nltk_success = False
           try:
@@ -713,6 +680,7 @@ jobs:
           else:
               print(f'⚠️  {total_imports - successful_imports} packages failed to import.')
           "
+
       - name: Clear Python module cache before automation
         run: |
           echo "🧹 Clearing Python module cache before automation..."
@@ -830,7 +798,7 @@ jobs:
               except Exception as e2:
                   print(f'❌ MoviePy installation failed: {e2}')
           for mod in list(sys.modules.keys()):
-              if mod.startswith('google'):
+              if 'google' in mod:
                   del sys.modules[mod]
           try:
               import google.auth
@@ -900,22 +868,6 @@ jobs:
                       print(f'❌ OpenCV installation failed: Missing critical attributes')
               except Exception as e2:
                   print(f'❌ OpenCV installation failed: {e2}')
-          for mod in list(sys.modules.keys()):
-              if 'manim' in mod:
-                  del sys.modules[mod]
-          try:
-              import manim
-              print(f'✅ Manim ready (version: {manim.__version__})')
-          except Exception as e:
-              print(f'🔧 Final Manim fix attempt... Error: {e}')
-              subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'manim'], check=False)
-              subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                            'manim==0.18.1'], check=False)
-              try:
-                  import manim
-                  print(f'✅ Manim installed successfully (version: {manim.__version__})')
-              except Exception as e2:
-                  print(f'❌ Manim installation failed: {e2}')
           for mod in list(sys.modules.keys()):
               if 'nltk' in mod:
                   del sys.modules[mod]
