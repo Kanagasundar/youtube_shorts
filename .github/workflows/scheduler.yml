@@ -88,7 +88,7 @@ jobs:
             libffi-dev libssl-dev libxml2-dev libxslt-dev \
             libasound2-dev portaudio19-dev \
             libcairo2-dev libpango1.0-dev \
-            jq xmllint
+            jq libxml2-utils
           end_time=$(date +%s)
           duration=$((end_time - start_time))
           echo "✅ System dependencies installed in $duration seconds"
@@ -149,51 +149,51 @@ jobs:
             <policy domain="path" rights="none" pattern="/sbin/*" />
           </policymap>
           EOF
-          
-          # Set proper permissions
-          sudo chmod 644 "$POLICY_FILE"
-          sudo chown root:root "$POLICY_FILE"
-          
-          echo "✅ ImageMagick policy configured at $POLICY_FILE"
-          echo "🔍 ImageMagick policy file contents:"
-          cat "$POLICY_FILE"
-          
-          # Verify policy file is valid XML
-          if ! xmllint --noout "$POLICY_FILE" 2>/dev/null; then
-            echo "❌ ImageMagick policy XML is invalid"
-            cat "$POLICY_FILE"
-            exit 1
-          fi
-          echo "✅ ImageMagick policy XML is valid"
-          
-          # Test ImageMagick with @ syntax
-          echo "🔍 Testing ImageMagick with @ syntax..."
-          echo "Test Label" > test_label.txt
-          
-          # Test basic label creation
-          if convert -size 200x50 xc:white -font DejaVu-Sans -pointsize 16 -fill black -gravity center -annotate +0+0 "Test" test_basic.png; then
-            echo "✅ Basic ImageMagick text rendering works"
-          else
-            echo "❌ Basic ImageMagick text rendering failed"
-            exit 1
-          fi
-          
-          # Test @ syntax
-          if convert -size 200x50 xc:white -font DejaVu-Sans -pointsize 16 -fill black -gravity center -annotate +0+0 @test_label.txt test_at_syntax.png 2> imagemagick_test_error.log; then
-            echo "✅ ImageMagick @ syntax test passed"
-          else
-            echo "❌ ImageMagick @ syntax test failed"
-            echo "🔍 Error output:"
-            cat imagemagick_test_error.log
-            echo "🔍 Available fonts:"
-            convert -list font | grep -i dejavu || echo "DejaVu fonts not found"
-            exit 1
-          fi
-          
-          # Clean up test files
-          rm -f test_label.txt test_basic.png test_at_syntax.png imagemagick_test_error.log
-          
-          echo "✅ All ImageMagick tests passed"
+              
+              # Set proper permissions
+              sudo chmod 644 "$POLICY_FILE"
+              sudo chown root:root "$POLICY_FILE"
+              
+              echo "✅ ImageMagick policy configured at $POLICY_FILE"
+              echo "🔍 ImageMagick policy file contents:"
+              cat "$POLICY_FILE"
+              
+              # Verify policy file is valid XML
+              if ! xmllint --noout "$POLICY_FILE" 2>/dev/null; then
+                echo "❌ ImageMagick policy XML is invalid"
+                cat "$POLICY_FILE"
+                exit 1
+              fi
+              echo "✅ ImageMagick policy XML is valid"
+              
+              # Test ImageMagick with @ syntax
+              echo "🔍 Testing ImageMagick with @ syntax..."
+              echo "Test Label" > test_label.txt
+              
+              # Test basic label creation
+              if convert -size 200x50 xc:white -font DejaVu-Sans -pointsize 16 -fill black -gravity center -annotate +0+0 "Test" test_basic.png; then
+                echo "✅ Basic ImageMagick text rendering works"
+              else
+                echo "❌ Basic ImageMagick text rendering failed"
+                exit 1
+              fi
+              
+              # Test @ syntax
+              if convert -size 200x50 xc:white -font DejaVu-Sans -pointsize 16 -fill black -gravity center -annotate +0+0 @test_label.txt test_at_syntax.png 2> imagemagick_test_error.log; then
+                echo "✅ ImageMagick @ syntax test passed"
+              else
+                echo "❌ ImageMagick @ syntax test failed"
+                echo "🔍 Error output:"
+                cat imagemagick_test_error.log
+                echo "🔍 Available fonts:"
+                convert -list font | grep -i dejavu || echo "DejaVu fonts not found"
+                exit 1
+              fi
+              
+              # Clean up test files
+              rm -f test_label.txt test_basic.png test_at_syntax.png imagemagick_test_error.log
+              
+              echo "✅ All ImageMagick tests passed"
 
       - name: Verify system dependencies
         run: |
