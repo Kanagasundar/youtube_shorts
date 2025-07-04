@@ -89,6 +89,8 @@ jobs:
             libasound2-dev portaudio19-dev \
             libcairo2-dev libpango1.0-dev \
             jq libxml2-utils
+          # Refresh font cache
+          sudo fc-cache -fv
           end_time=$(date +%s)
           duration=$((end_time - start_time))
           echo "✅ System dependencies installed in $duration seconds"
@@ -108,6 +110,11 @@ jobs:
           fi
           echo "🔍 FFmpeg version:"
           ffmpeg -version
+          
+          # Verify font availability
+          echo "🔍 Available fonts:"
+          fc-list | grep -i "DejaVu Sans" || echo "⚠️ DejaVu Sans not found"
+          fc-list | grep -i "FreeSans" || echo "⚠️ FreeSans not found"
           
           # Configure ImageMagick policy
           POLICY_FILE="/etc/ImageMagick-6/policy.xml"
@@ -135,6 +142,9 @@ jobs:
             <!-- Allow filters -->
             <policy domain="filter" rights="read|write" pattern="*" />
             
+            <!-- Allow font access -->
+            <policy domain="path" rights="read|write" pattern="/usr/share/fonts/*" />
+            
             <!-- System resource limits -->
             <policy domain="system" name="memory" value="512MiB" />
             <policy domain="system" name="disk" value="1GiB" />
@@ -149,51 +159,61 @@ jobs:
             <policy domain="path" rights="none" pattern="/sbin/*" />
           </policymap>
           EOF
-              
-              # Set proper permissions
-              sudo chmod 644 "$POLICY_FILE"
-              sudo chown root:root "$POLICY_FILE"
-              
-              echo "✅ ImageMagick policy configured at $POLICY_FILE"
-              echo "🔍 ImageMagick policy file contents:"
-              cat "$POLICY_FILE"
-              
-              # Verify policy file is valid XML
-              if ! xmllint --noout "$POLICY_FILE" 2>/dev/null; then
-                echo "❌ ImageMagick policy XML is invalid"
-                cat "$POLICY_FILE"
-                exit 1
-              fi
-              echo "✅ ImageMagick policy XML is valid"
-              
-              # Test ImageMagick with @ syntax
-              echo "🔍 Testing ImageMagick with @ syntax..."
-              echo "Test Label" > test_label.txt
-              
-              # Test basic label creation
-              if convert -size 200x50 xc:white -font DejaVu-Sans -pointsize 16 -fill black -gravity center -annotate +0+0 "Test" test_basic.png; then
-                echo "✅ Basic ImageMagick text rendering works"
-              else
-                echo "❌ Basic ImageMagick text rendering failed"
-                exit 1
-              fi
-              
-              # Test @ syntax
-              if convert -size 200x50 xc:white -font DejaVu-Sans -pointsize 16 -fill black -gravity center -annotate +0+0 @test_label.txt test_at_syntax.png 2> imagemagick_test_error.log; then
-                echo "✅ ImageMagick @ syntax test passed"
-              else
-                echo "❌ ImageMagick @ syntax test failed"
-                echo "🔍 Error output:"
-                cat imagemagick_test_error.log
-                echo "🔍 Available fonts:"
-                convert -list font | grep -i dejavu || echo "DejaVu fonts not found"
-                exit 1
-              fi
-              
-              # Clean up test files
-              rm -f test_label.txt test_basic.png test_at_syntax.png imagemagick_test_error.log
-              
-              echo "✅ All ImageMagick tests passed"
+          
+          # Set proper permissions
+          sudo chmod 644 "$POLICY_FILE"
+          sudo chown root:root "$POLICY_FILE"
+          
+          echo "✅ ImageMagick policy configured at $POLICY_FILE"
+          echo "🔍 ImageMagick policy file contents:"
+          cat "$POLICY_FILE"
+          
+          # Verify policy file is valid XML
+          if ! xmllint --noout "$POLICY_FILE" 2>/dev/null; then
+            echo "❌ ImageMagick policy XML is invalid"
+            cat "$POLICY_FILE"
+            exit 1
+          fi
+          echo "✅ ImageMagick policy XML is valid"
+          
+          # Test ImageMagick with @ syntax
+          echo "🔍 Testing ImageMagick with @ syntax..."
+          echo "Test Label" > test_label.txt
+          
+          # Test basic label creation with DejaVu Sans
+          if convert -size 200x50 xc:white -font DejaVu-Sans -pointsize 16 -fill black -gravity center -annotate +0+0 "Test" test_basic.png; then
+            echo "✅ Basic ImageMagick text rendering with DejaVu Sans works"
+          else
+            echo "⚠️ Basic ImageMagick text rendering with DejaVu Sans failed, trying FreeSans..."
+            if convert -size 200x50 xc:white -font FreeSans -pointsize 16 -fill black -gravity center -annotate +0+0 "Test" test_basic.png; then
+              echo "✅ Basic ImageMagick text rendering with FreeSans works"
+            else
+              echo "❌ Basic ImageMagick text rendering failed for both DejaVu Sans and FreeSans"
+              exit 1
+            fi
+          fi
+          
+          # Test @ syntax
+          if convert -size 200x50 xc:white -font DejaVu-Sans -pointsize 16 -fill black -gravity center -annotate +0+0 @test_label.txt test_at_syntax.png 2> imagemagick_test_error.log; then
+            echo "✅ ImageMagick @ syntax test with DejaVu Sans passed"
+          else
+            echo "⚠️ ImageMagick @ syntax test with DejaVu Sans failed, trying FreeSans..."
+            if convert -size 200x50 xc:white -font FreeSans -pointsize 16 -fill black -gravity center -annotate +0+0 @test_label.txt test_at_syntax.png 2> imagemagick_test_error.log; then
+              echo "✅ ImageMagick @ syntax test with FreeSans passed"
+            else
+              echo "❌ ImageMagick @ syntax test failed for both DejaVu Sans and FreeSans"
+              echo "🔍 Error output:"
+              cat imagemagick_test_error.log
+              echo "🔍 Available fonts:"
+              convert -list font | grep -i "dejavu\|freesans" || echo "No DejaVu or FreeSans fonts found"
+              exit 1
+            fi
+          fi
+          
+          # Clean up test files
+          rm -f test_label.txt test_basic.png test_at_syntax.png imagemagick_test_error.log
+          
+          echo "✅ All ImageMagick tests passed"
 
       - name: Verify system dependencies
         run: |
@@ -203,7 +223,7 @@ jobs:
           python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
             echo "❌ OpenCV not installed correctly, attempting reinstall..."
             pip uninstall -y opencv-python numpy
-            pip install --no-cache-dir opencv-python==4.9.0.80 numpy==1.26.4 2> opencv_install.log || {
+            pip install --no-cache-dir opencv-python==4.9.0.80 numpy==1.24.4 2> opencv_install.log || {
               echo "❌ OpenCV reinstall failed"
               cat opencv_install.log
               exit 1
@@ -273,7 +293,7 @@ jobs:
             cat pip_install.log
             exit 1
           }
-          pip install --no-cache-dir opencv-python==4.9.0.80 numpy==1.26.4 2> opencv_install.log || {
+          pip install --no-cache-dir opencv-python==4.9.0.80 numpy==1.24.4 2> opencv_install.log || {
             echo "❌ OpenCV installation failed"
             cat opencv_install.log
             exit 1
@@ -615,7 +635,7 @@ jobs:
                   subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'],
                               capture_output=True, check=False)
                   subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                                'opencv-python==4.9.0.80', 'numpy==1.26.4'], capture_output=True, check=True)
+                                'opencv-python==4.9.0.80', 'numpy==1.24.4'], capture_output=True, check=True)
                   for mod in list(sys.modules.keys()):
                       if 'cv2' in mod or 'opencv' in mod:
                           del sys.modules[mod]
@@ -871,7 +891,7 @@ jobs:
               print(f'🔧 Final OpenCV fix attempt... Error: {e}')
               subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'], check=False)
               subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                            'opencv-python==4.9.0.80', 'numpy==1.26.4'], check=False)
+                            'opencv-python==4.9.0.80', 'numpy==1.24.4'], check=False)
               try:
                   import cv2
                   if hasattr(cv2, 'imread') and hasattr(cv2, 'cvtColor'):
