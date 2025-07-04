@@ -9,6 +9,7 @@ from datetime import datetime
 from pydub import AudioSegment
 import tempfile
 import logging
+import subprocess
 
 # Add Mozilla TTS import
 try:
@@ -157,8 +158,23 @@ def generate_voice_fallback(script, output_dir):
         audio = AudioSegment.from_wav(audio_path)
         if len(audio) == 0:
             raise ValueError("espeak generated zero-duration audio")
-        logger.info(f"✅ Fallback voice generated: {audio_path}")
-        return audio_path
+
+        # Convert WAV to MP3 with explicit ffmpeg processing to ensure compatibility
+        mp3_path = audio_path.replace('.wav', '.mp3')
+        ffmpeg_cmd = [
+            'ffmpeg',
+            '-i', audio_path,
+            '-acodec', 'mp3',
+            '-ab', '128k',
+            '-ar', '22050',
+            '-ac', '1',
+            mp3_path,
+            '-y'  # Overwrite output file if it exists
+        ]
+        subprocess.run(ffmpeg_cmd, capture_output=True, text=True, check=True)
+        os.unlink(audio_path)  # Remove original WAV
+        logger.info(f"✅ Fallback voice generated and converted: {mp3_path}")
+        return mp3_path
             
     except Exception as e:
         logger.error(f"❌ System TTS failed: {e}")
