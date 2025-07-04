@@ -8,7 +8,7 @@ from moviepy.config import change_settings
 from PIL import Image
 from manim import *
 import random
-from datetime import datetime  # Added import to fix NameError
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(
@@ -104,7 +104,7 @@ def create_caption_clip(text, duration):
     """
     class CaptionScene(Scene):
         def construct(self):
-            caption = Text(text, font="Arial", font_size=40, color=WHITE)
+            caption = Text(text, font="Liberation Sans", font_size=40, color=WHITE)
             caption.move_to(ORIGIN)
             self.add(caption)
             self.wait(duration)
@@ -133,7 +133,7 @@ def create_caption_clip(text, duration):
             size=(1000, None),
             method='caption',
             align='center',
-            font='Arial'  # Use Arial instead of Courier
+            font='Liberation Sans'  # Changed from Arial
         ).set_duration(duration).set_position(('center', 'bottom')).fadein(0.3).fadeout(0.3)
 
 def create_video(audio_path: str, thumbnail_path: list, output_dir: str, script_text: str, max_retries: int = 5) -> str:
@@ -274,7 +274,7 @@ def create_video(audio_path: str, thumbnail_path: list, output_dir: str, script_
                     size=(1000, None),
                     method='caption',
                     align='center',
-                    font='Arial'  # Use Arial instead of Courier
+                    font='Liberation Sans'  # Changed from Arial
                 ).set_position(('center', 'bottom')).set_start(start).set_duration(end - start).fadein(0.3).fadeout(0.3)
                 for (start, end), word in subtitles
             ]
