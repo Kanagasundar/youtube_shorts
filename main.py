@@ -13,6 +13,7 @@ import importlib.util
 import importlib
 from dotenv import load_dotenv
 import subprocess
+from transformers import pipeline
 
 try:
     import psutil  # Optional for system health monitoring
@@ -120,6 +121,7 @@ def check_dependencies() -> bool:
         'opencv-python': ('import cv2', 'cv2'),
         'manim': ('from manim import Scene', 'Scene'),
         'nltk': ('import nltk', 'nltk'),
+        'transformers': ('from transformers import pipeline', 'pipeline')
     }
     
     missing_packages = []
@@ -532,14 +534,19 @@ def generate_content_with_retry(topic: str, category: str) -> Tuple[str, str, li
         script = generate_script(topic, category)
         if not script or len(script.strip()) < 500:
             logger.error(f"❌ Generated script is too short ({len(script.strip()) if script else 0} characters) or empty")
-            script = f"""
-Hook: 🌿 Did you know about {topic.lower()} in the {category} world?
-Body: This {category.lower()} topic is full of surprises! Fact 1: {topic} plays a key role in {category.lower()} ecosystems. 
-Fact 2: Experts discovered its unique ability to {'adapt' if 'Nature' in category else 'evolve'} in extreme conditions. 
-Fact 3: Its impact on {category.lower()} science is groundbreaking! 
-Call to Action: Subscribe for more amazing {category.lower()} facts and videos! 🚀
-"""
-            logger.info(f"✅ Using enhanced fallback script ({len(script)} characters)")
+            # Use Hugging Face Transformers for fallback script generation
+            try:
+                generator = pipeline('text-generation', model='distilgpt2', device=0 if os.getenv('USE_GPU', 'false').lower() == 'true' else -1)
+                prompt = f"Create a vivid, informative narrative script about {topic} in the {category} domain, suitable for a video, with a call to action at the end, in about 500 characters."
+                result = generator(prompt, max_length=300, num_return_sequences=1, temperature=0.7)[0]['generated_text']
+                script = result.strip()
+                if len(script) < 500:
+                    script += f" Dive deeper into the wonders of {category.lower()} with more videos—subscribe now!"
+                logger.info(f"✅ Generated fallback script with LLM ({len(script)} characters)")
+            except Exception as e:
+                logger.error(f"❌ Failed to generate fallback script with LLM: {str(e)}. Using default narrative.")
+                script = f"Explore the captivating world of {topic.lower()} within the {category.lower()} landscape, where stunning visuals reveal its unique traits and innovations. Journey through its dynamic environments, highlighting its adaptability and impact on {category.lower()} advancements. Subscribe for more mesmerizing {category.lower()} content!"
+                logger.info(f"✅ Using default narrative fallback script ({len(script)} characters)")
         else:
             logger.info(f"✅ Generated script validated ({len(script)} characters)")
         return script

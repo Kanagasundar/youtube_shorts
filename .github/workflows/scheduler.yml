@@ -2,7 +2,7 @@ name: YouTube Automation
 
 on:
   schedule:
-    - cron: '0 4 * * *'  # Daily at 4:00 AM UTC
+    - cron: '0 18 * * *'  # Daily at 6:00 PM UTC (11:30 PM IST)
   workflow_dispatch:
     inputs:
       topic_override:
@@ -193,7 +193,6 @@ jobs:
           echo "✅ ImageMagick policy XML is valid"
           
           # Test ImageMagick with @ syntax
-          echo "🔍 Testing ImageMagick with @ syntax..."
           echo "Test Label" > test_label.txt
           
           # Test basic label creation with FreeSans
@@ -318,6 +317,11 @@ jobs:
           pip install --no-cache-dir tts>=0.13.0 2> tts_install.log || {  # Added for Mozilla TTS
             echo "❌ TTS installation failed"
             cat tts_install.log
+            exit 1
+          }
+          pip install --no-cache-dir transformers==4.44.2 torch==2.4.0 2> transformers_install.log || {  # Added for LLM fallback
+            echo "❌ Transformers and Torch installation failed"
+            cat transformers_install.log
             exit 1
           }
           end_time=$(date +%s)
@@ -477,6 +481,10 @@ jobs:
                       modules_to_clear = [mod for mod in sys.modules.keys() if 'TTS' in mod]
                       for mod in modules_to_clear:
                           del sys.modules[mod]
+                  elif module_name == 'transformers':  # Added for LLM fallback
+                      modules_to_clear = [mod for mod in sys.modules.keys() if 'transformers' in mod]
+                      for mod in modules_to_clear:
+                          del sys.modules[mod]
                   
                   exec(import_statement)
                   
@@ -488,6 +496,11 @@ jobs:
                       from TTS.api import TTS
                       if not hasattr(TTS, 'tts_to_file'):
                           raise AttributeError('Mozilla TTS missing critical method (tts_to_file)')
+                  elif module_name == 'transformers':  # Verify transformers import
+                      from transformers import pipeline
+                      generator = pipeline('text-generation', model='distilgpt2')
+                      if not generator:
+                          raise AttributeError('Transformers pipeline initialization failed')
                   
                   print(f'✅ {display_name}: Import successful')
                   test_results.append((display_name, True, 'OK'))
@@ -518,7 +531,8 @@ jobs:
           test_import_advanced('replicate', 'import replicate')
           test_import_advanced('cv2', 'import cv2', 'OpenCV')
           test_import_advanced('nltk', 'import nltk')
-          test_import_advanced('TTS', 'from TTS.api import TTS', 'Mozilla TTS')  # Added TTS verification
+          test_import_advanced('TTS', 'from TTS.api import TTS', 'Mozilla TTS')
+          test_import_advanced('transformers', 'from transformers import pipeline', 'Transformers')  # Added transformers verification
           
           print('\n🎬 Testing MoviePy with fallback strategies...')
           moviepy_success = False
@@ -952,6 +966,24 @@ jobs:
                   print('✅ Mozilla TTS installed successfully')
               except Exception as e2:
                   print(f'❌ Mozilla TTS installation failed: {e2}')
+          for mod in list(sys.modules.keys()):
+              if 'transformers' in mod:  # Added for LLM fallback
+                  del sys.modules[mod]
+          try:
+              from transformers import pipeline
+              generator = pipeline('text-generation', model='distilgpt2')
+              print('✅ Transformers ready')
+          except Exception as e:
+              print(f'🔧 Final Transformers fix attempt... Error: {e}')
+              subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'transformers', 'torch'], check=False)
+              subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                            'transformers==4.44.2', 'torch==2.4.0'], check=False)
+              try:
+                  from transformers import pipeline
+                  generator = pipeline('text-generation', model='distilgpt2')
+                  print('✅ Transformers installed successfully')
+              except Exception as e2:
+                  print(f'❌ Transformers installation failed: {e2}')
           print('🚀 Ready to execute main script')
           EOF
           python -m py_compile logs/pre_execution_script.py || {
