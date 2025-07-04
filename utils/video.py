@@ -81,7 +81,7 @@ def add_overlays(image, text, logo_path=None, sticker_path=None):
             if logo.shape[2] == 4:  # Handle transparency
                 alpha = logo[:, :, 3] / 255.0
                 for c in range(3):
-                    roi[:, :, c] = roi[:, :, c] * (1 - alpha) + logo[:, :, c] * alpha
+                    roi[:, :, c] = (1.0 - alpha) * roi[:, :, c] + alpha * logo[:, :, c]
             else:
                 roi[:] = logo
             img[10:10+logo_h, 10:10+logo_w] = roi
@@ -97,7 +97,7 @@ def add_overlays(image, text, logo_path=None, sticker_path=None):
             if sticker.shape[2] == 4:  # Handle transparency
                 alpha = sticker[:, :, 3] / 255.0
                 for c in range(3):
-                    roi[:, :, c] = roi[:, :, c] * (1 - alpha) + sticker[:, :, c] * alpha
+                    roi[:, :, c] = (1.0 - alpha) * roi[:, :, c] + alpha * sticker[:, :, c]
             else:
                 roi[:] = sticker
             img[10:10+sticker_h, w-sticker_w-10:w-10] = roi
@@ -140,13 +140,13 @@ def create_caption_clip(text, duration):
     logger.error("Failed to create caption with any font")
     raise Exception("Could not create caption: No suitable font found")
 
-def create_video(audio_path: str, thumbnail_path: list, output_dir: str, script_text: str, max_retries: int = 5) -> str:
+def create_video(audio_path: str, image_paths: list, output_dir: str, script_text: str, max_retries: int = 5) -> str:
     """
     Create a YouTube Shorts video with overlays, transitions, captions, and 9:16 aspect ratio.
     
     Args:
         audio_path (str): Path to narration audio
-        thumbnail_path (list): List of image paths
+        image_paths (list): List of image paths
         output_dir (str): Directory to save video
         script_text (str): Script text for captions
         max_retries (int): Maximum retry attempts
@@ -161,8 +161,8 @@ def create_video(audio_path: str, thumbnail_path: list, output_dir: str, script_
             # Validate inputs
             if not os.path.exists(audio_path):
                 raise FileNotFoundError(f"Audio file not found: {audio_path}")
-            if not isinstance(thumbnail_path, list) or not all(os.path.exists(p) for p in thumbnail_path):
-                raise FileNotFoundError(f"Image sequence not found or invalid: {thumbnail_path}")
+            if not isinstance(image_paths, list) or not all(os.path.exists(p) for p in image_paths):
+                raise FileNotFoundError(f"Image sequence not found or invalid: {image_paths}")
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
                 logger.info(f"✅ Created output directory: {output_dir}")
@@ -174,7 +174,6 @@ def create_video(audio_path: str, thumbnail_path: list, output_dir: str, script_
             
             # Ensure video duration is 15-40 seconds
             target_duration = max(15, min(40, audio_duration))
-            image_paths = thumbnail_path
             num_images = len(image_paths)
             
             # Calculate variable image durations (0.5-6s)
@@ -200,7 +199,7 @@ def create_video(audio_path: str, thumbnail_path: list, output_dir: str, script_
             
             for i, (image_path, duration) in enumerate(zip(image_paths, durations)):
                 logger.info(f"🖼️ Processing image {i+1}: {image_path}")
-                # Load and resize to 9:16 (1080x1920)
+                # Load with PIL to preserve RGB
                 img = Image.open(image_path).convert("RGB")
                 img_w, img_h = img.size
                 target_w, target_h = 1080, 1920
@@ -215,20 +214,27 @@ def create_video(audio_path: str, thumbnail_path: list, output_dir: str, script_
                     top = (new_h - target_h) // 2
                     img = img.crop((0, top, target_w, top + target_h))
                 
-                # Convert to NumPy array for OpenCV
+                # Convert to NumPy array without BGR conversion
                 img_np = np.array(img)
-                img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                logger.debug(f"Initial image shape: {img_np.shape}, dtype: {img_np.dtype}")
+                logger.debug(f"Sample pixel (top-left): {img_np[0, 0]}")
+                
+                # Verify color channels
+                if img_np.shape[2] != 3:
+                    raise ValueError(f"Image {image_path} has unexpected channel count: {img_np.shape[2]}")
+                if np.all(img_np[:, :, 2] > img_np[:, :, 0]) and np.all(img_np[:, :, 2] > img_np[:, :, 1]):
+                    logger.warning(f"Potential blue dominance detected in image {image_path}")
                 
                 # Add overlays
                 overlay_text = f"Part {i+1}: {script_text.split('.')[i % len(script_text.split('.'))].strip()}"
                 img_np = add_overlays(img_np, overlay_text, logo_path, sticker_path)
                 
-                # Save debug image
-                debug_path = os.path.join(output_dir, f"debug_frame_{i+1}.png")
-                cv2.imwrite(debug_path, img_np)
-                logger.info(f"🖼️ Saved debug image: {debug_path}")
+                # Save intermediate debug image
+                debug_path = os.path.join(output_dir, f"debug_frame_pre_cv2_{i+1}.png")
+                cv2.imwrite(debug_path, cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))
+                logger.info(f"🖼️ Saved pre-CV2 debug image: {debug_path}")
                 
-                # Convert back to MoviePy clip
+                # Convert to MoviePy clip
                 clip = mpe.ImageClip(img_np).set_duration(duration)
                 
                 # Apply transitions
@@ -303,7 +309,12 @@ def create_video(audio_path: str, thumbnail_path: list, output_dir: str, script_
                 time.sleep(1.0)
             else:
                 logger.error("❌ Max retries reached. Video creation failed.")
-                return False
+                # Save last processed image for debugging
+                if 'img_np' in locals():
+                    debug_path = os.path.join(output_dir, f"debug_last_frame.png")
+                    cv2.imwrite(debug_path, cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))
+                    logger.info(f"🖼️ Saved last processed frame for debugging: {debug_path}")
+                return None
 
 def cleanup():
     """
@@ -322,10 +333,9 @@ def cleanup():
     except Exception as e:
         logger.error(f"❌ Cleanup failed: {str(e)}", exc_info=True)
 
-# Example usage (adjust as needed for your main script)
 if __name__ == "__main__":
     audio_path = "output/narration_20250704_084011.mp3"
-    thumbnail_path = [
+    image_paths = [
         f"output/frame_20250704_084016_1.png",
         f"output/frame_20250704_084022_2.png",
         f"output/frame_20250704_084031_3.png",
@@ -334,4 +344,8 @@ if __name__ == "__main__":
     ]
     output_dir = "output"
     script_text = "AI just solved a 50-year-old problem"
-    create_video(audio_path, thumbnail_path, output_dir, script_text)
+    video_path = create_video(audio_path, image_paths, output_dir, script_text)
+    if video_path:
+        print(f"Video created at: {video_path}")
+    else:
+        print("Video creation failed.")
