@@ -9,7 +9,8 @@ import io
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
-import random  # Added to fix 'name "random" is not defined' error
+import random
+import numpy as np
 
 # Download NLTK data
 try:
@@ -42,7 +43,7 @@ def extract_keywords(script: str) -> list:
     tokens = word_tokenize(script)
     tagged = pos_tag(tokens)
     keywords = [word for word, pos in tagged if pos in ['NN', 'NNS', 'NNP', 'NNPS']]
-    return list(set(keywords))[:10]  # Increased to 10 unique keywords
+    return list(set(keywords))[:10]  # Limit to 10 unique keywords
 
 def generate_image_sequence(topic: str, script: str, category: str, output_dir: str = "output", num_images: int = 10, duration_per_image: float = 5, max_retries: int = 5) -> list:
     """
@@ -82,7 +83,7 @@ def generate_image_sequence(topic: str, script: str, category: str, output_dir: 
         keywords = extract_keywords(script)
         queries = [topic] + keywords[:num_images-1]  # Use up to num_images-1 keywords
         if len(queries) < num_images:
-            queries.extend([f"{topic} scene {i}" for i in range(len(queries), num_images)])
+            queries.extend([f"{topic} {category} scene {i}" for i in range(len(queries), num_images)])
         
         for i, query in enumerate(queries, 1):
             attempt = 0
@@ -160,9 +161,23 @@ def generate_image_sequence(topic: str, script: str, category: str, output_dir: 
                         
                         try:
                             img = Image.open(img_data)
-                            img.load()
-                            if img.mode != 'RGB':
+                            img.load()  # Ensure all data is read
+                            # Verify image integrity
+                            if img.mode not in ['RGB', 'RGBA']:
+                                logger.warning(f"❌ Image {i} mode {img.mode} converting to RGB")
                                 img = img.convert('RGB')
+                            elif img.mode == 'RGBA':
+                                logger.info(f"❌ Image {i} has alpha channel, removing transparency")
+                                img = img.convert('RGB')
+                            
+                            # Check for uniform color (e.g., all blue)
+                            img_array = np.array(img)
+                            if np.all(img_array == img_array[0, 0]):  # Check if all pixels are the same
+                                logger.error(f"❌ Image {i} appears uniform (possible corruption): {image_url}")
+                                attempt += 1
+                                if attempt < max_retries:
+                                    time.sleep(2 ** attempt)
+                                continue
                             
                             if img.size[0] < 100 or img.size[1] < 100:
                                 logger.error(f"❌ Image {i} dimensions {img.size} too small")
@@ -300,8 +315,21 @@ def generate_image_sequence(topic: str, script: str, category: str, output_dir: 
                             try:
                                 img = Image.open(img_data)
                                 img.load()
-                                if img.mode != 'RGB':
+                                if img.mode not in ['RGB', 'RGBA']:
+                                    logger.warning(f"❌ Fallback image {i} mode {img.mode} converting to RGB")
                                     img = img.convert('RGB')
+                                elif img.mode == 'RGBA':
+                                    logger.info(f"❌ Fallback image {i} has alpha channel, removing transparency")
+                                    img = img.convert('RGB')
+                                
+                                # Check for uniform color (e.g., all blue)
+                                img_array = np.array(img)
+                                if np.all(img_array == img_array[0, 0]):  # Check if all pixels are the same
+                                    logger.error(f"❌ Fallback image {i} appears uniform (possible corruption): {image_url}")
+                                    attempt += 1
+                                    if attempt < max_retries:
+                                        time.sleep(2 ** attempt)
+                                    continue
                                 
                                 if img.size[0] < 100 or img.size[1] < 100:
                                     logger.error(f"❌ Fallback image {i} dimensions {img.size} too small")

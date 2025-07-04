@@ -528,17 +528,20 @@ def generate_content_with_retry(topic: str, category: str) -> Tuple[str, str, li
     """Generate all content with retry logic."""
     
     def generate_script_step():
-        logger.info("✍️ Generating script...")
+        logger.info(f"✍️ Generating script for topic: {topic}, category: {category}")
         script = generate_script(topic, category)
         if not script or len(script.strip()) < 500:
-            logger.error(f"❌ Generated script is too short ({len(script.strip()) if script else 0} characters)")
+            logger.error(f"❌ Generated script is too short ({len(script.strip()) if script else 0} characters) or empty")
             script = f"""
-Hook: Did you know about {topic.lower()}?
-Body: This is a fascinating topic in the {category} category. Fact 1: It’s a key part of {category}. 
-Fact 2: It has unique features that surprise everyone! Fact 3: Its impact is huge! 
-Call to Action: Subscribe for more {category.lower()} facts!
+Hook: 🌿 Did you know about {topic.lower()} in the {category} world?
+Body: This {category.lower()} topic is full of surprises! Fact 1: {topic} plays a key role in {category.lower()} ecosystems. 
+Fact 2: Experts discovered its unique ability to {'adapt' if 'Nature' in category else 'evolve'} in extreme conditions. 
+Fact 3: Its impact on {category.lower()} science is groundbreaking! 
+Call to Action: Subscribe for more amazing {category.lower()} facts and videos! 🚀
 """
-            logger.info(f"✅ Using fallback script ({len(script)} characters)")
+            logger.info(f"✅ Using enhanced fallback script ({len(script)} characters)")
+        else:
+            logger.info(f"✅ Generated script validated ({len(script)} characters)")
         return script
     
     def generate_voice_step(script):
