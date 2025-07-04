@@ -549,12 +549,12 @@ Call to Action: Subscribe for more {category.lower()} facts!
         cleanup_files.append(audio_path)
         return audio_path
     
-    def generate_image_sequence_step(topic_param, script):
+    def generate_image_sequence_step(topic_param, script, category_param):
         logger.info("🖼️ Generating image sequence...")
         if not topic_param:
             logger.error("❌ Topic is empty, using default topic 'Nature Scene'")
             topic_param = "Nature Scene"
-        return retry_on_failure(lambda: generate_image_sequence(topic_param, script, num_images=5), max_retries=1)
+        return retry_on_failure(lambda: generate_image_sequence(topic_param, script, category_param, num_images=5), max_retries=1)
     
     def create_video_step(script, audio_path, image_paths):
         logger.info("🎬 Creating video...")
@@ -572,7 +572,7 @@ Call to Action: Subscribe for more {category.lower()} facts!
     audio_path = retry_on_failure(lambda: generate_voice_step(script))
     logger.info(f"✅ Audio generated: {audio_path}")
     
-    image_paths = retry_on_failure(lambda: generate_image_sequence_step(topic, script))
+    image_paths = retry_on_failure(lambda: generate_image_sequence_step(topic, script, category))
     logger.info(f"✅ Image sequence generated: {len(image_paths)} images")
     
     video_path = retry_on_failure(lambda: create_video_step(script, audio_path, image_paths))
