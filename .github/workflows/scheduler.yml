@@ -88,7 +88,8 @@ jobs:
             libffi-dev libssl-dev libxml2-dev libxslt-dev \
             libasound2-dev portaudio19-dev \
             libcairo2-dev libpango1.0-dev \
-            jq libxml2-utils
+            jq libxml2-utils \
+            espeak  # Added for fallback TTS in voice.py
           # Refresh font cache
           sudo fc-cache -fv
           end_time=$(date +%s)
@@ -314,10 +315,24 @@ jobs:
             cat pillow_install.log
             exit 1
           }
+          pip install --no-cache-dir tts>=0.13.0 2> tts_install.log || {  # Added for Mozilla TTS
+            echo "❌ TTS installation failed"
+            cat tts_install.log
+            exit 1
+          }
           end_time=$(date +%s)
           duration=$((end_time - start_time))
           echo "✅ Python dependencies installed in $duration seconds"
           pip list
+
+      - name: Download Mozilla TTS model
+        run: |
+          echo "📥 Downloading Mozilla TTS model..."
+          python -c "from TTS.api import TTS; TTS(model_name='tts_models/en/ljspeech/tacotron2-DDC')" 2> tts_model_download.log || {
+            echo "⚠️ Mozilla TTS model download failed, falling back to gTTS"
+            cat tts_model_download.log
+          }
+          echo "✅ Mozilla TTS model download completed or fallback configured"
 
       - name: Download NLTK data
         run: |
@@ -458,6 +473,10 @@ jobs:
                       modules_to_clear = [mod for mod in sys.modules.keys() if 'nltk' in mod]
                       for mod in modules_to_clear:
                           del sys.modules[mod]
+                  elif module_name == 'TTS':  # Added for Mozilla TTS
+                      modules_to_clear = [mod for mod in sys.modules.keys() if 'TTS' in mod]
+                      for mod in modules_to_clear:
+                          del sys.modules[mod]
                   
                   exec(import_statement)
                   
@@ -465,6 +484,10 @@ jobs:
                       import cv2
                       if not hasattr(cv2, 'imread') or not hasattr(cv2, 'cvtColor'):
                           raise AttributeError('OpenCV missing critical attributes (imread, cvtColor)')
+                  elif module_name == 'TTS':  # Verify TTS import
+                      from TTS.api import TTS
+                      if not hasattr(TTS, 'tts_to_file'):
+                          raise AttributeError('Mozilla TTS missing critical method (tts_to_file)')
                   
                   print(f'✅ {display_name}: Import successful')
                   test_results.append((display_name, True, 'OK'))
@@ -495,6 +518,7 @@ jobs:
           test_import_advanced('replicate', 'import replicate')
           test_import_advanced('cv2', 'import cv2', 'OpenCV')
           test_import_advanced('nltk', 'import nltk')
+          test_import_advanced('TTS', 'from TTS.api import TTS', 'Mozilla TTS')  # Added TTS verification
           
           print('\n🎬 Testing MoviePy with fallback strategies...')
           moviepy_success = False
@@ -663,6 +687,32 @@ jobs:
               except Exception as e2:
                   print(f'❌ NLTK Strategy 2 failed: {e2}')
           test_results.append(('NLTK', nltk_success, 'OK' if nltk_success else 'Failed'))
+          
+          print('\n🔍 Testing Mozilla TTS with fallback strategies...')
+          tts_success = False
+          try:
+              from TTS.api import TTS
+              tts = TTS(model_name='tts_models/en/ljspeech/tacotron2-DDC')
+              print('✅ Mozilla TTS Strategy 1 (direct): Success')
+              tts_success = True
+          except Exception as e:
+              print(f'❌ Mozilla TTS Strategy 1 failed: {e}')
+              try:
+                  print('🔧 Mozilla TTS Strategy 2: Reinstalling...')
+                  subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'tts'],
+                              capture_output=True, check=False)
+                  subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                                'tts>=0.13.0'], capture_output=True, check=True)
+                  for mod in list(sys.modules.keys()):
+                      if 'TTS' in mod:
+                          del sys.modules[mod]
+                  from TTS.api import TTS
+                  tts = TTS(model_name='tts_models/en/ljspeech/tacotron2-DDC')
+                  print('✅ Mozilla TTS Strategy 2 (reinstall): Success')
+                  tts_success = True
+              except Exception as e2:
+                  print(f'❌ Mozilla TTS Strategy 2 failed: {e2}')
+          test_results.append(('Mozilla TTS', tts_success, 'OK' if tts_success else 'Failed'))
           
           # Print final summary
           print('\n📊 FINAL VERIFICATION SUMMARY:')
@@ -884,6 +934,24 @@ jobs:
                   print(f'✅ NLTK installed successfully (version: {nltk.__version__})')
               except Exception as e2:
                   print(f'❌ NLTK installation failed: {e2}')
+          for mod in list(sys.modules.keys()):
+              if 'TTS' in mod:  # Added for Mozilla TTS
+                  del sys.modules[mod]
+          try:
+              from TTS.api import TTS
+              tts = TTS(model_name='tts_models/en/ljspeech/tacotron2-DDC')
+              print('✅ Mozilla TTS ready')
+          except Exception as e:
+              print(f'🔧 Final Mozilla TTS fix attempt... Error: {e}')
+              subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'tts'], check=False)
+              subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
+                            'tts>=0.13.0'], check=False)
+              try:
+                  from TTS.api import TTS
+                  tts = TTS(model_name='tts_models/en/ljspeech/tacotron2-DDC')
+                  print('✅ Mozilla TTS installed successfully')
+              except Exception as e2:
+                  print(f'❌ Mozilla TTS installation failed: {e2}')
           print('🚀 Ready to execute main script')
           EOF
           python -m py_compile logs/pre_execution_script.py || {

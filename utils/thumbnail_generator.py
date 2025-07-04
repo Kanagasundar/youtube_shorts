@@ -42,9 +42,9 @@ def extract_keywords(script: str) -> list:
     tokens = word_tokenize(script)
     tagged = pos_tag(tokens)
     keywords = [word for word, pos in tagged if pos in ['NN', 'NNS', 'NNP', 'NNPS']]
-    return list(set(keywords))[:5]  # Limit to 5 unique keywords
+    return list(set(keywords))[:10]  # Increased to 10 unique keywords
 
-def generate_image_sequence(topic: str, script: str, output_dir: str = "output", num_images: int = 5, duration_per_image: float = 5, max_retries: int = 5) -> list:
+def generate_image_sequence(topic: str, script: str, output_dir: str = "output", num_images: int = 10, duration_per_image: float = 5, max_retries: int = 5) -> list:
     """
     Generate a sequence of images using Pexels API based on topic and script keywords.
     
@@ -52,13 +52,16 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
         topic (str): The topic for the video
         script (str): The script text to derive image prompts
         output_dir (str): Directory to save images
-        num_images (int): Number of images to generate
+        num_images (int): Number of images to generate (10 to 60)
         duration_per_image (float): Duration in seconds for each image in the video
         max_retries (int): Maximum number of retry attempts per image
     
     Returns:
         list: List of paths to generated images
     """
+    # Ensure num_images is within the 10 to 60 range
+    num_images = max(10, min(60, num_images))
+    
     os.makedirs(output_dir, exist_ok=True)
     
     # Initialize Pexels API client
@@ -71,11 +74,12 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
     base_url = "https://api.pexels.com/v1/search"
     image_paths = []
     
-    logger.info(f"🖼️ Generating up to {num_images} images for topic: {topic}")
+    logger.info(f"🖼️ Generating between 10 and 60 images for topic: {topic}, requested: {num_images}")
     
     try:
         # Extract keywords from script
-        queries = [topic] + extract_keywords(script)[:num_images-1]
+        keywords = extract_keywords(script)
+        queries = [topic] + keywords[:num_images-1]  # Use up to num_images-1 keywords
         if len(queries) < num_images:
             queries.extend([f"{topic} scene {i}" for i in range(len(queries), num_images)])
         
@@ -209,6 +213,12 @@ def generate_image_sequence(topic: str, script: str, output_dir: str = "output",
             if attempt >= max_retries:
                 logger.error(f"❌ Failed to generate image {i} after {max_retries} attempts")
         
+        if len(image_paths) < 10:  # Ensure minimum 10 images
+            logger.warning(f"⚠️ Only {len(image_paths)} images generated, below minimum of 10. Using available images.")
+        elif len(image_paths) > 60:  # Cap at 60 images
+            image_paths = image_paths[:60]
+            logger.warning(f"⚠️ Generated {len(image_paths)} images, capped at maximum of 60.")
+        
         if not image_paths:
             logger.error("❌ No images generated after all attempts - terminating process")
             raise FileNotFoundError("Failed to generate any images after all retries")
@@ -238,7 +248,7 @@ if __name__ == "__main__":
     # Test image sequence generation
     test_topic = "Plants That Can Count to Twenty"
     test_script = "Did you know about Plants That Can Count to Twenty? It's fascinating! Learn more in this quick Nature video about their unique abilities."
-    images = generate_image_sequence(test_topic, test_script)
+    images = generate_image_sequence(test_topic, test_script, num_images=15)  # Test with 15 images
     if images:
         logger.info(f"✅ Generated {len(images)} test images: {images}")
     else:

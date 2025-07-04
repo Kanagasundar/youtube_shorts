@@ -1,88 +1,114 @@
 #!/usr/bin/env python3
 """
-Voice Generator - Converts text to speech for video narration
+Voice Generator - Converts text to speech for video narration using Mozilla TTS with gTTS fallback
 """
 
 import os
 import sys
-from gtts import gTTS
+from datetime import datetime
 from pydub import AudioSegment
 import tempfile
+import logging
+
+# Add Mozilla TTS import
+try:
+    from TTS.api import TTS
+except ImportError:
+    logging.warning("⚠️ Mozilla TTS not installed, falling back to gTTS. Install 'tts' package for Mozilla TTS support.")
+    TTS = None
+
+# Fallback to gTTS
+from gtts import gTTS
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def generate_voice(script, output_dir="output", language="en", slow=False):
     """
-    Generate voice narration from script text
+    Generate voice narration from script text using Mozilla TTS or gTTS fallback
     
     Args:
         script (str): The script text to convert
         output_dir (str): Directory to save audio file
         language (str): Language code (en, es, fr, etc.)
-        slow (bool): Whether to speak slowly
+        slow (bool): Whether to speak slowly (ignored for Mozilla TTS)
         
     Returns:
         str: Path to generated audio file
     """
-    
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # Generate filename with timestamp
-    from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     audio_filename = f"narration_{timestamp}.mp3"
     audio_path = os.path.join(output_dir, audio_filename)
-    
+
     try:
         print(f"🎙️ Generating voice narration...")
         print(f"📝 Script length: {len(script)} characters")
-        
-        # Create gTTS object
+
+        # Try Mozilla TTS first
+        if TTS is not None:
+            logger.info("🔊 Attempting to use Mozilla TTS...")
+            tts = TTS(model_name="tts_models/en/ljspeech/tacotron2-DDC")
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
+                temp_path = temp_file.name
+                tts.tts_to_file(text=script, file_path=temp_path, speaker_wav=None)
+
+            # Convert WAV to MP3 using pydub
+            audio = AudioSegment.from_wav(temp_path)
+            audio = optimize_audio(audio)
+            duration = len(audio) / 1000.0
+
+            # Check duration and repeat if less than 25 seconds
+            if duration < 25:
+                repeat_count = int(25 / duration) + 1
+                audio = audio * repeat_count
+                logger.warning(f"⚠️ Duration {duration:.1f}s too short, repeating {repeat_count} times")
+                duration = len(audio) / 1000.0
+
+            audio.export(audio_path, format="mp3", bitrate="128k")
+            os.unlink(temp_path)
+            logger.info(f"✅ Mozilla TTS voice generated: {audio_path}")
+            logger.info(f"⏱️ Duration: {duration:.1f} seconds")
+            return audio_path
+
+        # Fallback to gTTS if Mozilla TTS is not available or fails
+        logger.warning("⚠️ Falling back to gTTS due to Mozilla TTS unavailability or failure")
         tts = gTTS(
             text=script,
             lang=language,
             slow=slow,
             tld='com'  # Use .com domain for better quality
         )
-        
-        # Save to temporary file first
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
             temp_path = temp_file.name
             tts.save(temp_path)
-        
-        # Process audio to optimize for YouTube Shorts
+
         audio = AudioSegment.from_mp3(temp_path)
-        
-        # Optimize audio settings
         audio = optimize_audio(audio)
-        
-        # Check duration and repeat if less than 25 seconds
         duration = len(audio) / 1000.0
+
         if duration < 25:
             repeat_count = int(25 / duration) + 1
             audio = audio * repeat_count
-            print(f"⚠️ Duration {duration:.1f}s too short, repeating {repeat_count} times")
+            logger.warning(f"⚠️ Duration {duration:.1f}s too short, repeating {repeat_count} times")
             duration = len(audio) / 1000.0
-        
-        # Export final audio
+
         audio.export(audio_path, format="mp3", bitrate="128k")
-        
-        # Clean up temp file
         os.unlink(temp_path)
-        
-        print(f"✅ Voice generated: {audio_path}")
-        print(f"⏱️ Duration: {duration:.1f} seconds")
-        
+        logger.info(f"✅ gTTS voice generated: {audio_path}")
+        logger.info(f"⏱️ Duration: {duration:.1f} seconds")
         return audio_path
-        
+
     except Exception as e:
-        print(f"❌ Error generating voice: {e}")
-        
-        # Try fallback method
+        logger.error(f"❌ Error generating voice: {e}")
         try:
-            print("🔄 Trying fallback voice generation...")
+            logger.info("🔄 Trying fallback voice generation...")
             return generate_voice_fallback(script, output_dir)
         except Exception as fallback_error:
-            print(f"❌ Fallback also failed: {fallback_error}")
+            logger.error(f"❌ Fallback also failed: {fallback_error}")
             raise Exception(f"Voice generation failed: {e}")
 
 def optimize_audio(audio):
@@ -95,82 +121,64 @@ def optimize_audio(audio):
     Returns:
         AudioSegment: Optimized audio
     """
-    
-    # Normalize volume
     audio = audio.normalize()
-    
-    # Adjust speed slightly for better engagement (5% faster)
     audio = audio.speedup(playback_speed=1.05)
-    
-    # Add slight compression for better sound
     audio = audio.compress_dynamic_range(threshold=-20.0, ratio=2.0)
-    
-    # Ensure mono audio (saves space and works better for shorts)
     audio = audio.set_channels(1)
-    
-    # Set consistent sample rate
     audio = audio.set_frame_rate(22050)
-    
     return audio
 
 def generate_voice_fallback(script, output_dir):
     """
     Fallback voice generation using system TTS
     """
-    
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     audio_filename = f"narration_fallback_{timestamp}.wav"
     audio_path = os.path.join(output_dir, audio_filename)
     
     try:
-        # Try espeak (available on most Linux systems)
         import subprocess
         
         cmd = [
             'espeak',
-            '-s', '150',  # Speed (words per minute)
-            '-p', '40',   # Pitch
-            '-a', '100',  # Amplitude
-            '-w', audio_path,  # Write to file
+            '-s', '150',
+            '-p', '40',
+            '-a', '100',
+            '-w', audio_path,
             script
         ]
         
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode == 0 and os.path.exists(audio_path):
-            print(f"✅ Fallback voice generated: {audio_path}")
+            logger.info(f"✅ Fallback voice generated: {audio_path}")
             return audio_path
         else:
             raise Exception(f"espeak failed: {result.stderr}")
             
     except Exception as e:
-        print(f"❌ System TTS failed: {e}")
-        
-        # Create a simple placeholder audio file
+        logger.error(f"❌ System TTS failed: {e}")
         return create_placeholder_audio(script, output_dir)
 
 def create_placeholder_audio(script, output_dir):
     """
     Create a placeholder audio file with silence
     """
-    
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     audio_filename = f"narration_placeholder_{timestamp}.mp3"
     audio_path = os.path.join(output_dir, audio_filename)
     
-    # Estimate duration based on script length (150 words per minute)
     word_count = len(script.split())
     duration_seconds = (word_count / 150) * 60
     duration_ms = int(duration_seconds * 1000)
     
-    # Create silence audio
     silence = AudioSegment.silent(duration=duration_ms)
     silence.export(audio_path, format="mp3")
     
-    print(f"⚠️ Created placeholder audio: {audio_path}")
-    print(f"⏱️ Duration: {duration_seconds:.1f} seconds")
+    logger.warning(f"⚠️ Created placeholder audio: {audio_path}")
+    logger.info(f"⏱️ Duration: {duration_seconds:.1f} seconds")
     
     return audio_path
 
@@ -182,12 +190,11 @@ def get_audio_duration(audio_path):
         audio = AudioSegment.from_file(audio_path)
         return len(audio) / 1000.0
     except Exception as e:
-        print(f"❌ Error getting audio duration: {e}")
+        logger.error(f"❌ Error getting audio duration: {e}")
         return 0.0
 
 def test_voice_generation():
     """Test voice generation with sample text"""
-    
     test_script = """
     Did you know that the first photograph ever taken required an 8-hour exposure time? 
     That's right - in 1826, Joseph Nicéphore Niépce had to wait 8 hours just to capture 
@@ -195,16 +202,16 @@ def test_voice_generation():
     What would you have photographed first?
     """
     
-    print("🧪 Testing voice generation...")
+    logger.info("🧪 Testing voice generation...")
     audio_path = generate_voice(test_script)
     
     if os.path.exists(audio_path):
         duration = get_audio_duration(audio_path)
-        print(f"✅ Test successful!")
-        print(f"📁 File: {audio_path}")
-        print(f"⏱️ Duration: {duration:.1f} seconds")
+        logger.info(f"✅ Test successful!")
+        logger.info(f"📁 File: {audio_path}")
+        logger.info(f"⏱️ Duration: {duration:.1f} seconds")
     else:
-        print("❌ Test failed!")
+        logger.error("❌ Test failed!")
 
 if __name__ == "__main__":
     test_voice_generation()
