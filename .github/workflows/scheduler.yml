@@ -381,12 +381,14 @@ jobs:
           print('📁 Python path:')
           for path in sys.path:
               print(f'   {path}')
+          
           print('\n🔧 Fixing Google namespace packages...')
           site_packages_dirs = []
           for path in sys.path:
               if path and 'site-packages' in path and os.path.exists(path):
                   site_packages_dirs.append(path)
           print(f'Found site-packages directories: {site_packages_dirs}')
+          
           google_packages = []
           for site_dir in site_packages_dirs:
               try:
@@ -395,6 +397,7 @@ jobs:
               except (OSError, PermissionError) as e:
                   print(f'Could not list {site_dir}: {e}')
           print(f'Found Google packages: {list(set(google_packages))}')
+          
           import shutil
           for site_packages in site_packages_dirs:
               gridfs_dir = os.path.join(site_packages, 'gridfs')
@@ -406,7 +409,9 @@ jobs:
                           print(f'✅ Removed {pycache_dir}')
                       except Exception as e:
                           print(f'⚠️ Could not remove {pycache_dir}: {e}')
+          
           test_results = []
+          
           def test_import_advanced(module_name, import_statement, display_name=None):
               if display_name is None:
                   display_name = module_name
@@ -441,11 +446,14 @@ jobs:
                       modules_to_clear = [mod for mod in sys.modules.keys() if 'nltk' in mod]
                       for mod in modules_to_clear:
                           del sys.modules[mod]
+                  
                   exec(import_statement)
+                  
                   if module_name == 'cv2':
                       import cv2
                       if not hasattr(cv2, 'imread') or not hasattr(cv2, 'cvtColor'):
                           raise AttributeError('OpenCV missing critical attributes (imread, cvtColor)')
+                  
                   print(f'✅ {display_name}: Import successful')
                   test_results.append((display_name, True, 'OK'))
                   return True
@@ -464,6 +472,7 @@ jobs:
                       except Exception as e2:
                           print(f'❌ {display_name}: Verification failed: {e2}')
                   return False
+          
           print('\n🔍 Testing imports with advanced verification...')
           test_import_advanced('numpy', 'import numpy')
           test_import_advanced('PIL', 'from PIL import Image')
@@ -475,12 +484,13 @@ jobs:
           test_import_advanced('cv2', 'import cv2', 'OpenCV')
           test_import_advanced('manim', 'from manim import *')
           test_import_advanced('nltk', 'import nltk')
+          
           print('\n🎬 Testing MoviePy with fallback strategies...')
           moviepy_success = False
           try:
               import moviepy
               import moviepy.editor as mpe
-              print(f'✅ MoviePy Strategy 1 (direct): Success')
+              print('✅ MoviePy Strategy 1 (direct): Success')
               moviepy_success = True
           except Exception as e:
               print(f'❌ MoviePy Strategy 1 failed: {e}')
@@ -512,6 +522,7 @@ jobs:
                   except Exception as e3:
                       print(f'❌ MoviePy Strategy 3 failed: {e3}')
           test_results.append(('MoviePy', moviepy_success, 'OK' if moviepy_success else 'Failed'))
+          
           print('\n🔍 Testing Google Auth with fallback strategies...')
           google_success = False
           try:
@@ -542,6 +553,7 @@ jobs:
               except Exception as e2:
                   print(f'❌ Google Auth Strategy 2 failed: {e2}')
           test_results.append(('Google Auth', google_success, 'OK' if google_success else 'Failed'))
+          
           print('\n🔍 Testing OpenAI with fallback strategies...')
           openai_success = False
           try:
@@ -565,6 +577,7 @@ jobs:
               except Exception as e2:
                   print(f'❌ OpenAI Strategy 2 failed: {e2}')
           test_results.append(('OpenAI', openai_success, 'OK' if openai_success else 'Failed'))
+          
           print('\n🔍 Testing Replicate with fallback strategies...')
           replicate_success = False
           try:
@@ -588,6 +601,7 @@ jobs:
               except Exception as e2:
                   print(f'❌ Replicate Strategy 2 failed: {e2}')
           test_results.append(('Replicate', replicate_success, 'OK' if replicate_success else 'Failed'))
+          
           print('\n🔍 Testing OpenCV with fallback strategies...')
           opencv_success = False
           try:
@@ -614,6 +628,7 @@ jobs:
               except Exception as e2:
                   print(f'❌ OpenCV Strategy 2 failed: {e2}')
           test_results.append(('OpenCV', opencv_success, 'OK' if opencv_success else 'Failed'))
+          
           print('\n🔍 Testing Manim with fallback strategies...')
           manim_success = False
           try:
@@ -637,6 +652,7 @@ jobs:
               except Exception as e2:
                   print(f'❌ Manim Strategy 2 failed: {e2}')
           test_results.append(('Manim', manim_success, 'OK' if manim_success else 'Failed'))
+          
           print('\n🔍 Testing NLTK with fallback strategies...')
           nltk_success = False
           try:
@@ -658,8 +674,25 @@ jobs:
                   print(f'✅ NLTK Strategy 2 (reinstall): Success (version: {nltk.__version__})')
                   nltk_success = True
               except Exception as e2:
-                  print(f'❌ NLTK Strategy 2宴
-
+                  print(f'❌ NLTK Strategy 2 failed: {e2}')
+          test_results.append(('NLTK', nltk_success, 'OK' if nltk_success else 'Failed'))
+          
+          # Print final summary
+          print('\n📊 FINAL VERIFICATION SUMMARY:')
+          print('=' * 50)
+          for name, success, status in test_results:
+              status_icon = '✅' if success else '❌'
+              print(f'{status_icon} {name}: {status}')
+          
+          successful_imports = sum(1 for _, success, _ in test_results if success)
+          total_imports = len(test_results)
+          print(f'\n🎯 Success Rate: {successful_imports}/{total_imports} ({successful_imports/total_imports*100:.1f}%)')
+          
+          if successful_imports == total_imports:
+              print('🎉 All packages imported successfully!')
+          else:
+              print(f'⚠️  {total_imports - successful_imports} packages failed to import.')
+          "
       - name: Clear Python module cache before automation
         run: |
           echo "🧹 Clearing Python module cache before automation..."
