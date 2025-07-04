@@ -150,12 +150,15 @@ def generate_voice_fallback(script, output_dir):
         ]
         
         result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode == 0 and os.path.exists(audio_path):
-            logger.info(f"✅ Fallback voice generated: {audio_path}")
-            return audio_path
-        else:
+        if result.returncode != 0:
             raise Exception(f"espeak failed: {result.stderr}")
+        if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+            raise Exception("espeak generated an empty or missing file")
+        audio = AudioSegment.from_wav(audio_path)
+        if len(audio) == 0:
+            raise ValueError("espeak generated zero-duration audio")
+        logger.info(f"✅ Fallback voice generated: {audio_path}")
+        return audio_path
             
     except Exception as e:
         logger.error(f"❌ System TTS failed: {e}")
