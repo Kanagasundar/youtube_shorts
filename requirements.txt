@@ -11,8 +11,8 @@ replicate==0.30.0  # Compatible with Replicate API for image generation
 moviepy==1.0.3
 gtts==2.5.3
 pydub==0.25.1
-numpy==1.24.4
-opencv-python==4.10.0.84  # Updated to available version
+numpy==1.26.4
+opencv-python==4.9.0.80  # Updated to available version
 manim==0.18.1  # Added for animated captions
 
 # Image and file handling

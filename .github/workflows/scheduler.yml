@@ -223,7 +223,7 @@ jobs:
           python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
             echo "❌ OpenCV not installed correctly, attempting reinstall..."
             pip uninstall -y opencv-python numpy
-            pip install --no-cache-dir opencv-python==4.9.0.80 numpy==1.24.4 2> opencv_install.log || {
+            pip install --no-cache-dir opencv-python==4.10.0.84 numpy==1.26.4 2> opencv_install.log || {
               echo "❌ OpenCV reinstall failed"
               cat opencv_install.log
               exit 1
@@ -293,7 +293,7 @@ jobs:
             cat pip_install.log
             exit 1
           }
-          pip install --no-cache-dir opencv-python==4.9.0.80 numpy==1.24.4 2> opencv_install.log || {
+          pip install --no-cache-dir opencv-python==4.10.0.84 numpy==1.26.4 2> opencv_install.log || {
             echo "❌ OpenCV installation failed"
             cat opencv_install.log
             exit 1
@@ -631,17 +631,17 @@ jobs:
           except Exception as e:
               print(f'❌ OpenCV Strategy 1 failed: {e}')
               try:
-                  print('🔧 OpenCV Strategy 2: Installing 4.9.0.80...')
+                  print('🔧 OpenCV Strategy 2: Installing 4.10.0.84...')
                   subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'],
                               capture_output=True, check=False)
                   subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                                'opencv-python==4.9.0.80', 'numpy==1.24.4'], capture_output=True, check=True)
+                                'opencv-python==4.10.0.84', 'numpy==1.26.4'], capture_output=True, check=True)
                   for mod in list(sys.modules.keys()):
                       if 'cv2' in mod or 'opencv' in mod:
                           del sys.modules[mod]
                   import cv2
                   if hasattr(cv2, 'imread') and hasattr(cv2, 'cvtColor'):
-                      print(f'✅ OpenCV Strategy 2 (4.9.0.80): Success (version: {cv2.__version__})')
+                      print(f'✅ OpenCV Strategy 2 (4.10.0.84): Success (version: {cv2.__version__})')
                       opencv_success = True
                   else:
                       print('❌ OpenCV Strategy 2: Missing critical attributes (imread, cvtColor)')
@@ -891,7 +891,7 @@ jobs:
               print(f'🔧 Final OpenCV fix attempt... Error: {e}')
               subprocess.run([sys.executable, '-m', 'pip', 'uninstall', '-y', 'opencv-python', 'numpy'], check=False)
               subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
-                            'opencv-python==4.9.0.80', 'numpy==1.24.4'], check=False)
+                            'opencv-python==4.10.0.84', 'numpy==1.26.4'], check=False)
               try:
                   import cv2
                   if hasattr(cv2, 'imread') and hasattr(cv2, 'cvtColor'):
