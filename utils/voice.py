@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-MoviePy Audio Fix - Addresses the _NoValueType error in audio processing
-"""
-
 import os
 import logging
 from moviepy.editor import *
@@ -21,7 +17,6 @@ def generate_voice(script: str, output_dir: str = "output") -> str:
     
     Args:
         script (str): The text script to convert to audio
-        output Grown
         output_dir (str): Directory to save the audio file
     
     Returns:
@@ -101,20 +96,27 @@ def fix_audio_clip_duration(audio_clip, fallback_duration=30.0):
     try:
         # Check if clip has valid duration
         if hasattr(audio_clip, 'duration') and audio_clip.duration is not None:
-            duration = float(audio_clip.duration)
-            if duration > 0:
-                logger.info(f"✅ Audio clip has valid duration: {duration:.2f}s")
-                return audio_clip
+            try:
+                duration = float(audio_clip.duration)
+                if duration > 0:
+                    logger.info(f"✅ Audio clip has valid duration: {duration:.2f}s")
+                    return audio_clip.set_duration(duration)  # Ensure duration is explicitly set
+            except (TypeError, ValueError):
+                logger.warning("⚠️ Invalid duration detected, attempting to fix...")
         
         # If no valid duration, try to get it from the audio data
-        logger.warning("⚠️ Audio clip missing duration, attempting to calculate...")
+        logger.warning("⚠️ Audio clip missing or invalid duration, attempting to calculate...")
         
         # Try to get duration from audio file if it's a file-based clip
         if hasattr(audio_clip, 'filename') and audio_clip.filename:
             from pydub import AudioSegment
-            audio_seg = AudioSegment.from_file(audio_clip.filename)
-            duration = len(audio_seg) / 1000.0
-            logger.info(f"📊 Calculated duration from file: {duration:.2f}s")
+            try:
+                audio_seg = AudioSegment.from_file(audio_clip.filename)
+                duration = len(audio_seg) / 1000.0
+                logger.info(f"📊 Calculated duration from file: {duration:.2f}s")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to calculate duration from file: {e}")
+                duration = fallback_duration
         else:
             # Use fallback duration
             duration = fallback_duration
@@ -144,6 +146,7 @@ def create_safe_audio_clip(audio_path, target_duration=None):
     """
     try:
         # Load audio file
+        logger.info(f"🔊 Loading audio file: {audio_path}")
         audio_clip = AudioFileClip(audio_path)
         
         # Fix duration issues
@@ -155,6 +158,7 @@ def create_safe_audio_clip(audio_path, target_duration=None):
         
         # Adjust duration if needed
         if target_duration and target_duration != audio_clip.duration:
+            logger.info(f"🔄 Adjusting audio duration from {audio_clip.duration:.2f}s to {target_duration:.2f}s")
             if target_duration > audio_clip.duration:
                 # Loop audio to reach target duration
                 loops_needed = int(np.ceil(target_duration / audio_clip.duration))
@@ -167,13 +171,17 @@ def create_safe_audio_clip(audio_path, target_duration=None):
         # Ensure duration is properly set
         audio_clip = audio_clip.set_duration(audio_clip.duration)
         
+        # Debug clip properties
+        debug_audio_clip(audio_clip, f"AudioClip from {audio_path}")
+        
         logger.info(f"✅ Created safe audio clip: {audio_clip.duration:.2f}s")
         return audio_clip
         
     except Exception as e:
-        logger.error(f"❌ Error creating safe audio clip: {e}")
+        logger.error(f"❌ Error creating safe audio clip from {audio_path}: {e}")
         # Create silent fallback
         duration = target_duration if target_duration else 30.0
+        logger.warning(f"🔄 Creating silent fallback clip with duration: {duration:.2f}s")
         return AudioClip(make_frame=lambda t: np.array([0.0]), duration=duration)
 
 def fix_composite_audio_clips(clips):
@@ -194,13 +202,21 @@ def fix_composite_audio_clips(clips):
             fixed_clip = fix_audio_clip_duration(clip)
             
             # Ensure start time is set
-            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None:
+            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None or isinstance(fixed_clip.start, type(None)):
+                logger.info(f"🔄 Setting start time for clip {i+1} to 0")
                 fixed_clip = fixed_clip.set_start(0)
             
             # Ensure end time is set
-            if hasattr(fixed_clip, 'start') and hasattr(fixed_clip, 'duration'):
-                if fixed_clip.duration is not None:
-                    fixed_clip = fixed_clip.set_end(fixed_clip.start + fixed_clip.duration)
+            if hasattr(fixed_clip, 'duration') and fixed_clip.duration is not None:
+                try:
+                    fixed_clip = fixed_clip.set_end(fixed_clip.start + float(fixed_clip.duration))
+                except (TypeError, ValueError):
+                    logger.warning(f"⚠️ Invalid duration for clip {i+1}, using fallback duration")
+                    fixed_clip = fixed_clip.set_duration(30.0)
+                    fixed_clip = fixed_clip.set_end(fixed_clip.start + 30.0)
+            
+            # Debug clip properties
+            debug_audio_clip(fixed_clip, f"Composite Clip {i+1}")
             
             fixed_clips.append(fixed_clip)
             logger.info(f"✅ Fixed audio clip {i+1}/{len(clips)}")
@@ -229,6 +245,11 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
         # Check if video has audio
         if video_clip.audio is not None:
             logger.info("🔊 Video has audio, fixing audio issues...")
+            
+            # Handle composite audio clips
+            if isinstance(video_clip.audio, CompositeAudioClip):
+                logger.info("🔄 Detected CompositeAudioClip, fixing all sub-clips...")
+                video_clip.audio.clips = fix_composite_audio_clips(video_clip.audio.clips)
             
             # Fix audio duration
             fixed_audio = fix_audio_clip_duration(video_clip.audio)
@@ -310,12 +331,13 @@ def debug_audio_clip(audio_clip, clip_name="Unknown"):
         if hasattr(audio_clip, 'clips'):
             logger.info(f"   - Composite with {len(audio_clip.clips)} clips")
             for i, subclip in enumerate(audio_clip.clips):
-                logger.info(f"     Clip {i+1}: duration={getattr(subclip, 'duration', 'NOT SET')}")
+                logger.info(f"     Clip {i+1}: duration={getattr(subclip, 'duration', 'NOT SET')}, "
+                           f"start={getattr(subclip, 'start', 'NOT SET')}")
         
         # Try to get a frame
         try:
             frame = audio_clip.get_frame(0)
-            logger.info(f"   - Frame at t=0: {frame}")
+            logger.info(f"   - Frame at t=0: shape={np.shape(frame)}")
         except Exception as e:
             logger.error(f"   - Cannot get frame: {e}")
             

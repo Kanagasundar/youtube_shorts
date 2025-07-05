@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+"""
+Video creation utilities for YouTube Shorts automation
+"""
+
 import os
 import logging
 import cv2
@@ -8,7 +13,7 @@ from moviepy.config import change_settings
 from PIL import Image
 import random
 from datetime import datetime
-import subprocess
+from voice import fix_composite_audio_clips, debug_audio_clip  # Import from voice.py
 
 # Configure logging
 logging.basicConfig(
@@ -106,7 +111,7 @@ def add_overlays(image, text, logo_path=None, sticker_path=None):
 
 def create_caption_clip(text, duration):
     """
-    Create animated caption using MoviePy TextClip with font fallbacks.
+    Create animated caption using MoviePy TextClip with font fallbacks and duration validation.
     
     Args:
         text (str): Caption text
@@ -131,8 +136,15 @@ def create_caption_clip(text, duration):
                 method='caption',
                 align='center',
                 font=font
-            ).set_duration(duration).set_position(('center', 'bottom')).fadein(0.3).fadeout(0.3)
+            )
+            # Ensure duration is valid
+            clip = clip.set_duration(max(float(duration), 0.1))  # Minimum 0.1s to avoid zero duration
+            clip = clip.set_position(('center', 'bottom')).fadein(0.3).fadeout(0.3)
             logger.info(f"Successfully created caption with font: {font}")
+            
+            # Debug clip properties
+            logger.info(f"🔍 Caption clip properties: duration={getattr(clip, 'duration', 'NOT SET')}, "
+                       f"start={getattr(clip, 'start', 'NOT SET')}")
             return clip
         except Exception as e:
             logger.warning(f"Failed to create caption with font {font}: {str(e)}")
@@ -170,6 +182,8 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             # Load audio
             logger.info(f"🔊 Loading audio: {audio_path}")
             audio = mpe.AudioFileClip(audio_path)
+            audio = fix_composite_audio_clips([audio])[0]  # Fix audio clip
+            debug_audio_clip(audio, "Main Audio")
             audio_duration = audio.duration
             
             # Ensure video duration is 15-40 seconds
@@ -274,24 +288,36 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 except Exception as e:
                     logger.error(f"Failed to create caption for word '{word}': {str(e)}")
                     continue
+            
+            # Fix subtitle clips to avoid _NoValueType errors
+            subtitle_clips = [clip.set_duration(max(float(clip.duration), 0.1)).set_start(clip.start or 0) 
+                             for clip in subtitle_clips if hasattr(clip, 'duration')]
+            
+            # Create composite video
+            logger.info("🔄 Creating composite video with subtitles...")
             video = mpe.CompositeVideoClip([video] + subtitle_clips)
+            
+            # Ensure video audio is fixed
+            if video.audio is not None:
+                video.audio = fix_composite_audio_clips([video.audio])[0]
+                debug_audio_clip(video.audio, "Final Video Audio")
             
             # Generate output path
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_path = str(Path(output_dir) / f"video_{timestamp}.mp4")
             
-            # Write video
+            # Write video using safe_write_videofile
             logger.info(f"💾 Writing video to {output_path}...")
-            video.write_videofile(
-                output_path,
-                codec="libx264",
-                audio_codec="aac",
-                preset="medium",
-                bitrate="4000k",
-                threads=2,
-                fps=30,
-                logger=None
-            )
+            success = safe_write_videofile(video, output_path,
+                                          codec="libx264",
+                                          audio_codec="aac",
+                                          preset="medium",
+                                          bitrate="4000k",
+                                          threads=2,
+                                          fps=30)
+            
+            if not success:
+                raise RuntimeError("Failed to write video file")
             
             # Clean up resources
             audio.close()
