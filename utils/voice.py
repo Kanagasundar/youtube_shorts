@@ -8,8 +8,84 @@ import logging
 from moviepy.editor import *
 from moviepy.audio.AudioClip import AudioClip
 import numpy as np
+from gtts import gTTS
+from TTS.api import TTS
+from pathlib import Path
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+def generate_voice(script: str, output_dir: str = "output") -> str:
+    """
+    Generate voice narration from script text using Mozilla TTS with fallback to gTTS.
+    
+    Args:
+        script (str): The text script to convert to audio
+        output Grown
+        output_dir (str): Directory to save the audio file
+    
+    Returns:
+        str: Path to the generated audio file
+    """
+    try:
+        logger.info("🎙️ Starting voice generation...")
+
+        # Ensure output directory exists
+        output_dir = Path(output_dir)
+        output_dir.mkdir(exist_ok=True)
+
+        # Generate unique filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        audio_path = str(output_dir / f"narration_{timestamp}.mp3")
+
+        # Try Mozilla TTS first
+        try:
+            logger.info("🔄 Attempting to use Mozilla TTS...")
+            tts = TTS(model_name="tts_models/en/ljspeech/tacotron2-DDC", progress_bar=False)
+            tts.tts_to_file(text=script, file_path=audio_path)
+            logger.info(f"✅ Mozilla TTS generated audio: {audio_path}")
+            
+            # Verify audio file
+            if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+                raise FileNotFoundError("Mozilla TTS generated empty or missing audio file")
+            
+            # Create safe audio clip and verify duration
+            audio_clip = create_safe_audio_clip(audio_path)
+            if audio_clip.duration <= 0:
+                raise ValueError(f"Generated audio has invalid duration: {audio_clip.duration}")
+            
+            audio_clip.close()
+            return audio_path
+
+        except Exception as tts_error:
+            logger.warning(f"⚠️ Mozilla TTS failed: {str(tts_error)}")
+            logger.info("🔄 Falling back to gTTS...")
+
+            # Fallback to gTTS
+            try:
+                gtts = gTTS(text=script, lang='en', slow=False)
+                gtts.save(audio_path)
+                logger.info(f"✅ gTTS generated audio: {audio_path}")
+
+                # Verify audio file
+                if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+                    raise FileNotFoundError("gTTS generated empty or missing audio file")
+
+                # Create safe audio clip and verify duration
+                audio_clip = create_safe_audio_clip(audio_path)
+                if audio_clip.duration <= 0:
+                    raise ValueError(f"Generated audio has invalid duration: {audio_clip.duration}")
+
+                audio_clip.close()
+                return audio_path
+
+            except Exception as gtts_error:
+                logger.error(f"❌ gTTS failed: {str(gtts_error)}")
+                raise RuntimeError("Failed to generate audio with both Mozilla TTS and gTTS")
+
+    except Exception as e:
+        logger.error(f"❌ Voice generation failed: {str(e)}", exc_info=True)
+        raise
 
 def fix_audio_clip_duration(audio_clip, fallback_duration=30.0):
     """
