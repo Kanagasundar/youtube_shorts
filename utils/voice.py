@@ -168,12 +168,24 @@ def generate_voice_fallback(script, output_dir):
             '-ab', '128k',
             '-ar', '22050',
             '-ac', '1',
+            '-f', 'mp3',  # Force MP3 format
             mp3_path,
             '-y'  # Overwrite output file if it exists
         ]
         subprocess.run(ffmpeg_cmd, capture_output=True, text=True, check=True)
         os.unlink(audio_path)  # Remove original WAV
-        logger.info(f"✅ Fallback voice generated and converted: {mp3_path}")
+
+        # Validate and set duration using AudioSegment
+        processed_audio = AudioSegment.from_mp3(mp3_path)
+        if len(processed_audio) == 0:
+            raise ValueError("ffmpeg generated zero-duration audio")
+        duration = len(processed_audio) / 1000.0
+        if duration < 1.0:  # Minimum sensible duration
+            logger.warning(f"⚠️ Audio duration {duration:.1f}s too short, extending to 1s")
+            processed_audio = processed_audio + AudioSegment.silent(duration=(1000 - len(processed_audio)))
+            processed_audio.export(mp3_path, format="mp3", bitrate="128k")
+        logger.info(f"✅ Fallback voice generated and validated: {mp3_path}")
+        logger.info(f"⏱️ Duration: {duration:.1f} seconds")
         return mp3_path
             
     except Exception as e:
