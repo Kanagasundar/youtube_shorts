@@ -1,366 +1,300 @@
 #!/usr/bin/env python3
 """
-Voice Generator - Converts text to speech for video narration using Mozilla TTS with gTTS fallback
-Fixed version with proper duration validation and MoviePy compatibility
+MoviePy Audio Fix - Addresses the _NoValueType error in audio processing
 """
 
 import os
-import sys
-from datetime import datetime
-from pydub import AudioSegment
-import tempfile
 import logging
-import subprocess
+from moviepy.editor import *
+from moviepy.audio.AudioClip import AudioClip
+import numpy as np
 
-# Add Mozilla TTS import
-try:
-    from TTS.api import TTS
-except ImportError:
-    logging.warning("⚠️ Mozilla TTS not installed, falling back to gTTS. Install 'tts' package for Mozilla TTS support.")
-    TTS = None
-
-# Fallback to gTTS
-from gtts import gTTS
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def generate_voice(script, output_dir="output", language="en", slow=False):
+def fix_audio_clip_duration(audio_clip, fallback_duration=30.0):
     """
-    Generate voice narration from script text using Mozilla TTS or gTTS fallback
+    Fix audio clip duration issues that cause _NoValueType errors
     
     Args:
-        script (str): The script text to convert
-        output_dir (str): Directory to save audio file
-        language (str): Language code (en, es, fr, etc.)
-        slow (bool): Whether to speak slowly (ignored for Mozilla TTS)
+        audio_clip: MoviePy AudioClip
+        fallback_duration: Default duration if clip duration is invalid
         
     Returns:
-        str: Path to generated audio file
+        AudioClip with properly set duration
     """
-    # Ensure output directory exists
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Generate filename with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    audio_filename = f"narration_{timestamp}.mp3"
-    audio_path = os.path.join(output_dir, audio_filename)
-
     try:
-        print(f"🎙️ Generating voice narration...")
-        print(f"📝 Script length: {len(script)} characters")
-
-        # Try Mozilla TTS first
-        if TTS is not None:
-            logger.info("🔊 Attempting to use Mozilla TTS...")
-            try:
-                tts = TTS(model_name="tts_models/en/ljspeech/tacotron2-DDC")
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
-                    temp_path = temp_file.name
-                    tts.tts_to_file(text=script, file_path=temp_path, speaker_wav=None)
-
-                # Convert WAV to MP3 using pydub with validation
-                audio = AudioSegment.from_wav(temp_path)
-                audio = optimize_audio(audio)
-                
-                # Validate audio duration
-                duration = validate_and_fix_duration(audio)
-                
-                # Export with proper metadata
-                audio.export(audio_path, format="mp3", bitrate="128k", 
-                           tags={"title": "Generated Narration", "duration": str(duration)})
-                os.unlink(temp_path)
-                
-                logger.info(f"✅ Mozilla TTS voice generated: {audio_path}")
-                logger.info(f"⏱️ Duration: {duration:.1f} seconds")
-                return audio_path
-                
-            except Exception as tts_error:
-                logger.warning(f"⚠️ Mozilla TTS failed: {tts_error}")
-                # Continue to gTTS fallback
-
-        # Fallback to gTTS
-        logger.info("🔄 Using gTTS for voice generation...")
-        tts = gTTS(
-            text=script,
-            lang=language,
-            slow=slow,
-            tld='com'  # Use .com domain for better quality
-        )
+        # Check if clip has valid duration
+        if hasattr(audio_clip, 'duration') and audio_clip.duration is not None:
+            duration = float(audio_clip.duration)
+            if duration > 0:
+                logger.info(f"✅ Audio clip has valid duration: {duration:.2f}s")
+                return audio_clip
         
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
-            temp_path = temp_file.name
-            tts.save(temp_path)
-
-        # Load and process audio
-        audio = AudioSegment.from_mp3(temp_path)
-        audio = optimize_audio(audio)
+        # If no valid duration, try to get it from the audio data
+        logger.warning("⚠️ Audio clip missing duration, attempting to calculate...")
         
-        # Validate audio duration
-        duration = validate_and_fix_duration(audio)
+        # Try to get duration from audio file if it's a file-based clip
+        if hasattr(audio_clip, 'filename') and audio_clip.filename:
+            from pydub import AudioSegment
+            audio_seg = AudioSegment.from_file(audio_clip.filename)
+            duration = len(audio_seg) / 1000.0
+            logger.info(f"📊 Calculated duration from file: {duration:.2f}s")
+        else:
+            # Use fallback duration
+            duration = fallback_duration
+            logger.warning(f"🔄 Using fallback duration: {duration:.2f}s")
         
-        # Export with proper metadata
-        audio.export(audio_path, format="mp3", bitrate="128k",
-                   tags={"title": "Generated Narration", "duration": str(duration)})
-        os.unlink(temp_path)
+        # Set the duration explicitly
+        audio_clip = audio_clip.set_duration(duration)
+        logger.info(f"✅ Fixed audio clip duration: {duration:.2f}s")
         
-        logger.info(f"✅ gTTS voice generated: {audio_path}")
-        logger.info(f"⏱️ Duration: {duration:.1f} seconds")
-        return audio_path
-
+        return audio_clip
+        
     except Exception as e:
-        logger.error(f"❌ Error generating voice: {e}")
-        try:
-            logger.info("🔄 Trying fallback voice generation...")
-            return generate_voice_fallback(script, output_dir)
-        except Exception as fallback_error:
-            logger.error(f"❌ Fallback also failed: {fallback_error}")
-            raise Exception(f"Voice generation failed: {e}")
+        logger.error(f"❌ Error fixing audio clip duration: {e}")
+        # Create a silent clip as fallback
+        return AudioClip(make_frame=lambda t: np.array([0.0]), duration=fallback_duration)
 
-def validate_and_fix_duration(audio):
+def create_safe_audio_clip(audio_path, target_duration=None):
     """
-    Validate and fix audio duration for MoviePy compatibility
+    Create a safe AudioClip that won't cause _NoValueType errors
     
     Args:
-        audio (AudioSegment): Input audio
+        audio_path: Path to audio file
+        target_duration: Desired duration (optional)
         
     Returns:
-        float: Valid duration in seconds
+        AudioClip with guaranteed valid duration
     """
     try:
-        duration = len(audio) / 1000.0
+        # Load audio file
+        audio_clip = AudioFileClip(audio_path)
         
-        # Ensure minimum duration
-        if duration < 1.0:
-            logger.warning(f"⚠️ Audio too short ({duration:.1f}s), padding to 1s")
-            silence_needed = 1000 - len(audio)
-            audio = audio + AudioSegment.silent(duration=silence_needed)
-            duration = 1.0
-        
-        # Ensure maximum duration for shorts
-        if duration > 60.0:
-            logger.warning(f"⚠️ Audio too long ({duration:.1f}s), trimming to 60s")
-            audio = audio[:60000]
-            duration = 60.0
-            
-        # Check if duration is valid number
-        if not isinstance(duration, (int, float)) or duration <= 0:
-            logger.error(f"❌ Invalid duration: {duration}")
-            raise ValueError(f"Invalid audio duration: {duration}")
-            
-        return duration
-        
-    except Exception as e:
-        logger.error(f"❌ Duration validation failed: {e}")
-        # Return a safe default duration
-        return 30.0
-
-def optimize_audio(audio):
-    """
-    Optimize audio for YouTube Shorts with validation
-    
-    Args:
-        audio (AudioSegment): Input audio
-        
-    Returns:
-        AudioSegment: Optimized audio
-    """
-    try:
-        # Validate input audio
-        if len(audio) == 0:
-            logger.warning("⚠️ Empty audio detected, creating 1 second silence")
-            audio = AudioSegment.silent(duration=1000)
-        
-        # Normalize audio
-        audio = audio.normalize()
-        
-        # Speed up slightly (optional)
-        audio = audio.speedup(playback_speed=1.05)
-        
-        # Apply compression
-        audio = audio.compress_dynamic_range(threshold=-20.0, ratio=2.0)
-        
-        # Set audio properties
-        audio = audio.set_channels(1)  # Mono
-        audio = audio.set_frame_rate(22050)  # Sample rate
-        
-        # Ensure audio has valid duration
-        duration = len(audio) / 1000.0
-        if duration < 25:
-            repeat_count = int(25 / duration) + 1
-            audio = audio * repeat_count
-            logger.info(f"🔄 Extended audio from {duration:.1f}s by repeating {repeat_count} times")
-        
-        return audio
-        
-    except Exception as e:
-        logger.error(f"❌ Audio optimization failed: {e}")
-        # Return a safe fallback
-        return AudioSegment.silent(duration=30000)
-
-def generate_voice_fallback(script, output_dir):
-    """
-    Fallback voice generation using system TTS with enhanced validation
-    """
-    from datetime import datetime
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    audio_filename = f"narration_fallback_{timestamp}.mp3"
-    audio_path = os.path.join(output_dir, audio_filename)
-    
-    try:
-        # Try espeak first
-        temp_wav = audio_path.replace('.mp3', '.wav')
-        
-        cmd = [
-            'espeak',
-            '-s', '150',  # Speed
-            '-p', '40',   # Pitch
-            '-a', '100',  # Amplitude
-            '-w', temp_wav,
-            script
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        
-        if result.returncode != 0:
-            raise Exception(f"espeak failed: {result.stderr}")
-        
-        if not os.path.exists(temp_wav) or os.path.getsize(temp_wav) == 0:
-            raise Exception("espeak generated an empty or missing file")
-        
-        # Process with pydub
-        audio = AudioSegment.from_wav(temp_wav)
-        
-        if len(audio) == 0:
-            raise ValueError("espeak generated zero-duration audio")
-        
-        # Optimize audio
-        audio = optimize_audio(audio)
-        duration = validate_and_fix_duration(audio)
-        
-        # Export to MP3 with metadata
-        audio.export(audio_path, format="mp3", bitrate="128k",
-                   tags={"title": "Fallback Narration", "duration": str(duration)})
-        
-        # Clean up temporary file
-        if os.path.exists(temp_wav):
-            os.unlink(temp_wav)
-        
-        logger.info(f"✅ Fallback voice generated: {audio_path}")
-        logger.info(f"⏱️ Duration: {duration:.1f} seconds")
-        return audio_path
-        
-    except Exception as e:
-        logger.error(f"❌ System TTS failed: {e}")
-        return create_placeholder_audio(script, output_dir)
-
-def create_placeholder_audio(script, output_dir):
-    """
-    Create a placeholder audio file with silence and proper duration
-    """
-    from datetime import datetime
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    audio_filename = f"narration_placeholder_{timestamp}.mp3"
-    audio_path = os.path.join(output_dir, audio_filename)
-    
-    try:
-        # Calculate duration based on script length
-        word_count = len(script.split())
-        duration_seconds = max(30, (word_count / 150) * 60)  # Minimum 30 seconds
-        duration_ms = int(duration_seconds * 1000)
-        
-        # Create silence
-        silence = AudioSegment.silent(duration=duration_ms)
-        silence = silence.set_channels(1).set_frame_rate(22050)
-        
-        # Export with metadata
-        silence.export(audio_path, format="mp3", bitrate="128k",
-                     tags={"title": "Placeholder Audio", "duration": str(duration_seconds)})
-        
-        logger.warning(f"⚠️ Created placeholder audio: {audio_path}")
-        logger.info(f"⏱️ Duration: {duration_seconds:.1f} seconds")
-        
-        return audio_path
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to create placeholder audio: {e}")
-        raise
-
-def get_audio_duration(audio_path):
-    """
-    Get duration of audio file in seconds with validation
-    """
-    try:
-        audio = AudioSegment.from_file(audio_path)
-        duration = len(audio) / 1000.0
+        # Fix duration issues
+        audio_clip = fix_audio_clip_duration(audio_clip)
         
         # Validate duration
-        if not isinstance(duration, (int, float)) or duration <= 0:
-            logger.error(f"❌ Invalid duration detected: {duration}")
-            return 30.0  # Safe default
-            
-        return duration
+        if audio_clip.duration is None or audio_clip.duration <= 0:
+            raise ValueError(f"Invalid audio duration: {audio_clip.duration}")
+        
+        # Adjust duration if needed
+        if target_duration and target_duration != audio_clip.duration:
+            if target_duration > audio_clip.duration:
+                # Loop audio to reach target duration
+                loops_needed = int(np.ceil(target_duration / audio_clip.duration))
+                audio_clip = concatenate_audioclips([audio_clip] * loops_needed)
+                audio_clip = audio_clip.subclip(0, target_duration)
+            else:
+                # Trim audio to target duration
+                audio_clip = audio_clip.subclip(0, target_duration)
+        
+        # Ensure duration is properly set
+        audio_clip = audio_clip.set_duration(audio_clip.duration)
+        
+        logger.info(f"✅ Created safe audio clip: {audio_clip.duration:.2f}s")
+        return audio_clip
         
     except Exception as e:
-        logger.error(f"❌ Error getting audio duration: {e}")
-        return 30.0  # Safe default
+        logger.error(f"❌ Error creating safe audio clip: {e}")
+        # Create silent fallback
+        duration = target_duration if target_duration else 30.0
+        return AudioClip(make_frame=lambda t: np.array([0.0]), duration=duration)
 
-def validate_audio_for_moviepy(audio_path):
+def fix_composite_audio_clips(clips):
     """
-    Validate audio file for MoviePy compatibility
+    Fix all audio clips in a composite to prevent _NoValueType errors
+    
+    Args:
+        clips: List of audio clips
+        
+    Returns:
+        List of fixed audio clips
+    """
+    fixed_clips = []
+    
+    for i, clip in enumerate(clips):
+        try:
+            # Fix duration
+            fixed_clip = fix_audio_clip_duration(clip)
+            
+            # Ensure start time is set
+            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None:
+                fixed_clip = fixed_clip.set_start(0)
+            
+            # Ensure end time is set
+            if hasattr(fixed_clip, 'start') and hasattr(fixed_clip, 'duration'):
+                if fixed_clip.duration is not None:
+                    fixed_clip = fixed_clip.set_end(fixed_clip.start + fixed_clip.duration)
+            
+            fixed_clips.append(fixed_clip)
+            logger.info(f"✅ Fixed audio clip {i+1}/{len(clips)}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error fixing audio clip {i+1}: {e}")
+            # Create silent fallback
+            silent_clip = AudioClip(make_frame=lambda t: np.array([0.0]), duration=30.0)
+            fixed_clips.append(silent_clip)
+    
+    return fixed_clips
+
+def safe_write_videofile(video_clip, output_path, **kwargs):
+    """
+    Safely write video file with proper audio handling
+    
+    Args:
+        video_clip: MoviePy VideoClip
+        output_path: Output file path
+        **kwargs: Additional arguments for write_videofile
+        
+    Returns:
+        bool: Success status
     """
     try:
-        audio = AudioSegment.from_file(audio_path)
-        duration = len(audio) / 1000.0
+        # Check if video has audio
+        if video_clip.audio is not None:
+            logger.info("🔊 Video has audio, fixing audio issues...")
+            
+            # Fix audio duration
+            fixed_audio = fix_audio_clip_duration(video_clip.audio)
+            
+            # Ensure audio matches video duration
+            if video_clip.duration != fixed_audio.duration:
+                logger.warning(f"⚠️ Audio duration ({fixed_audio.duration:.2f}s) != Video duration ({video_clip.duration:.2f}s)")
+                
+                if fixed_audio.duration > video_clip.duration:
+                    # Trim audio
+                    fixed_audio = fixed_audio.subclip(0, video_clip.duration)
+                    logger.info(f"✂️ Trimmed audio to match video duration")
+                else:
+                    # Loop audio
+                    loops_needed = int(np.ceil(video_clip.duration / fixed_audio.duration))
+                    fixed_audio = concatenate_audioclips([fixed_audio] * loops_needed)
+                    fixed_audio = fixed_audio.subclip(0, video_clip.duration)
+                    logger.info(f"🔄 Looped audio to match video duration")
+            
+            # Set fixed audio back to video
+            video_clip = video_clip.set_audio(fixed_audio)
         
-        logger.info(f"🔍 Audio validation:")
-        logger.info(f"   - Duration: {duration:.1f} seconds")
-        logger.info(f"   - Channels: {audio.channels}")
-        logger.info(f"   - Frame rate: {audio.frame_rate}")
-        logger.info(f"   - Sample width: {audio.sample_width}")
+        # Set default parameters for stable output
+        default_params = {
+            'fps': 30,
+            'codec': 'libx264',
+            'audio_codec': 'aac',
+            'temp_audiofile': 'temp-audio.m4a',
+            'remove_temp': True,
+            'verbose': False,
+            'logger': None
+        }
         
-        # Check for common issues
-        if duration <= 0:
-            logger.error("❌ Audio has zero or negative duration")
+        # Update with user parameters
+        default_params.update(kwargs)
+        
+        # Write video file
+        logger.info(f"💾 Writing video to: {output_path}")
+        video_clip.write_videofile(output_path, **default_params)
+        
+        # Verify output file
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            logger.info(f"✅ Video successfully written: {output_path}")
+            return True
+        else:
+            logger.error(f"❌ Video file not created or empty: {output_path}")
             return False
             
-        if audio.channels == 0:
-            logger.error("❌ Audio has zero channels")
-            return False
+    except Exception as e:
+        logger.error(f"❌ Error writing video file: {e}")
+        return False
+    
+    finally:
+        # Clean up clips
+        try:
+            if hasattr(video_clip, 'close'):
+                video_clip.close()
+        except:
+            pass
+
+def debug_audio_clip(audio_clip, clip_name="Unknown"):
+    """
+    Debug audio clip properties to identify issues
+    
+    Args:
+        audio_clip: AudioClip to debug
+        clip_name: Name for logging
+    """
+    logger.info(f"🔍 Debugging audio clip: {clip_name}")
+    
+    try:
+        # Check basic properties
+        logger.info(f"   - Duration: {getattr(audio_clip, 'duration', 'NOT SET')}")
+        logger.info(f"   - Start: {getattr(audio_clip, 'start', 'NOT SET')}")
+        logger.info(f"   - End: {getattr(audio_clip, 'end', 'NOT SET')}")
+        logger.info(f"   - FPS: {getattr(audio_clip, 'fps', 'NOT SET')}")
+        
+        # Check if it's a composite clip
+        if hasattr(audio_clip, 'clips'):
+            logger.info(f"   - Composite with {len(audio_clip.clips)} clips")
+            for i, subclip in enumerate(audio_clip.clips):
+                logger.info(f"     Clip {i+1}: duration={getattr(subclip, 'duration', 'NOT SET')}")
+        
+        # Try to get a frame
+        try:
+            frame = audio_clip.get_frame(0)
+            logger.info(f"   - Frame at t=0: {frame}")
+        except Exception as e:
+            logger.error(f"   - Cannot get frame: {e}")
             
-        if audio.frame_rate == 0:
-            logger.error("❌ Audio has zero frame rate")
-            return False
-            
-        logger.info("✅ Audio validation passed")
-        return True
+    except Exception as e:
+        logger.error(f"❌ Error debugging audio clip: {e}")
+
+# Example usage function
+def create_video_with_fixed_audio(video_path, audio_path, output_path):
+    """
+    Create video with properly handled audio to avoid _NoValueType errors
+    
+    Args:
+        video_path: Path to video file
+        audio_path: Path to audio file  
+        output_path: Output video path
+        
+    Returns:
+        bool: Success status
+    """
+    try:
+        # Load video
+        video_clip = VideoFileClip(video_path)
+        logger.info(f"📹 Loaded video: {video_clip.duration:.2f}s")
+        
+        # Create safe audio clip
+        audio_clip = create_safe_audio_clip(audio_path, target_duration=video_clip.duration)
+        
+        # Debug audio before composition
+        debug_audio_clip(audio_clip, "Generated Audio")
+        
+        # Set audio to video
+        final_video = video_clip.set_audio(audio_clip)
+        
+        # Write with safe method
+        success = safe_write_videofile(final_video, output_path)
+        
+        # Clean up
+        video_clip.close()
+        audio_clip.close()
+        
+        return success
         
     except Exception as e:
-        logger.error(f"❌ Audio validation failed: {e}")
+        logger.error(f"❌ Error creating video with audio: {e}")
         return False
 
-def test_voice_generation():
-    """Test voice generation with sample text"""
-    test_script = """
-    Did you know that the first photograph ever taken required an 8-hour exposure time? 
-    That's right - in 1826, Joseph Nicéphore Niépce had to wait 8 hours just to capture 
-    a single image! This incredible breakthrough changed how we see and record our world forever. 
-    What would you have photographed first?
-    """
-    
-    logger.info("🧪 Testing voice generation...")
-    audio_path = generate_voice(test_script)
-    
-    if os.path.exists(audio_path):
-        duration = get_audio_duration(audio_path)
-        is_valid = validate_audio_for_moviepy(audio_path)
-        
-        logger.info(f"✅ Test successful!")
-        logger.info(f"📁 File: {audio_path}")
-        logger.info(f"⏱️ Duration: {duration:.1f} seconds")
-        logger.info(f"🎬 MoviePy compatible: {is_valid}")
-    else:
-        logger.error("❌ Test failed!")
-
 if __name__ == "__main__":
-    test_voice_generation()
+    # Test the fix
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    
+    # Example usage
+    print("🧪 Testing audio fix utilities...")
+    
+    # Create a test silent clip
+    test_clip = AudioClip(make_frame=lambda t: np.array([0.0]), duration=30.0)
+    debug_audio_clip(test_clip, "Test Silent Clip")
+    
+    print("✅ Audio fix utilities ready!")
