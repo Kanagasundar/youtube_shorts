@@ -13,7 +13,7 @@ from moviepy.config import change_settings
 from PIL import Image
 import random
 from datetime import datetime
-from voice import fix_composite_audio_clips, debug_audio_clip  # Import from voice.py
+from voice import fix_composite_audio_clips, debug_audio_clip, safe_write_videofile  # Added safe_write_videofile
 
 # Configure logging
 logging.basicConfig(
@@ -283,8 +283,9 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             for (start, end), word in subtitles:
                 try:
                     caption_clip = create_caption_clip(word, end - start)
-                    caption_clip = caption_clip.set_start(start)
+                    caption_clip = caption_clip.set_start(start)  # Use start time from subtitles
                     subtitle_clips.append(caption_clip)
+                    logger.info(f"✅ Set caption '{word}' start time to {start:.2f}s")
                 except Exception as e:
                     logger.error(f"Failed to create caption for word '{word}': {str(e)}")
                     continue
