@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
+"""
+MoviePy Audio Fix - Addresses the _NoValueType error in audio and video clip processing
+"""
+
 import os
 import logging
 from moviepy.editor import *
 from moviepy.audio.AudioClip import AudioClip
+from moviepy.video.VideoClip import VideoClip
 import numpy as np
 from gtts import gTTS
 from TTS.api import TTS
@@ -229,9 +234,69 @@ def fix_composite_audio_clips(clips):
     
     return fixed_clips
 
+def fix_composite_video_clips(clips, fallback_duration=30.0):
+    """
+    Fix all video clips (including TextClip) in a composite to prevent _NoValueType errors
+    
+    Args:
+        clips: List of video clips (VideoClip, TextClip, etc.)
+        fallback_duration: Default duration if clip duration is invalid
+        
+    Returns:
+        List of fixed video clips
+    """
+    fixed_clips = []
+    
+    for i, clip in enumerate(clips):
+        try:
+            # Check if clip has valid duration
+            if hasattr(clip, 'duration') and clip.duration is not None:
+                try:
+                    duration = float(clip.duration)
+                    if duration > 0:
+                        logger.info(f"✅ Video clip {i+1} has valid duration: {duration:.2f}s")
+                        clip = clip.set_duration(duration)  # Ensure duration is explicitly set
+                    else:
+                        logger.warning(f"⚠️ Video clip {i+1} has zero or negative duration, using fallback")
+                        clip = clip.set_duration(fallback_duration)
+                except (TypeError, ValueError):
+                    logger.warning(f"⚠️ Invalid duration for clip {i+1}, using fallback duration")
+                    clip = clip.set_duration(fallback_duration)
+            else:
+                logger.warning(f"⚠️ Video clip {i+1} missing duration, using fallback duration")
+                clip = clip.set_duration(fallback_duration)
+            
+            # Ensure start time is set
+            if not hasattr(clip, 'start') or clip.start is None or isinstance(clip.start, type(None)):
+                logger.info(f"🔄 Setting start time for clip {i+1} to 0")
+                clip = clip.set_start(0)
+            
+            # Ensure end time is set
+            try:
+                clip = clip.set_end(clip.start + float(clip.duration))
+            except (TypeError, ValueError):
+                logger.warning(f"⚠️ Invalid end time for clip {i+1}, setting based on fallback duration")
+                clip = clip.set_end(clip.start + fallback_duration)
+            
+            # Debug clip properties
+            logger.info(f"🔍 Video clip {i+1} properties: duration={getattr(clip, 'duration', 'NOT SET')}, "
+                       f"start={getattr(clip, 'start', 'NOT SET')}, "
+                       f"end={getattr(clip, 'end', 'NOT SET')}")
+            
+            fixed_clips.append(clip)
+            logger.info(f"✅ Fixed video clip {i+1}/{len(clips)}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error fixing video clip {i+1}: {e}")
+            # Create black video clip as fallback
+            black_clip = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=fallback_duration)
+            fixed_clips.append(black_clip)
+    
+    return fixed_clips
+
 def safe_write_videofile(video_clip, output_path, **kwargs):
     """
-    Safely write video file with proper audio handling
+    Safely write video file with proper audio and video clip handling
     
     Args:
         video_clip: MoviePy VideoClip
@@ -242,6 +307,11 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
         bool: Success status
     """
     try:
+        # Fix composite video clips (including subtitles)
+        if isinstance(video_clip, CompositeVideoClip):
+            logger.info("🔄 Detected CompositeVideoClip, fixing all sub-clips...")
+            video_clip.clips = fix_composite_video_clips(video_clip.clips)
+        
         # Check if video has audio
         if video_clip.audio is not None:
             logger.info("🔊 Video has audio, fixing audio issues...")
@@ -299,7 +369,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
             return False
             
     except Exception as e:
-        logger.error(f"❌ Error writing video file: {e}")
+        logger.error(f"❌ Error writing video file: {str(e)}")
         return False
     
     finally:
