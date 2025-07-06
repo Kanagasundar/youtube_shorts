@@ -1,4 +1,3 @@
-```python
 #!/usr/bin/env python3
 """
 Video creation utilities for YouTube Shorts automation
