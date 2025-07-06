@@ -1,382 +1,457 @@
 #!/usr/bin/env python3
 """
-Video creation utilities for YouTube Shorts automation
+MoviePy _NoValueType Error Fix - Comprehensive solution for MoviePy clip property issues
 """
 
 import os
 import logging
-import cv2
 import numpy as np
+from moviepy.editor import *
+from moviepy.audio.AudioClip import AudioClip
+from moviepy.video.VideoClip import VideoClip
+from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
+from moviepy.audio.fx.audio_loop import audio_loop
+from moviepy.video.fx.resize import resize
 from pathlib import Path
-import moviepy.editor as mpe
-from moviepy.config import change_settings
-from PIL import Image
-import random
 from datetime import datetime
-from voice import fix_composite_audio_clips, debug_audio_clip, safe_write_videofile, fix_composite_video_clips  # Added safe_write_videofile
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
-# Set ImageMagick binary path
-IMAGEMAGICK_BINARY = None
-for path in ['/usr/bin/convert', '/usr/local/bin/convert', '/bin/convert']:
-    if os.path.exists(path):
-        IMAGEMAGICK_BINARY = path
-        break
+class _NoValueType:
+    """Mock _NoValueType for detection"""
+    pass
 
-if IMAGEMAGICK_BINARY:
-    change_settings({"IMAGEMAGICK_BINARY": IMAGEMAGICK_BINARY})
-    logger.info(f"Found ImageMagick binary at: {IMAGEMAGICK_BINARY}")
-else:
-    logger.warning("ImageMagick binary not found, text rendering may fail")
+def is_no_value(value):
+    """Check if value is _NoValueType or similar undefined value"""
+    return (
+        value is None or 
+        str(type(value)).find('_NoValueType') != -1 or
+        str(value).find('_NoValueType') != -1 or
+        isinstance(value, type(None))
+    )
 
-def add_overlays(image, text, logo_path=None, sticker_path=None):
-    """
-    Add text, logo, and sticker overlays to an image using OpenCV.
-    
-    Args:
-        image: NumPy array of the image
-        text (str): Text to overlay
-        logo_path (str): Path to logo image
-        sticker_path (str): Path to sticker image
-    
-    Returns:
-        NumPy array with overlays
-    """
-    img = image.copy()
-    h, w = img.shape[:2]
-    
-    # Log available fonts for debugging
+def safe_float(value, default=0.0):
+    """Safely convert value to float, handling _NoValueType"""
+    if is_no_value(value):
+        return default
     try:
-        font_list = subprocess.check_output(['fc-list'], text=True)
-        logger.info("Available fonts:")
-        logger.info(font_list)
-        if 'FreeSans' in font_list:
-            logger.info("FreeSans font is available")
-        if 'LiberationSans' in font_list:
-            logger.info("LiberationSans font is available")
-    except Exception as e:
-        logger.warning(f"Failed to list fonts: {str(e)}")
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
-    # Add text overlay with fallback fonts
-    fonts = [cv2.FONT_HERSHEY_SIMPLEX, cv2.FONT_HERSHEY_DUPLEX, cv2.FONT_HERSHEY_PLAIN]
-    font = fonts[0]  # Default to SIMPLEX
-    font_scale = 1.5
-    font_color = (255, 255, 255)  # White text
-    font_thickness = 2
-    text_size, _ = cv2.getTextSize(text, font, font_scale, font_thickness)
-    text_x = (w - text_size[0]) // 2
-    text_y = h - 50
-    cv2.putText(img, text, (text_x, text_y), font, font_scale, (0, 0, 0), font_thickness + 2, cv2.LINE_AA)  # Black outline
-    cv2.putText(img, text, (text_x, text_y), font, font_scale, font_color, font_thickness, cv2.LINE_AA)  # White text
-    
-    # Add logo (top-left corner)
-    if logo_path and os.path.exists(logo_path):
-        logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
-        if logo is not None:
-            logo_h, logo_w = logo.shape[:2]
-            logo = cv2.resize(logo, (int(logo_w * 0.2), int(logo_h * 0.2)))
-            logo_h, logo_w = logo.shape[:2]
-            roi = img[10:10+logo_h, 10:10+logo_w]
-            if logo.shape[2] == 4:  # Handle transparency
-                alpha = logo[:, :, 3] / 255.0
-                for c in range(3):
-                    roi[:, :, c] = (1.0 - alpha) * roi[:, :, c] + alpha * logo[:, :, c]
-            else:
-                roi[:] = logo
-            img[10:10+logo_h, 10:10+logo_w] = roi
-    
-    # Add sticker (top-right corner)
-    if sticker_path and os.path.exists(sticker_path):
-        sticker = cv2.imread(sticker_path, cv2.IMREAD_UNCHANGED)
-        if sticker is not None:
-            sticker_h, sticker_w = sticker.shape[:2]
-            sticker = cv2.resize(sticker, (int(sticker_w * 0.2), int(sticker_h * 0.2)))
-            sticker_h, sticker_w = sticker.shape[:2]
-            roi = img[10:10+sticker_h, w-sticker_w-10:w-10]
-            if sticker.shape[2] == 4:  # Handle transparency
-                alpha = sticker[:, :, 3] / 255.0
-                for c in range(3):
-                    roi[:, :, c] = (1.0 - alpha) * roi[:, :, c] + alpha * sticker[:, :, c]
-            else:
-                roi[:] = sticker
-            img[10:10+sticker_h, w-sticker_w-10:w-10] = roi
-    
-    return img
-
-def create_caption_clip(text, duration):
+def fix_clip_properties(clip, fallback_duration=30.0, fallback_start=0.0):
     """
-    Create animated caption using MoviePy TextClip with font fallbacks and duration validation.
+    Fix all clip properties to prevent _NoValueType errors
     
     Args:
-        text (str): Caption text
-        duration (float): Duration of the caption
-    
-    Returns:
-        MoviePy clip with animated caption
-    """
-    logger.info(f"Generating caption for text: '{text}' with duration: {duration}s")
-    fonts = ['FreeSans', 'LiberationSans', 'Sans']  # Fallback fonts
-    clip = None
-    for font in fonts:
-        try:
-            logger.info(f"Attempting to use font: {font}")
-            clip = mpe.TextClip(
-                text,
-                fontsize=60,
-                color='white',
-                stroke_color='black',
-                stroke_width=1,
-                size=(1000, None),
-                method='caption',
-                align='center',
-                font=font
-            )
-            # Ensure duration is valid
-            clip = clip.set_duration(max(float(duration), 0.1))  # Minimum 0.1s to avoid zero duration
-            clip = clip.set_position(('center', 'bottom')).fadein(0.3).fadeout(0.3)
-            logger.info(f"Successfully created caption with font: {font}")
-            
-            # Debug clip properties
-            logger.info(f"🔍 Caption clip properties: duration={getattr(clip, 'duration', 'NOT SET')}, "
-                       f"start={getattr(clip, 'start', 'NOT SET')}, "
-                       f"end={getattr(clip, 'end', 'NOT SET')}")
-            return clip
-        except Exception as e:
-            logger.warning(f"Failed to create caption with font {font}: {str(e)}")
-            continue
-    logger.error("Failed to create caption with any font")
-    raise Exception("Could not create caption: No suitable font found")
-
-def create_video(audio_path: str, image_paths: list, output_dir: str, script_text: str, max_retries: int = 5) -> str:
-    """
-    Create a YouTube Shorts video with overlays, transitions, captions, and 9:16 aspect ratio.
-    
-    Args:
-        audio_path (str): Path to narration audio
-        image_paths (list): List of image paths
-        output_dir (str): Directory to save video
-        script_text (str): Script text for captions
-        max_retries (int): Maximum retry attempts
-    
-    Returns:
-        str: Path to generated video
-    """
-    for attempt in range(1, max_retries + 1):
-        try:
-            logger.info(f"🎬 Starting video creation (Attempt {attempt}/{max_retries})...")
-            
-            # Validate inputs
-            if not os.path.exists(audio_path):
-                raise FileNotFoundError(f"Audio file not found: {audio_path}")
-            if not isinstance(image_paths, list) or not all(os.path.exists(p) for p in image_paths):
-                raise FileNotFoundError(f"Image sequence not found or invalid: {image_paths}")
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-                logger.info(f"✅ Created output directory: {output_dir}")
-            
-            # Load audio
-            logger.info(f"🔊 Loading audio: {audio_path}")
-            audio = mpe.AudioFileClip(audio_path)
-            audio = fix_composite_audio_clips([audio])[0]  # Fix audio clip
-            debug_audio_clip(audio, "Main Audio")
-            audio_duration = audio.duration
-            
-            # Ensure video duration is 15-40 seconds
-            target_duration = max(15, min(40, audio_duration))
-            num_images = len(image_paths)
-            
-            # Calculate variable image durations (0.5-6s)
-            if num_images > 0:
-                min_duration_per_image = 0.5
-                max_duration_per_image = 6.0
-                durations = [random.uniform(min_duration_per_image, max_duration_per_image) for _ in range(num_images)]
-                total_image_duration = sum(durations)
-                if total_image_duration < target_duration:
-                    scale_factor = target_duration / total_image_duration
-                    durations = [d * scale_factor for d in durations]
-                elif total_image_duration > target_duration:
-                    scale_factor = target_duration / total_image_duration
-                    durations = [min(d * scale_factor, max_duration_per_image) for d in durations]
-            else:
-                durations = [target_duration]
-            
-            # Process images with OpenCV
-            logger.info(f"🖼️ Pre-processing {num_images} images...")
-            clips = []
-            logo_path = os.path.join(output_dir, "logo.png")  # Placeholder for logo
-            sticker_path = os.path.join(output_dir, "sticker.png")  # Placeholder for sticker
-            
-            for i, (image_path, duration) in enumerate(zip(image_paths, durations)):
-                logger.info(f"🖼️ Processing image {i+1}: {image_path}")
-                # Load with PIL to preserve RGB
-                img = Image.open(image_path).convert("RGB")
-                img_w, img_h = img.size
-                target_w, target_h = 1080, 1920
-                if img_w / img_h > target_w / target_h:
-                    new_w = int(target_h * img_w / img_h)
-                    img = img.resize((new_w, target_h), Image.Resampling.LANCZOS)
-                    left = (new_w - target_w) // 2
-                    img = img.crop((left, 0, left + target_w, target_h))
-                else:
-                    new_h = int(target_w * img_h / img_w)
-                    img = img.resize((target_w, new_h), Image.Resampling.LANCZOS)
-                    top = (new_h - target_h) // 2
-                    img = img.crop((0, top, target_w, top + target_h))
-                
-                # Convert to NumPy array without BGR conversion
-                img_np = np.array(img)
-                logger.debug(f"Initial image shape: {img_np.shape}, dtype: {img_np.dtype}")
-                logger.debug(f"Sample pixel (top-left): {img_np[0, 0]}")
-                
-                # Verify color channels
-                if img_np.shape[2] != 3:
-                    raise ValueError(f"Image {image_path} has unexpected channel count: {img_np.shape[2]}")
-                if np.all(img_np[:, :, 2] > img_np[:, :, 0]) and np.all(img_np[:, :, 2] > img_np[:, :, 1]):
-                    logger.warning(f"Potential blue dominance detected in image {image_path}")
-                
-                # Add overlays
-                overlay_text = f"Part {i+1}: {script_text.split('.')[i % len(script_text.split('.'))].strip()}"
-                img_np = add_overlays(img_np, overlay_text, logo_path, sticker_path)
-                
-                # Save intermediate debug image
-                debug_path = os.path.join(output_dir, f"debug_frame_pre_cv2_{i+1}.png")
-                cv2.imwrite(debug_path, cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))
-                logger.info(f"🖼️ Saved pre-CV2 debug image: {debug_path}")
-                
-                # Convert to MoviePy clip
-                clip = mpe.ImageClip(img_np).set_duration(duration)
-                
-                # Apply transitions
-                if i > 0:
-                    transition_type = random.choice(['fade', 'zoom', 'slide'])
-                    if transition_type == 'fade':
-                        clip = clip.crossfadein(0.5)
-                    elif transition_type == 'zoom':
-                        clip = clip.resize(lambda t: 1 + 0.1 * t / duration)
-                    elif transition_type == 'slide':
-                        clip = clip.set_position(lambda t: ('center', -100 + 100 * t / duration))
-                
-                clips.append(clip)
-            
-            # Concatenate clips
-            logger.info("Concatenating image clips...")
-            video = mpe.concatenate_videoclips(clips, method="compose", padding=-0.5)
-            video = video.set_audio(audio)
-            video = video.set_duration(target_duration)
-            
-            # Generate captions with MoviePy
-            logger.info("📝 Generating captions...")
-            words = script_text.split()
-            word_duration = target_duration / max(len(words), 1)
-            subtitles = []
-            current_time = 0
-            for word in words:
-                subtitles.append(((current_time, current_time + word_duration), word))
-                current_time += word_duration
-            
-            subtitle_clips = []
-            for (start, end), word in subtitles:
-                try:
-                    caption_clip = create_caption_clip(word, end - start)
-                    caption_clip = caption_clip.set_start(start)  # Use start time from subtitles
-                    subtitle_clips.append(caption_clip)
-                    logger.info(f"✅ Set caption '{word}' start time to {start:.2f}s")
-                except Exception as e:
-                    logger.error(f"Failed to create caption for word '{word}': {str(e)}")
-                    continue
-            
-            # Fix subtitle clips to avoid _NoValueType errors
-            subtitle_clips = [clip.set_duration(max(float(clip.duration), 0.1)).set_start(clip.start or 0) 
-                             for clip in subtitle_clips if hasattr(clip, 'duration')]
-            
-            # Create composite video
-            logger.info("🔄 Creating composite video with subtitles...")
-            video = mpe.CompositeVideoClip([video] + subtitle_clips)
-            
-            # Fix all video clips in composite
-            video.clips = fix_composite_video_clips(video.clips, fallback_duration=target_duration)
-            
-            # Ensure video audio is fixed
-            if video.audio is not None:
-                video.audio = fix_composite_audio_clips([video.audio])[0]
-                debug_audio_clip(video.audio, "Final Video Audio")
-            
-            # Generate output path
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = str(Path(output_dir) / f"video_{timestamp}.mp4")
-            
-            # Write video using safe_write_videofile
-            logger.info(f"💾 Writing video to {output_path}...")
-            success = safe_write_videofile(video, output_path,
-                                          codec="libx264",
-                                          audio_codec="aac",
-                                          preset="medium",
-                                          bitrate="4000k",
-                                          threads=2,
-                                          fps=30)
-            
-            if not success:
-                raise RuntimeError("Failed to write video file")
-            
-            # Clean up resources
-            audio.close()
-            video.close()
-            for clip in clips + subtitle_clips:
-                clip.close()
-            logger.info(f"✅ Video created successfully: {output_path}")
-            return output_path
+        clip: MoviePy clip (Video or Audio)
+        fallback_duration: Default duration if invalid
+        fallback_start: Default start time if invalid
         
-        except Exception as e:
-            logger.error(f"❌ Failed to create video (Attempt {attempt}/{max_retries}): {str(e)}", exc_info=True)
-            if attempt < max_retries:
-                logger.info(f"Retrying in 1.0s...")
-                import time
-                time.sleep(1.0)
-            else:
-                logger.error("❌ Max retries reached. Video creation failed.")
-                # Save last processed image for debugging
-                if 'img_np' in locals():
-                    debug_path = os.path.join(output_dir, f"debug_last_frame.png")
-                    cv2.imwrite(debug_path, cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))
-                    logger.info(f"🖼️ Saved last processed frame for debugging: {debug_path}")
-                return None
-
-def cleanup():
-    """
-    Clean up temporary files.
+    Returns:
+        Fixed clip with proper properties
     """
     try:
-        logger.info("🧹 Cleaning up temporary files...")
-        temp_files = [f for f in os.listdir() if f.startswith('temp-') or f.endswith('.m4a') or f.startswith('temp_caption')]
-        for file in temp_files:
+        # Get current properties safely
+        current_duration = getattr(clip, 'duration', None)
+        current_start = getattr(clip, 'start', None)
+        current_end = getattr(clip, 'end', None)
+        
+        # Fix duration
+        if is_no_value(current_duration):
+            logger.warning(f"⚠️ Clip has invalid duration, using fallback: {fallback_duration}s")
+            clip = clip.set_duration(fallback_duration)
+        else:
             try:
-                os.remove(file)
-                logger.info(f"✅ Removed {file}")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to remove {file}: {e}")
-        logger.info(f"✅ Cleaned up {len(temp_files)} temporary files")
+                duration = safe_float(current_duration, fallback_duration)
+                if duration <= 0:
+                    duration = fallback_duration
+                clip = clip.set_duration(duration)
+            except:
+                clip = clip.set_duration(fallback_duration)
+        
+        # Fix start time
+        if is_no_value(current_start):
+            logger.info(f"🔄 Setting start time to: {fallback_start}s")
+            clip = clip.set_start(fallback_start)
+        else:
+            try:
+                start = safe_float(current_start, fallback_start)
+                clip = clip.set_start(start)
+            except:
+                clip = clip.set_start(fallback_start)
+        
+        # Fix end time based on start + duration
+        try:
+            start_time = safe_float(clip.start, fallback_start)
+            duration = safe_float(clip.duration, fallback_duration)
+            end_time = start_time + duration
+            clip = clip.set_end(end_time)
+        except:
+            clip = clip.set_end(fallback_start + fallback_duration)
+        
+        # Log fixed properties
+        logger.info(f"✅ Fixed clip properties: duration={clip.duration:.2f}s, start={clip.start:.2f}s, end={clip.end:.2f}s")
+        
+        return clip
+        
     except Exception as e:
-        logger.error(f"❌ Cleanup failed: {str(e)}", exc_info=True)
+        logger.error(f"❌ Error fixing clip properties: {e}")
+        # Return a basic clip with safe properties
+        if hasattr(clip, 'make_frame'):
+            return clip.set_duration(fallback_duration).set_start(fallback_start)
+        else:
+            # Create a silent audio clip as fallback
+            return AudioClip(make_frame=lambda t: np.array([0.0]), duration=fallback_duration).set_start(fallback_start)
+
+def fix_composite_video_clips(clips, fallback_duration=30.0):
+    """
+    Fix all video clips in a composite to prevent _NoValueType errors
+    
+    Args:
+        clips: List of video clips
+        fallback_duration: Default duration for invalid clips
+        
+    Returns:
+        List of fixed video clips
+    """
+    fixed_clips = []
+    
+    for i, clip in enumerate(clips):
+        try:
+            logger.info(f"🔄 Fixing video clip {i+1}/{len(clips)}")
+            
+            # Handle different clip types
+            if hasattr(clip, 'clips'):  # Composite clip
+                logger.info(f"   - Composite clip with {len(clip.clips)} sub-clips")
+                clip.clips = fix_composite_video_clips(clip.clips, fallback_duration)
+            
+            # Fix basic properties
+            fixed_clip = fix_clip_properties(clip, fallback_duration, fallback_start=0.0)
+            
+            # Special handling for TextClip
+            if hasattr(clip, 'txt') or str(type(clip)).find('TextClip') != -1:
+                logger.info(f"   - TextClip detected, ensuring proper duration")
+                # TextClips sometimes have issues with duration
+                if is_no_value(fixed_clip.duration):
+                    fixed_clip = fixed_clip.set_duration(min(5.0, fallback_duration))
+            
+            # Ensure position is set for overlay clips
+            if not hasattr(fixed_clip, 'pos') or fixed_clip.pos is None:
+                fixed_clip = fixed_clip.set_position('center')
+            
+            fixed_clips.append(fixed_clip)
+            logger.info(f"✅ Fixed video clip {i+1}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error fixing video clip {i+1}: {e}")
+            # Create black clip as fallback
+            try:
+                black_clip = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=fallback_duration)
+                black_clip = black_clip.set_start(0)
+                fixed_clips.append(black_clip)
+                logger.info(f"🔄 Created fallback black clip for clip {i+1}")
+            except:
+                logger.error(f"❌ Failed to create fallback for clip {i+1}")
+    
+    return fixed_clips
+
+def fix_composite_audio_clips(clips, fallback_duration=30.0):
+    """
+    Fix all audio clips in a composite to prevent _NoValueType errors
+    
+    Args:
+        clips: List of audio clips
+        fallback_duration: Default duration for invalid clips
+        
+    Returns:
+        List of fixed audio clips
+    """
+    fixed_clips = []
+    
+    for i, clip in enumerate(clips):
+        try:
+            logger.info(f"🔊 Fixing audio clip {i+1}/{len(clips)}")
+            
+            # Handle composite audio clips
+            if hasattr(clip, 'clips'):
+                logger.info(f"   - Composite audio clip with {len(clip.clips)} sub-clips")
+                clip.clips = fix_composite_audio_clips(clip.clips, fallback_duration)
+            
+            # Fix basic properties
+            fixed_clip = fix_clip_properties(clip, fallback_duration, fallback_start=0.0)
+            
+            # Ensure audio has proper sample rate
+            if not hasattr(fixed_clip, 'fps') or fixed_clip.fps is None:
+                fixed_clip.fps = 44100
+            
+            fixed_clips.append(fixed_clip)
+            logger.info(f"✅ Fixed audio clip {i+1}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error fixing audio clip {i+1}: {e}")
+            # Create silent clip as fallback
+            try:
+                silent_clip = AudioClip(make_frame=lambda t: np.array([0.0]), duration=fallback_duration)
+                silent_clip = silent_clip.set_start(0)
+                fixed_clips.append(silent_clip)
+                logger.info(f"🔄 Created fallback silent clip for clip {i+1}")
+            except:
+                logger.error(f"❌ Failed to create fallback for audio clip {i+1}")
+    
+    return fixed_clips
+
+def create_safe_text_clip(text, duration, fontsize=60, color='white', stroke_color='black', stroke_width=1):
+    """
+    Create a safe TextClip that won't cause _NoValueType errors
+    
+    Args:
+        text: Text to display
+        duration: Duration of the text clip
+        fontsize: Font size
+        color: Text color
+        stroke_color: Stroke color
+        stroke_width: Stroke width
+        
+    Returns:
+        Safe TextClip with proper properties
+    """
+    try:
+        # Ensure duration is valid
+        duration = safe_float(duration, 3.0)
+        if duration <= 0:
+            duration = 3.0
+        
+        logger.info(f"📝 Creating text clip: '{text}' for {duration:.2f}s")
+        
+        # Try different fonts
+        fonts = ['Arial', 'DejaVu-Sans', 'Liberation-Sans', 'FreeSans']
+        
+        for font in fonts:
+            try:
+                clip = TextClip(
+                    text,
+                    fontsize=fontsize,
+                    color=color,
+                    stroke_color=stroke_color,
+                    stroke_width=stroke_width,
+                    font=font,
+                    size=(1000, None),
+                    method='caption',
+                    align='center'
+                )
+                
+                # Explicitly set all properties
+                clip = clip.set_duration(duration)
+                clip = clip.set_start(0)
+                clip = clip.set_end(duration)
+                clip = clip.set_position(('center', 'bottom'))
+                
+                # Add fade effects
+                clip = clip.fadein(0.3).fadeout(0.3)
+                
+                logger.info(f"✅ Created text clip with font: {font}")
+                return clip
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to create text clip with font {font}: {e}")
+                continue
+        
+        # If all fonts fail, create a simple colored rectangle as fallback
+        logger.warning("🔄 All fonts failed, creating fallback rectangle")
+        fallback_clip = ColorClip(size=(400, 100), color=(128, 128, 128), duration=duration)
+        fallback_clip = fallback_clip.set_start(0).set_position(('center', 'bottom'))
+        return fallback_clip
+        
+    except Exception as e:
+        logger.error(f"❌ Error creating text clip: {e}")
+        # Create minimal fallback
+        fallback_clip = ColorClip(size=(200, 50), color=(64, 64, 64), duration=duration)
+        fallback_clip = fallback_clip.set_start(0).set_position('center')
+        return fallback_clip
+
+def safe_write_videofile(video_clip, output_path, **kwargs):
+    """
+    Safely write video file with comprehensive _NoValueType error prevention
+    
+    Args:
+        video_clip: MoviePy VideoClip
+        output_path: Output file path
+        **kwargs: Additional arguments for write_videofile
+        
+    Returns:
+        bool: Success status
+    """
+    try:
+        logger.info(f"💾 Starting safe video write to: {output_path}")
+        
+        # Fix main video clip properties
+        video_clip = fix_clip_properties(video_clip)
+        
+        # Fix composite video clips
+        if isinstance(video_clip, CompositeVideoClip):
+            logger.info("🔄 Fixing composite video clips...")
+            video_clip.clips = fix_composite_video_clips(video_clip.clips, video_clip.duration)
+            
+            # Ensure main clip is first and has proper duration
+            if video_clip.clips:
+                main_clip = video_clip.clips[0]
+                main_duration = safe_float(main_clip.duration, 30.0)
+                
+                # Fix all clip timings relative to main clip
+                for i, clip in enumerate(video_clip.clips):
+                    if i == 0:
+                        continue  # Skip main clip
+                    
+                    # Ensure overlay clips don't exceed main clip duration
+                    clip_duration = safe_float(clip.duration, 3.0)
+                    clip_start = safe_float(clip.start, 0.0)
+                    
+                    if clip_start + clip_duration > main_duration:
+                        new_duration = main_duration - clip_start
+                        if new_duration > 0:
+                            video_clip.clips[i] = clip.set_duration(new_duration)
+                        else:
+                            video_clip.clips[i] = clip.set_start(0).set_duration(min(clip_duration, main_duration))
+        
+        # Fix audio if present
+        if hasattr(video_clip, 'audio') and video_clip.audio is not None:
+            logger.info("🔊 Fixing audio clips...")
+            
+            # Handle composite audio
+            if hasattr(video_clip.audio, 'clips'):
+                video_clip.audio.clips = fix_composite_audio_clips(
+                    video_clip.audio.clips, 
+                    video_clip.duration
+                )
+            
+            # Fix main audio properties
+            video_clip.audio = fix_clip_properties(video_clip.audio, video_clip.duration)
+            
+            # Ensure audio duration matches video duration
+            audio_duration = safe_float(video_clip.audio.duration, video_clip.duration)
+            video_duration = safe_float(video_clip.duration, 30.0)
+            
+            if abs(audio_duration - video_duration) > 0.1:  # More than 0.1s difference
+                logger.warning(f"⚠️ Audio duration ({audio_duration:.2f}s) != Video duration ({video_duration:.2f}s)")
+                
+                if audio_duration > video_duration:
+                    # Trim audio
+                    video_clip.audio = video_clip.audio.subclip(0, video_duration)
+                    logger.info("✂️ Trimmed audio to match video duration")
+                else:
+                    # Extend audio by looping
+                    try:
+                        loops_needed = int(np.ceil(video_duration / audio_duration))
+                        extended_audio = concatenate_audioclips([video_clip.audio] * loops_needed)
+                        video_clip.audio = extended_audio.subclip(0, video_duration)
+                        logger.info(f"🔄 Extended audio by looping ({loops_needed} loops)")
+                    except:
+                        logger.warning("⚠️ Failed to extend audio, keeping original")
+        
+        # Set safe default parameters
+        safe_params = {
+            'fps': 30,
+            'codec': 'libx264',
+            'audio_codec': 'aac',
+            'temp_audiofile': 'temp-audio.m4a',
+            'remove_temp': True,
+            'verbose': False,
+            'logger': None,
+            'preset': 'medium',
+            'threads': 2
+        }
+        
+        # Update with user parameters
+        safe_params.update(kwargs)
+        
+        # Final validation
+        final_duration = safe_float(video_clip.duration, 30.0)
+        if final_duration <= 0:
+            raise ValueError(f"Invalid final video duration: {final_duration}")
+        
+        logger.info(f"📊 Final video properties: duration={final_duration:.2f}s")
+        
+        # Write the video file
+        logger.info("🎬 Writing video file...")
+        video_clip.write_videofile(output_path, **safe_params)
+        
+        # Verify output
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            logger.info(f"✅ Video successfully written: {output_path} ({os.path.getsize(output_path)} bytes)")
+            return True
+        else:
+            logger.error(f"❌ Video file not created or empty: {output_path}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Error in safe_write_videofile: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
+
+def debug_clip_properties(clip, clip_name="Unknown"):
+    """
+    Debug clip properties to identify _NoValueType issues
+    
+    Args:
+        clip: MoviePy clip
+        clip_name: Name for logging
+    """
+    logger.info(f"🔍 Debugging clip: {clip_name}")
+    
+    try:
+        # Check basic properties
+        duration = getattr(clip, 'duration', 'NOT_SET')
+        start = getattr(clip, 'start', 'NOT_SET')
+        end = getattr(clip, 'end', 'NOT_SET')
+        
+        logger.info(f"   - Duration: {duration} (type: {type(duration)})")
+        logger.info(f"   - Start: {start} (type: {type(start)})")
+        logger.info(f"   - End: {end} (type: {type(end)})")
+        
+        # Check for _NoValueType
+        if is_no_value(duration):
+            logger.warning(f"   - ⚠️ Duration is _NoValueType or None")
+        if is_no_value(start):
+            logger.warning(f"   - ⚠️ Start is _NoValueType or None")
+        if is_no_value(end):
+            logger.warning(f"   - ⚠️ End is _NoValueType or None")
+        
+        # Check if composite
+        if hasattr(clip, 'clips'):
+            logger.info(f"   - Composite with {len(clip.clips)} sub-clips")
+            for i, subclip in enumerate(clip.clips):
+                sub_duration = getattr(subclip, 'duration', 'NOT_SET')
+                sub_start = getattr(subclip, 'start', 'NOT_SET')
+                logger.info(f"     Sub-clip {i+1}: duration={sub_duration}, start={sub_start}")
+                
+    except Exception as e:
+        logger.error(f"❌ Error debugging clip: {e}")
+
+# Test function
+def test_fix():
+    """Test the fix with a simple example"""
+    try:
+        logger.info("🧪 Testing _NoValueType fix...")
+        
+        # Create a test clip that might have issues
+        test_clip = ColorClip(size=(1080, 1920), color=(255, 0, 0), duration=5.0)
+        
+        # Debug original
+        debug_clip_properties(test_clip, "Original Test Clip")
+        
+        # Fix it
+        fixed_clip = fix_clip_properties(test_clip)
+        
+        # Debug fixed
+        debug_clip_properties(fixed_clip, "Fixed Test Clip")
+        
+        logger.info("✅ Test completed successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ Test failed: {e}")
 
 if __name__ == "__main__":
-    audio_path = "output/narration_20250704_084011.mp3"
-    image_paths = [
-        f"output/frame_20250704_084016_1.png",
-        f"output/frame_20250704_084022_2.png",
-        f"output/frame_20250704_084031_3.png",
-        f"output/frame_20250704_084035_4.png",
-        f"output/frame_20250704_084047_5.png"
-    ]
-    output_dir = "output"
-    script_text = "AI just solved a 50-year-old problem"
-    video_path = create_video(audio_path, image_paths, output_dir, script_text)
-    if video_path:
-        print(f"Video created at: {video_path}")
-    else:
-        print("Video creation failed.")
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    test_fix()
