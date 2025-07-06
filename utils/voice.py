@@ -251,7 +251,7 @@ def validate_clip_properties(clip, clip_name="Unknown"):
         # Check for None clip
         if clip is None:
             logger.warning(f"⚠️ Clip {clip_name} is None, creating fallback black clip")
-            return ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=30.0)
+            return ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=0.5)
         
         # Fix duration (ensure minimum 0.5s for stability)
         duration = getattr(clip, 'duration', None)
@@ -476,7 +476,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
             'codec': 'libx264',
             'audio_codec': 'aac',
             'temp_audiofile': 'temp-audio.m4a',
-            'remove_sluggish=True,
+            'remove_temp': True,
             'verbose': False,
             'logger': None
         }
