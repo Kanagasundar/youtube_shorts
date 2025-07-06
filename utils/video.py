@@ -13,7 +13,7 @@ from moviepy.config import change_settings
 from PIL import Image
 import random
 from datetime import datetime
-from voice import fix_composite_audio_clips, debug_audio_clip  # Import from voice.py
+from voice import fix_composite_audio_clips, debug_audio_clip, safe_write_videofile, fix_composite_video_clips  # Added safe_write_videofile
 
 # Configure logging
 logging.basicConfig(
@@ -144,7 +144,8 @@ def create_caption_clip(text, duration):
             
             # Debug clip properties
             logger.info(f"🔍 Caption clip properties: duration={getattr(clip, 'duration', 'NOT SET')}, "
-                       f"start={getattr(clip, 'start', 'NOT SET')}")
+                       f"start={getattr(clip, 'start', 'NOT SET')}, "
+                       f"end={getattr(clip, 'end', 'NOT SET')}")
             return clip
         except Exception as e:
             logger.warning(f"Failed to create caption with font {font}: {str(e)}")
@@ -283,8 +284,9 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             for (start, end), word in subtitles:
                 try:
                     caption_clip = create_caption_clip(word, end - start)
-                    caption_clip = caption_clip.set_start(start)
+                    caption_clip = caption_clip.set_start(start)  # Use start time from subtitles
                     subtitle_clips.append(caption_clip)
+                    logger.info(f"✅ Set caption '{word}' start time to {start:.2f}s")
                 except Exception as e:
                     logger.error(f"Failed to create caption for word '{word}': {str(e)}")
                     continue
@@ -296,6 +298,9 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             # Create composite video
             logger.info("🔄 Creating composite video with subtitles...")
             video = mpe.CompositeVideoClip([video] + subtitle_clips)
+            
+            # Fix all video clips in composite
+            video.clips = fix_composite_video_clips(video.clips, fallback_duration=target_duration)
             
             # Ensure video audio is fixed
             if video.audio is not None:
