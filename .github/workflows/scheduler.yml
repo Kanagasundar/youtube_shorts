@@ -2,7 +2,7 @@ name: YouTube Automation
 
 on:
   schedule:
-    - cron: '0 18 * * *'  # Daily at 6:00 PM UTC (11:30 PM IST)
+    - cron: '0 4 * * *'
   workflow_dispatch:
     inputs:
       topic_override:
