@@ -5,6 +5,7 @@ MoviePy Audio Fix - Addresses the _NoValueType error in audio and video clip pro
 
 import os
 import logging
+import moviepy
 from moviepy.editor import *
 from moviepy.audio.AudioClip import AudioClip
 from moviepy.video.VideoClip import VideoClip
@@ -15,6 +16,9 @@ from pathlib import Path
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+# Log MoviePy version for debugging
+logger.info(f"MoviePy version: {moviepy.__version__}")
 
 def generate_voice(script: str, output_dir: str = "output") -> str:
     """
@@ -297,18 +301,36 @@ def validate_clip_properties(clip, clip_name="Unknown"):
             logger.info(f"🔄 Setting FPS for {clip_name} to 30")
             clip = clip.set_fps(30)
         
-        # Validate TextClip-specific properties
+        # Validate TextClip-specific properties by recreating the clip if necessary
         if isinstance(clip, TextClip):
-            for attr in ['font', 'fontsize', 'color']:
-                value = getattr(clip, attr, None)
-                if value is None or isinstance(value, type(None)):
-                    logger.warning(f"⚠️ Invalid {attr} for {clip_name}, setting default")
-                    if attr == 'font':
-                        clip = clip.set_font('FreeSans')
-                    elif attr == 'fontsize':
-                        clip = clip.set_fontsize(60)
-                    elif attr == 'color':
-                        clip = clip.set_color('white')
+            text = getattr(clip, 'text', None)
+            if text is None:
+                logger.warning(f"⚠️ Invalid text for {clip_name}, creating fallback TextClip")
+                clip = TextClip("Fallback", fontsize=60, color='white', size=(1080, 1920), method='caption', align='center')
+                clip = clip.set_duration(0.5).set_position(('center', 'bottom')).set_fps(30)
+            else:
+                # Check font properties and recreate if invalid
+                for attr in ['font', 'fontsize', 'color']:
+                    value = getattr(clip, attr, None)
+                    if value is None or isinstance(value, type(None)):
+                        logger.warning(f"⚠️ Invalid {attr} for {clip_name}, recreating TextClip")
+                        try:
+                            clip = TextClip(
+                                text,
+                                font='FreeSans',
+                                fontsize=60,
+                                color='white',
+                                stroke_color='black',
+                                stroke_width=1,
+                                size=(1080, 1920),
+                                method='caption',
+                                align='center'
+                            )
+                            clip = clip.set_duration(float(clip.duration)).set_position(('center', 'bottom')).set_fps(30)
+                            break  # Exit loop after recreating
+                        except Exception as e:
+                            logger.error(f"❌ Failed to recreate TextClip for {clip_name}: {e}")
+                            clip = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=0.5)
         
         # Recursively validate sub-clips for CompositeVideoClip
         if isinstance(clip, CompositeVideoClip) and hasattr(clip, 'clips'):
@@ -468,7 +490,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
                    f"start={getattr(video_clip, 'start', 'NOT SET')}, "
                    f"size={getattr(video_clip, 'size', 'NOT SET')}, "
                    f"fps={getattr(video_clip, 'fps', 'NOT SET')}, "
-                   f"pos={getattr(video_clip, 'pos', 'NOT SET')}")
+                   f"pos={getattr(clip, 'pos', 'NOT SET')}")
         
         # Set default parameters for stable output
         default_params = {
