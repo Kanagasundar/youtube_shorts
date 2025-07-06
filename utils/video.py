@@ -48,20 +48,26 @@ def fix_clip_properties(clip: mpe.VideoClip, duration: float) -> mpe.VideoClip:
         MoviePy VideoClip with fixed properties
     """
     try:
+        from moviepy.tools import _NoValueType  # Correct import for _NoValueType
+    except ImportError:
+        logger.warning("⚠️ moviepy.tools._NoValueType not found, skipping _NoValueType checks")
+        _NoValueType = type(None)  # Fallback to checking for None
+
+    try:
         if clip is None:
             logger.warning("Received None clip, creating black clip")
             clip = mpe.ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=duration)
         
         # Set duration if not set or invalid
-        if not hasattr(clip, 'duration') or clip.duration is None or clip.duration <= 0 or isinstance(clip.duration, mpe.video.io.ffmpeg_writer._NoValueType):
+        if not hasattr(clip, 'duration') or clip.duration is None or clip.duration <= 0 or isinstance(clip.duration, _NoValueType):
             logger.info(f"Setting clip duration to {duration}")
             clip = clip.set_duration(float(duration))
         
         # Ensure start and end times
-        if not hasattr(clip, 'start') or clip.start is None or isinstance(clip.start, mpe.video.io.ffmpeg_writer._NoValueType):
+        if not hasattr(clip, 'start') or clip.start is None or isinstance(clip.start, _NoValueType):
             clip = clip.set_start(0)
         
-        if not hasattr(clip, 'end') or clip.end is None or isinstance(clip.end, mpe.video.io.ffmpeg_writer._NoValueType):
+        if not hasattr(clip, 'end') or clip.end is None or isinstance(clip.end, _NoValueType):
             clip = clip.set_end(float(duration))
         
         # Verify size for video clips
