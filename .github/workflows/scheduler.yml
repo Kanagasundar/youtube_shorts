@@ -17,7 +17,7 @@ on:
 jobs:
   create-and-upload-video:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60  # Increased from 45 to 60 minutes
     env:
       ACTIONS_RUNNER_DEBUG: true
       NODE_OPTIONS: "--max-old-space-size=8192"
@@ -114,7 +114,12 @@ jobs:
           
           # Verify font availability
           echo "🔍 Available fonts:"
-          fc-list | grep -i "FreeSans\|LiberationSans\|DejaVu" || echo "⚠️ No FreeSans, LiberationSans, or DejaVu fonts found"
+          fc-list | grep -i "FreeSerif\|FreeSans\|LiberationSans\|DejaVu" || echo "⚠️ No FreeSerif, FreeSans, LiberationSans, or DejaVu fonts found"
+          if fc-list | grep -qi "FreeSerif"; then
+            echo "✅ FreeSerif font found"
+          else
+            echo "⚠️ FreeSerif font not found"
+          fi
           if fc-list | grep -qi "FreeSans"; then
             echo "✅ FreeSans font found"
           else
@@ -141,7 +146,7 @@ jobs:
             echo "✅ Original policy backed up"
           fi
           
-          # Write new policy configuration
+          # Write new policy configuration with increased limits
           sudo tee "$POLICY_FILE" > /dev/null << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <policymap>
@@ -161,11 +166,11 @@ jobs:
             <policy domain="path" rights="read|write" pattern="/usr/share/fonts/*" />
             <policy domain="path" rights="read|write" pattern="/usr/local/share/fonts/*" />
             
-            <!-- System resource limits -->
-            <policy domain="system" name="memory" value="512MiB" />
-            <policy domain="system" name="disk" value="1GiB" />
-            <policy domain="system" name="thread" value="2" />
-            <policy domain="system" name="time" value="120" />
+            <!-- System resource limits (increased) -->
+            <policy domain="system" name="memory" value="1024MiB" />  <!-- Increased from 512MiB -->
+            <policy domain="system" name="disk" value="2GiB" />  <!-- Increased from 1GiB -->
+            <policy domain="system" name="thread" value="4" />  <!-- Increased from 2 -->
+            <policy domain="system" name="time" value="180" />  <!-- Increased from 120 -->
             
             <!-- Security policies -->
             <policy domain="path" rights="none" pattern="/etc/*" />
@@ -195,32 +200,32 @@ jobs:
           # Test ImageMagick with @ syntax
           echo "Test Label" > test_label.txt
           
-          # Test basic label creation with FreeSans
-          if convert -size 200x50 xc:white -font FreeSans -pointsize 16 -fill black -gravity center -annotate +0+0 "Test" test_basic.png; then
-            echo "✅ Basic ImageMagick text rendering with FreeSans works"
+          # Test basic label creation with FreeSerif
+          if convert -size 200x50 xc:white -font FreeSerif -pointsize 16 -fill black -gravity center -annotate +0+0 "Test" test_basic.png; then
+            echo "✅ Basic ImageMagick text rendering with FreeSerif works"
           else
-            echo "⚠️ Basic ImageMagick text rendering with FreeSans failed, trying LiberationSans..."
+            echo "⚠️ Basic ImageMagick text rendering with FreeSerif failed, trying LiberationSans..."
             if convert -size 200x50 xc:white -font LiberationSans -pointsize 16 -fill black -gravity center -annotate +0+0 "Test" test_basic.png; then
               echo "✅ Basic ImageMagick text rendering with LiberationSans works"
             else
-              echo "❌ Basic ImageMagick text rendering failed for both FreeSans and LiberationSans"
+              echo "❌ Basic ImageMagick text rendering failed for both FreeSerif and LiberationSans"
               exit 1
             fi
           fi
           
           # Test @ syntax
-          if convert -size 200x50 xc:white -font FreeSans -pointsize 16 -fill black -gravity center -annotate +0+0 @test_label.txt test_at_syntax.png 2> imagemagick_test_error.log; then
-            echo "✅ ImageMagick @ syntax test with FreeSans passed"
+          if convert -size 200x50 xc:white -font FreeSerif -pointsize 16 -fill black -gravity center -annotate +0+0 @test_label.txt test_at_syntax.png 2> imagemagick_test_error.log; then
+            echo "✅ ImageMagick @ syntax test with FreeSerif passed"
           else
-            echo "⚠️ ImageMagick @ syntax test with FreeSans failed, trying LiberationSans..."
+            echo "⚠️ ImageMagick @ syntax test with FreeSerif failed, trying LiberationSans..."
             if convert -size 200x50 xc:white -font LiberationSans -pointsize 16 -fill black -gravity center -annotate +0+0 @test_label.txt test_at_syntax.png 2> imagemagick_test_error.log; then
               echo "✅ ImageMagick @ syntax test with LiberationSans passed"
             else
-              echo "❌ ImageMagick @ syntax test failed for both FreeSans and LiberationSans"
+              echo "❌ ImageMagick @ syntax test failed for both FreeSerif and LiberationSans"
               echo "🔍 Error output:"
               cat imagemagick_test_error.log
               echo "🔍 Available fonts:"
-              convert -list font | grep -i "freesans\|liberationsans\|dejavu" || echo "No FreeSans, LiberationSans, or DejaVu fonts found"
+              convert -list font | grep -i "freeserif\|freesans\|liberationsans\|dejavu" || echo "No FreeSerif, FreeSans, LiberationSans, or DejaVu fonts found"
               exit 1
             fi
           fi
@@ -230,6 +235,7 @@ jobs:
           
           echo "✅ All ImageMagick tests passed"
 
+      # Remaining steps unchanged (for brevity, not repeating identical steps)
       - name: Verify system dependencies
         run: |
           echo "🔍 Verifying system dependencies..."
@@ -477,11 +483,11 @@ jobs:
                       modules_to_clear = [mod for mod in sys.modules.keys() if 'nltk' in mod]
                       for mod in modules_to_clear:
                           del sys.modules[mod]
-                  elif module_name == 'TTS':  # Added for Mozilla TTS
+                  elif module_name == 'TTS':
                       modules_to_clear = [mod for mod in sys.modules.keys() if 'TTS' in mod]
                       for mod in modules_to_clear:
                           del sys.modules[mod]
-                  elif module_name == 'transformers':  # Added for LLM fallback
+                  elif module_name == 'transformers':
                       modules_to_clear = [mod for mod in sys.modules.keys() if 'transformers' in mod]
                       for mod in modules_to_clear:
                           del sys.modules[mod]
@@ -492,11 +498,11 @@ jobs:
                       import cv2
                       if not hasattr(cv2, 'imread') or not hasattr(cv2, 'cvtColor'):
                           raise AttributeError('OpenCV missing critical attributes (imread, cvtColor)')
-                  elif module_name == 'TTS':  # Verify TTS import
+                  elif module_name == 'TTS':
                       from TTS.api import TTS
                       if not hasattr(TTS, 'tts_to_file'):
                           raise AttributeError('Mozilla TTS missing critical method (tts_to_file)')
-                  elif module_name == 'transformers':  # Verify transformers import
+                  elif module_name == 'transformers':
                       from transformers import pipeline
                       generator = pipeline('text-generation', model='distilgpt2')
                       if not generator:
@@ -532,7 +538,7 @@ jobs:
           test_import_advanced('cv2', 'import cv2', 'OpenCV')
           test_import_advanced('nltk', 'import nltk')
           test_import_advanced('TTS', 'from TTS.api import TTS', 'Mozilla TTS')
-          test_import_advanced('transformers', 'from transformers import pipeline', 'Transformers')  # Added transformers verification
+          test_import_advanced('transformers', 'from transformers import pipeline', 'Transformers')
           
           print('\n🎬 Testing MoviePy with fallback strategies...')
           moviepy_success = False
@@ -728,21 +734,17 @@ jobs:
                   print(f'❌ Mozilla TTS Strategy 2 failed: {e2}')
           test_results.append(('Mozilla TTS', tts_success, 'OK' if tts_success else 'Failed'))
           
-          # Print final summary
           print('\n📊 FINAL VERIFICATION SUMMARY:')
           print('=' * 50)
           for name, success, status in test_results:
               status_icon = '✅' if success else '❌'
               print(f'{status_icon} {name}: {status}')
           
-          successful_imports = sum(1 for _, success, _ in test_results if success)
-          total_imports = len(test_results)
-          print(f'\n🎯 Success Rate: {successful_imports}/{total_imports} ({successful_imports/total_imports*100:.1f}%)')
-          
-          if successful_imports == total_imports:
+          if all(success for _, success, _ in test_results):
               print('🎉 All packages imported successfully!')
           else:
-              print(f'⚠️  {total_imports - successful_imports} packages failed to import.')
+              print(f'⚠️ Some packages failed to import.')
+              sys.exit(1)
           "
 
       - name: Clear Python module cache before automation
@@ -949,7 +951,7 @@ jobs:
               except Exception as e2:
                   print(f'❌ NLTK installation failed: {e2}')
           for mod in list(sys.modules.keys()):
-              if 'TTS' in mod:  # Added for Mozilla TTS
+              if 'TTS' in mod:
                   del sys.modules[mod]
           try:
               from TTS.api import TTS
@@ -967,7 +969,7 @@ jobs:
               except Exception as e2:
                   print(f'❌ Mozilla TTS installation failed: {e2}')
           for mod in list(sys.modules.keys()):
-              if 'transformers' in mod:  # Added for LLM fallback
+              if 'transformers' in mod:
                   del sys.modules[mod]
           try:
               from transformers import pipeline

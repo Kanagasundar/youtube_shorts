@@ -8,7 +8,8 @@ import logging
 import cv2
 import numpy as np
 from pathlib import Path
-import moviepy.editor as mpe
+import moviepy
+from moviepy.editor import *
 from moviepy.config import change_settings
 from PIL import Image
 import random
@@ -23,6 +24,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Log MoviePy version for debugging
+logger.info(f"MoviePy version: {moviepy.__version__}")
+
 # Set ImageMagick binary path
 IMAGEMAGICK_BINARY = None
 for path in ['/usr/bin/convert', '/usr/local/bin/convert', '/bin/convert']:
@@ -36,7 +40,7 @@ if IMAGEMAGICK_BINARY:
 else:
     logger.warning("ImageMagick binary not found, text rendering may fail")
 
-def fix_clip_properties(clip: mpe.VideoClip, duration: float) -> mpe.VideoClip:
+def fix_clip_properties(clip: VideoClip, duration: float) -> VideoClip:
     """
     Fix clip properties to avoid _NoValueType errors by ensuring duration, start, and end are set correctly.
     
@@ -56,7 +60,7 @@ def fix_clip_properties(clip: mpe.VideoClip, duration: float) -> mpe.VideoClip:
     try:
         if clip is None:
             logger.warning("Received None clip, creating black clip")
-            clip = mpe.ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=duration)
+            clip = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=duration)
         
         # Set duration if not set or invalid
         if not hasattr(clip, 'duration') or clip.duration is None or clip.duration <= 0 or isinstance(clip.duration, _NoValueType):
@@ -71,7 +75,7 @@ def fix_clip_properties(clip: mpe.VideoClip, duration: float) -> mpe.VideoClip:
             clip = clip.set_end(float(duration))
         
         # Verify size for video clips
-        if isinstance(clip, (mpe.ImageClip, mpe.CompositeVideoClip)) and (not hasattr(clip, 'size') or clip.size is None):
+        if isinstance(clip, (ImageClip, CompositeVideoClip)) and (not hasattr(clip, 'size') or clip.size is None):
             clip = clip.resize((1080, 1920))
         
         # Log fixed properties for debugging
@@ -82,9 +86,9 @@ def fix_clip_properties(clip: mpe.VideoClip, duration: float) -> mpe.VideoClip:
         return clip
     except Exception as e:
         logger.error(f"Failed to fix clip properties: {str(e)}", exc_info=True)
-        return mpe.ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=duration)
+        return ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=duration)
 
-def create_safe_text_clip(text: str, duration: float, **kwargs) -> mpe.TextClip:
+def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
     """
     Create a TextClip with safe font handling and error recovery.
     
@@ -96,11 +100,11 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> mpe.TextClip:
     Returns:
         MoviePy TextClip or None if creation fails
     """
-    fonts = ['FreeSans', 'LiberationSans', 'Arial', 'Sans']
+    fonts = ['FreeSerif', 'LiberationSans', 'Sans']  # Updated to use FreeSerif
     for font in fonts:
         try:
             logger.debug(f"Attempting to create TextClip with font: {font}")
-            text_clip = mpe.TextClip(
+            text_clip = TextClip(
                 text,
                 font=font,
                 fontsize=kwargs.get('fontsize', 60),
@@ -141,8 +145,8 @@ def add_overlays(image, text, logo_path=None, sticker_path=None):
         font_list = subprocess.check_output(['fc-list'], text=True)
         logger.info("Available fonts:")
         logger.info(font_list)
-        if 'FreeSans' in font_list:
-            logger.info("FreeSans font is available")
+        if 'FreeSerif' in font_list:
+            logger.info("FreeSerif font is available")
         if 'LiberationSans' in font_list:
             logger.info("LiberationSans font is available")
     except Exception as e:
@@ -206,12 +210,12 @@ def create_caption_clip(text, duration):
         MoviePy clip with animated caption
     """
     logger.info(f"Generating caption for text: '{text}' with duration: {duration}s")
-    fonts = ['FreeSans', 'LiberationSans', 'Sans']  # Fallback fonts
+    fonts = ['FreeSerif', 'LiberationSans', 'Sans']  # Updated to use FreeSerif
     clip = None
     for font in fonts:
         try:
             logger.info(f"Attempting to use font: {font}")
-            clip = mpe.TextClip(
+            clip = TextClip(
                 text,
                 fontsize=60,
                 color='white',
@@ -265,7 +269,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             
             # Load audio
             logger.info(f"🔊 Loading audio: {audio_path}")
-            audio = mpe.AudioFileClip(audio_path)
+            audio = AudioFileClip(audio_path)
             audio = fix_composite_audio_clips([audio])[0]  # Fix audio clip
             debug_audio_clip(audio, "Main Audio")
             audio_duration = float(audio.duration)
@@ -333,7 +337,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 cv2.imwrite(debug_path, cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))
                 logger.info(f"🖼️ Saved pre-CV2 debug image: {debug_path}")
                 
-                clip = mpe.ImageClip(img_np).set_duration(duration)
+                clip = ImageClip(img_np).set_duration(duration)
                 
                 if i > 0:
                     transition_type = random.choice(['fade', 'zoom', 'slide'])
@@ -349,7 +353,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             
             # Concatenate clips
             logger.info("Concatenating image clips...")
-            video = mpe.concatenate_videoclips(clips, method="compose", padding=-0.5)
+            video = concatenate_videoclips(clips, method="compose", padding=-0.5)
             video = fix_clip_properties(video, target_duration)
             video = video.set_audio(audio)
             video = video.set_duration(float(target_duration))
@@ -357,25 +361,27 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             # Generate captions with MoviePy
             logger.info("📝 Generating captions...")
             words = script_text.split()
-            word_duration = target_duration / max(len(words), 1)
+            # Combine words into phrases (2 words per caption)
+            phrases = [' '.join(words[i:i+2]) for i in range(0, len(words), 2)]
+            phrase_duration = target_duration / max(len(phrases), 1)
             subtitles = []
             current_time = 0
-            for word in words:
-                subtitles.append(((current_time, current_time + word_duration), word))
-                current_time += max(word_duration, 0.5)  # Ensure minimum duration
+            for phrase in phrases:
+                subtitles.append(((current_time, current_time + phrase_duration), phrase))
+                current_time += max(phrase_duration, 0.5)  # Ensure minimum duration
             # Adjust subtitle timings to fit target_duration
             if subtitles:
                 last_end = subtitles[-1][0][1]
                 if last_end > target_duration:
                     scale_factor = target_duration / last_end
-                    subtitles = [((start * scale_factor, min(end * scale_factor, target_duration)), word) 
-                                for (start, end), word in subtitles]
+                    subtitles = [((start * scale_factor, min(end * scale_factor, target_duration)), phrase) 
+                                for (start, end), phrase in subtitles]
             
             subtitle_clips = []
-            for (start, end), word in subtitles:
+            for (start, end), phrase in subtitles:
                 try:
                     caption_clip = create_safe_text_clip(
-                        word,
+                        phrase,
                         duration=end - start,
                         fontsize=60,
                         color='white',
@@ -386,14 +392,16 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                         caption_clip = fix_clip_properties(caption_clip, max(end - start, 0.5))
                         caption_clip = caption_clip.set_start(float(start))
                         subtitle_clips.append(caption_clip)
-                        logger.info(f"✅ Set caption '{word}' start time to {start:.2f}s")
+                        logger.info(f"✅ Set caption '{phrase}' start time to {start:.2f}s")
+                    else:
+                        logger.warning(f"⚠️ Skipping caption '{phrase}' due to creation failure")
                 except Exception as e:
-                    logger.error(f"Failed to create caption for word '{word}': {str(e)}")
+                    logger.error(f"Failed to create caption for phrase '{phrase}': {str(e)}")
                     continue
             
             # Create composite video
             logger.info("🔄 Creating composite video with subtitles...")
-            video = mpe.CompositeVideoClip([video] + subtitle_clips, size=(1080, 1920))
+            video = CompositeVideoClip([video] + subtitle_clips, size=(1080, 1920))
             video = fix_clip_properties(video, target_duration)
             
             # Fix all video clips in composite
