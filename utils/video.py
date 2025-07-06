@@ -19,7 +19,7 @@ from voice import fix_composite_audio_clips, debug_audio_clip, safe_write_videof
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Set to DEBUG for detailed logging in GitHub Actions
+    level=logging.DEBUG,  # Detailed logging for debugging
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -57,16 +57,16 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
         text_clip = TextClip(
             text,
             font='FreeSerif',  # Use FreeSerif directly
-            fontsize=kwargs.get('fontsize', 50),  # Reduced fontsize for performance
+            fontsize=kwargs.get('fontsize', 50),
             color=kwargs.get('color', 'white'),
             stroke_color=kwargs.get('stroke_color', 'black'),
             stroke_width=kwargs.get('stroke_width', 1),
             size=(1080, 200),  # Fixed size for captions
-            method='label',  # Use 'label' for faster rendering
+            method='label',  # Faster rendering
             align=kwargs.get('align', 'center')
         )
-        text_clip = validate_clip_properties(text_clip, f"Caption '{text}'", duration=max(float(duration), 0.5))
-        text_clip = text_clip.set_position(('center', 'bottom')).fadein(0.1).fadeout(0.1)  # Reduced fade times
+        text_clip = validate_clip_properties(text_clip, f"Caption '{text}'")
+        text_clip = text_clip.set_duration(max(float(duration), 0.5)).set_position(('center', 'bottom')).fadein(0.1).fadeout(0.1)
         logger.debug(f"✅ Successfully created TextClip: duration={text_clip.duration:.2f}s")
         return text_clip
     except Exception as e:
@@ -75,7 +75,7 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
 
 def add_overlays(image, logo_path=None, sticker_path=None):
     """
-    Add logo and sticker overlays to an image using OpenCV, removing text rendering.
+    Add logo and sticker overlays to an image using OpenCV.
 
     Args:
         image: NumPy array of the image
@@ -225,14 +225,15 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 logger.info(f"🖼️ Saved debug image: {debug_path}")
 
                 clip = ImageClip(img_np).set_duration(duration)
-                clip = validate_clip_properties(clip, f"Image Clip {i+1}", duration=duration)
+                clip = validate_clip_properties(clip, f"Image Clip {i+1}")
+                clip = clip.set_duration(max(float(duration), 0.5))  # Explicitly set duration after validation
 
                 if i > 0:
                     transition_type = random.choice(['fade', 'zoom', 'slide'])
                     if transition_type == 'fade':
-                        clip = clip.crossfadein(0.3)  # Reduced transition time
+                        clip = clip.crossfadein(0.3)
                     elif transition_type == 'zoom':
-                        clip = clip.resize(lambda t: 1 + 0.05 * t / duration)  # Reduced zoom factor
+                        clip = clip.resize(lambda t: 1 + 0.05 * t / duration)
                     elif transition_type == 'slide':
                         clip = clip.set_position(lambda t: ('center', -50 + 50 * t / duration))
 
@@ -241,7 +242,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             # Concatenate clips
             logger.info("🔗 Concatenating image clips...")
             video = concatenate_videoclips(clips, method="compose", padding=-0.3)
-            video = validate_clip_properties(video, "Concatenated Video", duration=target_duration)
+            video = validate_clip_properties(video, "Concatenated Video")
             video = video.set_audio(audio)
             video = video.set_duration(float(target_duration))
 
@@ -252,8 +253,8 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 nltk.download('punkt', quiet=True)
                 nltk.download('punkt_tab', quiet=True)
                 words = nltk.word_tokenize(script_text)
-                # Combine words into phrases (4 words per caption)
-                words_per_caption = 4
+                # Combine words into phrases (6 words per caption)
+                words_per_caption = 6
                 phrases = [' '.join(words[i:i+words_per_caption]) for i in range(0, len(words), words_per_caption)]
                 logger.info(f"📊 Generated {len(phrases)} caption phrases")
                 phrase_duration = target_duration / max(len(phrases), 1)
@@ -261,7 +262,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 current_time = 0
                 for phrase in phrases:
                     subtitles.append(((current_time, current_time + phrase_duration), phrase))
-                    current_time += max(phrase_duration, 0.5)  # Ensure minimum duration
+                    current_time += max(phrase_duration, 0.5)
                 # Adjust subtitle timings to fit target_duration
                 if subtitles:
                     last_end = subtitles[-1][0][1]
@@ -279,7 +280,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                     caption_clip = create_safe_text_clip(
                         phrase,
                         duration=end - start,
-                        fontsize=50,  # Reduced for performance
+                        fontsize=50,
                         color='white',
                         stroke_color='black',
                         stroke_width=1
@@ -294,7 +295,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             # Create composite video
             logger.info("🔄 Creating composite video with subtitles...")
             video = CompositeVideoClip([video] + subtitle_clips, size=(1080, 1920))
-            video = validate_clip_properties(video, "Final Composite Video", duration=target_duration)
+            video = validate_clip_properties(video, "Final Composite Video")
 
             # Fix all video clips in composite
             video.clips = fix_composite_video_clips(video.clips, fallback_duration=target_duration)
@@ -321,10 +322,10 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 output_path,
                 codec="libx264",
                 audio_codec="aac",
-                preset="fast",  # Faster preset for GitHub Actions
-                bitrate="3000k",  # Reduced bitrate
+                preset="fast",
+                bitrate="3000k",
                 threads=2,
-                fps=24  # Reduced FPS for performance
+                fps=24
             )
 
             if not success:

@@ -179,19 +179,6 @@ jobs:
           rm -f test_label.txt test_basic.png test_at_syntax.png imagemagick_test_error.log
           echo "✅ All ImageMagick tests passed"
 
-      - name: Verify system dependencies
-        run: |
-          echo "🔍 Verifying system dependencies..."
-          ffmpeg -version || { echo "❌ FFmpeg not installed correctly"; exit 1; }
-          convert -version || { echo "❌ ImageMagick not installed correctly"; exit 1; }
-          python -c "import cv2; print('OpenCV version:', cv2.__version__)" || {
-            echo "❌ OpenCV not installed correctly, attempting reinstall..."
-            pip uninstall -y opencv-python numpy
-            pip install --no-cache-dir opencv-python==4.10.0.84 numpy==1.26.4
-            python -c "import cv2; print('OpenCV version:', cv2.__version__)"
-          }
-          echo "✅ OpenCV installed successfully (version: $(python -c 'import cv2; print(cv2.__version__)'))"
-
       - name: Install Python dependencies
         run: |
           echo "📦 Installing Python dependencies..."
@@ -202,9 +189,9 @@ jobs:
           pip install --no-cache-dir nltk==3.9.1
           pip install --no-cache-dir Pillow==10.4.0
           pip install --no-cache-dir gtts==2.5.3
-          pip install --no-cache-dir requests==2.31.0  # Pin requests for transformers compatibility
-          pip install --no-cache-dir torch==2.4.0 torchaudio==2.4.0  # Pin compatible torch and torchaudio
-          pip install --no-cache-dir tts==0.22.0  # Pin specific tts version
+          pip install --no-cache-dir requests==2.31.0
+          pip install --no-cache-dir torch==2.4.0 torchaudio==2.4.0
+          pip install --no-cache-dir tts==0.22.0
           pip install --no-cache-dir transformers==4.44.2
           end_time=$(date +%s)
           duration=$((end_time - start_time))
@@ -578,6 +565,15 @@ jobs:
             echo "CATEGORY_OVERRIDE=${{ github.event.inputs.category_override }}" >> .env
           fi
           echo "✅ Environment file created"
+
+      - name: Check disk space and memory
+        run: |
+          echo "🔍 Checking disk space..."
+          df -h
+          echo "🔍 Checking memory..."
+          free -m
+          echo "🔍 Checking CPU usage..."
+          top -bn1 | head -n 10
 
       - name: Run YouTube automation
         id: automation
