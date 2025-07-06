@@ -109,7 +109,7 @@ def fix_audio_clip_duration(audio_clip, fallback_duration=30.0):
             except (TypeError, ValueError):
                 logger.warning("⚠️ Invalid duration detected, attempting to fix...")
         
-        # If no valid duration, try to get it from the audio data
+        # If no valid duration, try to get it from the audio file
         logger.warning("⚠️ Audio clip missing or invalid duration, attempting to calculate...")
         
         # Try to get duration from audio file if it's a file-based clip
@@ -162,7 +162,7 @@ def create_safe_audio_clip(audio_path, target_duration=None):
             raise ValueError(f"Invalid audio duration: {audio_clip.duration}")
         
         # Adjust duration if needed
-        if target_duration and target_duration != audio_clip.duration:
+        if target_duration and abs(float(target_duration) - float(audio_clip.duration)) > 0.01:
             logger.info(f"🔄 Adjusting audio duration from {audio_clip.duration:.2f}s to {target_duration:.2f}s")
             if target_duration > audio_clip.duration:
                 # Loop audio to reach target duration
@@ -174,7 +174,7 @@ def create_safe_audio_clip(audio_path, target_duration=None):
                 audio_clip = audio_clip.subclip(0, target_duration)
         
         # Ensure duration is properly set
-        audio_clip = audio_clip.set_duration(audio_clip.duration)
+        audio_clip = audio_clip.set_duration(float(audio_clip.duration))
         
         # Debug clip properties
         debug_audio_clip(audio_clip, f"AudioClip from {audio_path}")
@@ -249,8 +249,13 @@ def fix_composite_video_clips(clips, fallback_duration=30.0):
     
     for i, clip in enumerate(clips):
         try:
+            # Check if clip is None
+            if clip is None:
+                logger.warning(f"⚠️ Video clip {i+1} is None, creating fallback black clip")
+                clip = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=fallback_duration)
+            
             # Check if clip has valid duration
-            if hasattr(clip, 'duration') and clip.duration is not None:
+            if hasattr(clip, 'duration') and clip.duration is not None and not isinstance(clip.duration, type(mpe.video.io.ffmpeg_writer._NoValueType)):
                 try:
                     duration = float(clip.duration)
                     if duration > 0:
@@ -263,25 +268,31 @@ def fix_composite_video_clips(clips, fallback_duration=30.0):
                     logger.warning(f"⚠️ Invalid duration for clip {i+1}, using fallback duration")
                     clip = clip.set_duration(fallback_duration)
             else:
-                logger.warning(f"⚠️ Video clip {i+1} missing duration, using fallback duration")
+                logger.warning(f"⚠️ Video clip {i+1} missing duration or has _NoValueType, using fallback duration")
                 clip = clip.set_duration(fallback_duration)
             
             # Ensure start time is set
-            if not hasattr(clip, 'start') or clip.start is None or isinstance(clip.start, type(None)):
+            if not hasattr(clip, 'start') or clip.start is None or isinstance(clip.start, type(mpe.video.io.ffmpeg_writer._NoValueType)):
                 logger.info(f"🔄 Setting start time for clip {i+1} to 0")
                 clip = clip.set_start(0)
             
             # Ensure end time is set
             try:
-                clip = clip.set_end(clip.start + float(clip.duration))
+                clip = clip.set_end(float(clip.start) + float(clip.duration))
             except (TypeError, ValueError):
                 logger.warning(f"⚠️ Invalid end time for clip {i+1}, setting based on fallback duration")
-                clip = clip.set_end(clip.start + fallback_duration)
+                clip = clip.set_end(float(clip.start) + fallback_duration)
+            
+            # Ensure size is set for video clips
+            if isinstance(clip, (ImageClip, CompositeVideoClip, TextClip)) and (not hasattr(clip, 'size') or clip.size is None):
+                logger.info(f"🔄 Setting size for clip {i+1} to (1080, 1920)")
+                clip = clip.resize((1080, 1920))
             
             # Debug clip properties
             logger.info(f"🔍 Video clip {i+1} properties: duration={getattr(clip, 'duration', 'NOT SET')}, "
                        f"start={getattr(clip, 'start', 'NOT SET')}, "
-                       f"end={getattr(clip, 'end', 'NOT SET')}")
+                       f"end={getattr(clip, 'end', 'NOT SET')}, "
+                       f"size={getattr(clip, 'size', 'NOT SET')}")
             
             fixed_clips.append(clip)
             logger.info(f"✅ Fixed video clip {i+1}/{len(clips)}")
@@ -307,6 +318,25 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
         bool: Success status
     """
     try:
+        # Validate video clip
+        if video_clip is None:
+            logger.error("❌ Video clip is None")
+            return False
+        
+        # Fix video clip properties
+        logger.info("🔄 Fixing main video clip properties...")
+        video_clip = fix_composite_video_clips([video_clip])[0]
+        
+        # Ensure duration is valid
+        if not hasattr(video_clip, 'duration') or video_clip.duration is None or isinstance(video_clip.duration, type(mpe.video.io.ffmpeg_writer._NoValueType)):
+            logger.error("❌ Invalid video clip duration")
+            return False
+        
+        # Ensure size is valid
+        if not hasattr(video_clip, 'size') or video_clip.size is None:
+            logger.info("🔄 Setting video clip size to (1080, 1920)")
+            video_clip = video_clip.resize((1080, 1920))
+        
         # Fix composite video clips (including subtitles)
         if isinstance(video_clip, CompositeVideoClip):
             logger.info("🔄 Detected CompositeVideoClip, fixing all sub-clips...")
@@ -325,7 +355,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
             fixed_audio = fix_audio_clip_duration(video_clip.audio)
             
             # Ensure audio matches video duration
-            if video_clip.duration != fixed_audio.duration:
+            if abs(float(fixed_audio.duration) - float(video_clip.duration)) > 0.01:
                 logger.warning(f"⚠️ Audio duration ({fixed_audio.duration:.2f}s) != Video duration ({video_clip.duration:.2f}s)")
                 
                 if fixed_audio.duration > video_clip.duration:
@@ -341,6 +371,11 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
             
             # Set fixed audio back to video
             video_clip = video_clip.set_audio(fixed_audio)
+        
+        # Log final clip properties
+        logger.info(f"🔍 Final video clip properties: duration={getattr(video_clip, 'duration', 'NOT SET')}, "
+                   f"start={getattr(video_clip, 'start', 'NOT SET')}, "
+                   f"size={getattr(video_clip, 'size', 'NOT SET')}")
         
         # Set default parameters for stable output
         default_params = {
