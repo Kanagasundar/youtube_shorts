@@ -111,7 +111,7 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> mpe.TextClip:
                 method=kwargs.get('method', 'caption'),
                 align=kwargs.get('align', 'center')
             )
-            text_clip = fix_clip_properties(text_clip, max(float(duration), 0.1))
+            text_clip = fix_clip_properties(text_clip, max(float(duration), 0.5))
             logger.debug(f"Successfully created TextClip with font: {font}")
             return text_clip
         except Exception as e:
@@ -199,8 +199,8 @@ def create_caption_clip(text, duration):
     Create animated caption using MoviePy TextClip with font fallbacks and duration validation.
     
     Args:
-        text (str): Caption text
-        duration (float): Duration of the caption
+        text: Caption text
+        duration: Duration of the caption
     
     Returns:
         MoviePy clip with animated caption
@@ -222,8 +222,9 @@ def create_caption_clip(text, duration):
                 align='center',
                 font=font
             )
-            clip = fix_clip_properties(clip, max(float(duration), 0.1))
-            clip = clip.set_position(('center', 'bottom')).fadein(0.3).fadeout(0.3)
+            # Ensure minimum duration of 0.5s for stability
+            clip = fix_clip_properties(clip, max(float(duration), 0.5))
+            clip = clip.set_position(('center', 'bottom')).fadein(0.2).fadeout(0.2)  # Reduced fade times
             logger.info(f"Successfully created caption with font: {font}")
             logger.info(f"🔍 Caption clip properties: duration={getattr(clip, 'duration', 'NOT SET')}, "
                        f"start={getattr(clip, 'start', 'NOT SET')}, "
@@ -361,7 +362,14 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             current_time = 0
             for word in words:
                 subtitles.append(((current_time, current_time + word_duration), word))
-                current_time += word_duration
+                current_time += max(word_duration, 0.5)  # Ensure minimum duration
+            # Adjust subtitle timings to fit target_duration
+            if subtitles:
+                last_end = subtitles[-1][0][1]
+                if last_end > target_duration:
+                    scale_factor = target_duration / last_end
+                    subtitles = [((start * scale_factor, min(end * scale_factor, target_duration)), word) 
+                                for (start, end), word in subtitles]
             
             subtitle_clips = []
             for (start, end), word in subtitles:
@@ -375,7 +383,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                         stroke_width=1
                     )
                     if caption_clip:
-                        caption_clip = fix_clip_properties(caption_clip, end - start)
+                        caption_clip = fix_clip_properties(caption_clip, max(end - start, 0.5))
                         caption_clip = caption_clip.set_start(float(start))
                         subtitle_clips.append(caption_clip)
                         logger.info(f"✅ Set caption '{word}' start time to {start:.2f}s")

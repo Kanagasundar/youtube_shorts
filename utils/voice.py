@@ -253,18 +253,18 @@ def validate_clip_properties(clip, clip_name="Unknown"):
             logger.warning(f"⚠️ Clip {clip_name} is None, creating fallback black clip")
             return ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=30.0)
         
-        # Fix duration
+        # Fix duration (ensure minimum 0.5s for stability)
         duration = getattr(clip, 'duration', None)
-        if duration is None or isinstance(duration, type(None)) or (isinstance(duration, (int, float)) and duration <= 0):
-            logger.warning(f"⚠️ Invalid duration for {clip_name}, setting to 30.0")
-            clip = clip.set_duration(30.0)
+        if duration is None or isinstance(duration, type(None)) or (isinstance(duration, (int, float)) and duration <= 0.5):
+            logger.warning(f"⚠️ Invalid or short duration for {clip_name}, setting to 0.5")
+            clip = clip.set_duration(0.5)
         else:
             try:
                 duration = float(duration)
-                clip = clip.set_duration(duration)
-            except (TypeError, ValueError):
-                logger.warning(f"⚠️ Cannot convert duration for {clip_name}, setting to 30.0")
-                clip = clip.set_duration(30.0)
+                clip = clip.set_duration(max(duration, 0.5))
+            except (TypeError, ValueError) as e:
+                logger.warning(f"⚠️ Cannot convert duration for {clip_name}: {e}, setting to 0.5")
+                clip = clip.set_duration(0.5)
         
         # Fix start time
         start = getattr(clip, 'start', None)
@@ -275,14 +275,40 @@ def validate_clip_properties(clip, clip_name="Unknown"):
         # Fix end time
         try:
             clip = clip.set_end(float(clip.start) + float(clip.duration))
-        except (TypeError, ValueError):
-            logger.warning(f"⚠️ Invalid end time for {clip_name}, setting based on duration")
+        except (TypeError, ValueError) as e:
+            logger.warning(f"⚠️ Invalid end time for {clip_name}: {e}, setting based on duration")
             clip = clip.set_end(float(clip.start) + float(clip.duration))
         
         # Fix size
         if isinstance(clip, (ImageClip, CompositeVideoClip, TextClip)) and (not hasattr(clip, 'size') or clip.size is None):
             logger.info(f"🔄 Setting size for {clip_name} to (1080, 1920)")
             clip = clip.resize((1080, 1920))
+        
+        # Fix position for TextClip
+        if isinstance(clip, TextClip):
+            pos = getattr(clip, 'pos', None)
+            if pos is None or isinstance(pos, type(None)):
+                logger.info(f"🔄 Setting position for {clip_name} to ('center', 'bottom')")
+                clip = clip.set_position(('center', 'bottom'))
+        
+        # Fix FPS
+        fps = getattr(clip, 'fps', None)
+        if fps is None or isinstance(fps, type(None)) or (isinstance(fps, (int, float)) and fps <= 0):
+            logger.info(f"🔄 Setting FPS for {clip_name} to 30")
+            clip = clip.set_fps(30)
+        
+        # Validate TextClip-specific properties
+        if isinstance(clip, TextClip):
+            for attr in ['font', 'fontsize', 'color']:
+                value = getattr(clip, attr, None)
+                if value is None or isinstance(value, type(None)):
+                    logger.warning(f"⚠️ Invalid {attr} for {clip_name}, setting default")
+                    if attr == 'font':
+                        clip = clip.set_font('FreeSans')
+                    elif attr == 'fontsize':
+                        clip = clip.set_fontsize(60)
+                    elif attr == 'color':
+                        clip = clip.set_color('white')
         
         # Recursively validate sub-clips for CompositeVideoClip
         if isinstance(clip, CompositeVideoClip) and hasattr(clip, 'clips'):
@@ -293,14 +319,16 @@ def validate_clip_properties(clip, clip_name="Unknown"):
         logger.info(f"✅ Validated {clip_name}: duration={getattr(clip, 'duration', 'NOT SET')}, "
                    f"start={getattr(clip, 'start', 'NOT SET')}, "
                    f"end={getattr(clip, 'end', 'NOT SET')}, "
-                   f"size={getattr(clip, 'size', 'NOT SET')}")
+                   f"size={getattr(clip, 'size', 'NOT SET')}, "
+                   f"fps={getattr(clip, 'fps', 'NOT SET')}, "
+                   f"pos={getattr(clip, 'pos', 'NOT SET')}")
         
         return clip
     except Exception as e:
         logger.error(f"❌ Error validating clip {clip_name}: {e}")
-        return ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=30.0)
+        return ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=0.5)
 
-def fix_composite_video_clips(clips, fallback_duration=30.0):
+def fix_composite_video_clips(clips, fallback_duration=0.5):
     """
     Fix all video clips (including TextClip) in a composite to prevent _NoValueType errors
     
@@ -322,11 +350,11 @@ def fix_composite_video_clips(clips, fallback_duration=30.0):
             if hasattr(fixed_clip, 'duration') and fixed_clip.duration is not None:
                 try:
                     duration = float(fixed_clip.duration)
-                    if duration <= 0:
-                        logger.warning(f"⚠️ Video clip {i+1} has zero or negative duration, using fallback")
-                        fixed_clip = fixed_clip.set_duration(fallback_duration)
-                except (TypeError, ValueError):
-                    logger.warning(f"⚠️ Invalid duration for clip {i+1}, using fallback duration")
+                    if duration <= 0.5:
+                        logger.warning(f"⚠️ Video clip {i+1} has short duration, using minimum 0.5s")
+                        fixed_clip = fixed_clip.set_duration(0.5)
+                except (TypeError, ValueError) as e:
+                    logger.warning(f"⚠️ Invalid duration for clip {i+1}: {e}, using fallback duration")
                     fixed_clip = fixed_clip.set_duration(fallback_duration)
             else:
                 logger.warning(f"⚠️ Video clip {i+1} missing duration, using fallback duration")
@@ -340,8 +368,8 @@ def fix_composite_video_clips(clips, fallback_duration=30.0):
             # Ensure end time is set
             try:
                 fixed_clip = fixed_clip.set_end(float(fixed_clip.start) + float(fixed_clip.duration))
-            except (TypeError, ValueError):
-                logger.warning(f"⚠️ Invalid end time for clip {i+1}, setting based on fallback duration")
+            except (TypeError, ValueError) as e:
+                logger.warning(f"⚠️ Invalid end time for clip {i+1}: {e}, setting based on fallback duration")
                 fixed_clip = fixed_clip.set_end(float(fixed_clip.start) + fallback_duration)
             
             # Ensure size is set
@@ -353,7 +381,9 @@ def fix_composite_video_clips(clips, fallback_duration=30.0):
             logger.info(f"🔍 Video clip {i+1} properties: duration={getattr(fixed_clip, 'duration', 'NOT SET')}, "
                        f"start={getattr(fixed_clip, 'start', 'NOT SET')}, "
                        f"end={getattr(fixed_clip, 'end', 'NOT SET')}, "
-                       f"size={getattr(fixed_clip, 'size', 'NOT SET')}")
+                       f"size={getattr(fixed_clip, 'size', 'NOT SET')}, "
+                       f"fps={getattr(fixed_clip, 'fps', 'NOT SET')}, "
+                       f"pos={getattr(fixed_clip, 'pos', 'NOT SET')}")
             
             fixed_clips.append(fixed_clip)
             logger.info(f"✅ Fixed video clip {i+1}/{len(clips)}")
@@ -436,7 +466,9 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
         # Log final clip properties
         logger.info(f"🔍 Final video clip properties: duration={getattr(video_clip, 'duration', 'NOT SET')}, "
                    f"start={getattr(video_clip, 'start', 'NOT SET')}, "
-                   f"size={getattr(video_clip, 'size', 'NOT SET')}")
+                   f"size={getattr(video_clip, 'size', 'NOT SET')}, "
+                   f"fps={getattr(video_clip, 'fps', 'NOT SET')}, "
+                   f"pos={getattr(video_clip, 'pos', 'NOT SET')}")
         
         # Set default parameters for stable output
         default_params = {
@@ -444,7 +476,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
             'codec': 'libx264',
             'audio_codec': 'aac',
             'temp_audiofile': 'temp-audio.m4a',
-            'remove_temp': True,
+            'remove_sluggish=True,
             'verbose': False,
             'logger': None
         }
