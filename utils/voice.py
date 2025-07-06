@@ -255,7 +255,7 @@ def fix_composite_video_clips(clips, fallback_duration=30.0):
                 clip = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=fallback_duration)
             
             # Check if clip has valid duration
-            if hasattr(clip, 'duration') and clip.duration is not None and not isinstance(clip.duration, type(mpe.video.io.ffmpeg_writer._NoValueType)):
+            if hasattr(clip, 'duration') and clip.duration is not None:
                 try:
                     duration = float(clip.duration)
                     if duration > 0:
@@ -268,11 +268,11 @@ def fix_composite_video_clips(clips, fallback_duration=30.0):
                     logger.warning(f"⚠️ Invalid duration for clip {i+1}, using fallback duration")
                     clip = clip.set_duration(fallback_duration)
             else:
-                logger.warning(f"⚠️ Video clip {i+1} missing duration or has _NoValueType, using fallback duration")
+                logger.warning(f"⚠️ Video clip {i+1} missing duration, using fallback duration")
                 clip = clip.set_duration(fallback_duration)
             
             # Ensure start time is set
-            if not hasattr(clip, 'start') or clip.start is None or isinstance(clip.start, type(mpe.video.io.ffmpeg_writer._NoValueType)):
+            if not hasattr(clip, 'start') or clip.start is None:
                 logger.info(f"🔄 Setting start time for clip {i+1} to 0")
                 clip = clip.set_start(0)
             
@@ -328,7 +328,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
         video_clip = fix_composite_video_clips([video_clip])[0]
         
         # Ensure duration is valid
-        if not hasattr(video_clip, 'duration') or video_clip.duration is None or isinstance(video_clip.duration, type(mpe.video.io.ffmpeg_writer._NoValueType)):
+        if not hasattr(video_clip, 'duration') or video_clip.duration is None:
             logger.error("❌ Invalid video clip duration")
             return False
         
@@ -449,7 +449,6 @@ def debug_audio_clip(audio_clip, clip_name="Unknown"):
     except Exception as e:
         logger.error(f"❌ Error debugging audio clip: {e}")
 
-# Example usage function
 def create_video_with_fixed_audio(video_path, audio_path, output_path):
     """
     Create video with properly handled audio to avoid _NoValueType errors
