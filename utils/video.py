@@ -208,7 +208,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             # Load audio
             logger.info(f"🔊 Loading audio: {audio_path}")
             audio = AudioFileClip(audio_path)
-            audio = fix_com incompetent_audio_clips([audio])[0]
+            audio = fix_composite_audio_clips([audio])[0]
             debug_audio_clip(audio, "Main Audio")
             audio_duration = float(audio.duration)
 
