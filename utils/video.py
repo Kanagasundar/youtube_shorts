@@ -1,4 +1,3 @@
-```python
 #!/usr/bin/env python3
 """
 Video creation utilities for YouTube Shorts automation
@@ -51,26 +50,48 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
         **kwargs: Additional TextClip parameters (fontsize, color, etc.)
 
     Returns:
-        MoviePy TextClip or fallback ColorClip if creation fails
+        MoviePy TextClip or None if creation fails
     """
     if not text or len(text.strip()) < 2 or text.strip().replace(':', '').replace(',', '').replace('.', '').isspace():
         logger.warning(f"⚠️ Skipping invalid or too short text: '{text}'")
         return None
+    
+    # Set default parameters with explicit validation
+    default_params = {
+        'font': 'FreeSerif',
+        'fontsize': kwargs.get('fontsize', 40),
+        'color': kwargs.get('color', 'white'),
+        'stroke_color': kwargs.get('stroke_color', 'black'),
+        'stroke_width': kwargs.get('stroke_width', 1),
+        'size': (900, 150),
+        'method': 'label',
+        'align': kwargs.get('align', 'center')
+    }
+
+    # Validate parameters
+    if not isinstance(default_params['fontsize'], (int, float)) or default_params['fontsize'] <= 0:
+        logger.warning(f"⚠️ Invalid fontsize {default_params['fontsize']}, using default 40")
+        default_params['fontsize'] = 40
+    if not isinstance(default_params['color'], str):
+        logger.warning(f"⚠️ Invalid color {default_params['color']}, using default 'white'")
+        default_params['color'] = 'white'
+    if not isinstance(default_params['stroke_color'], str):
+        logger.warning(f"⚠️ Invalid stroke_color {default_params['stroke_color']}, using default 'black'")
+        default_params['stroke_color'] = 'black'
+    if not isinstance(default_params['stroke_width'], (int, float)) or default_params['stroke_width'] < 0:
+        logger.warning(f"⚠️ Invalid stroke_width {default_params['stroke_width']}, using default 1")
+        default_params['stroke_width'] = 1
+
     try:
-        logger.debug(f"📝 Attempting to create TextClip for text: '{text}'")
+        logger.debug(f"📝 Attempting to create TextClip for text: '{text}' with params: {default_params}")
         text_clip = TextClip(
             text.strip(),
-            font='FreeSerif',
-            fontsize=kwargs.get('fontsize', 40),  # Reduced for performance
-            color=kwargs.get('color', 'white'),
-            stroke_color=kwargs.get('stroke_color', 'black'),
-            stroke_width=kwargs.get('stroke_width', 1),
-            size=(900, 150),  # Smaller fixed size
-            method='label',
-            align=kwargs.get('align', 'center')
+            **default_params
         )
+        # Validate and set duration
+        duration = max(float(duration), 0.5) if isinstance(duration, (int, float)) else 0.5
         text_clip = validate_clip_properties(text_clip, f"Caption '{text}'")
-        text_clip = text_clip.set_duration(max(float(duration), 0.5)).set_position(('center', 'bottom'))
+        text_clip = text_clip.set_duration(duration).set_position(('center', 'bottom'))
         logger.debug(f"✅ Successfully created TextClip: duration={text_clip.duration:.2f}s")
         return text_clip
     except Exception as e:
@@ -257,9 +278,10 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 nltk.download('punkt', quiet=True)
                 nltk.download('punkt_tab', quiet=True)
                 words = nltk.word_tokenize(script_text)
-                # Combine words into phrases (8 words per caption)
+                # Combine words into phrases (8 words per caption, max 10 captions to reduce load)
                 words_per_caption = 8
-                phrases = [' '.join(words[i:i+words_per_caption]) for i in range(0, len(words), words_per_caption)]
+                max_captions = 10
+                phrases = [' '.join(words[i:i+words_per_caption]) for i in range(0, len(words), words_per_caption)][:max_captions]
                 logger.info(f"📊 Generated {len(phrases)} caption phrases")
                 phrase_duration = target_duration / max(len(phrases), 1)
                 subtitles = []
@@ -273,7 +295,9 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                     last_end = subtitles[-1][0][1]
                     if last_end > target_duration:
                         scale_factor = target_duration / last_end
-                        subtitles = [((start * scale_factor, min(end * scale_factor, target_duration)), phrase)
+                       );
+
+// = [((start * scale_factor, min(end * scale_factor, target_duration)), phrase)
                                     for (start, end), phrase in subtitles]
             except Exception as e:
                 logger.error(f"❌ Failed to generate captions with NLTK: {str(e)}", exc_info=True)
@@ -399,7 +423,7 @@ def cleanup():
                 logger.info(f"✅ Removed {file}")
             except Exception as e:
                 logger.warning(f"⚠️ Failed to remove {file}: {e}")
-        logger.info(f"✅ Cleaned up {len(temp_files)} temporary files")
+  logger.info(f"✅ Cleaned up {len(temp_files)} temporary files")
     except Exception as e:
         logger.error(f"❌ Cleanup failed: {str(e)}", exc_info=True)
 
@@ -419,88 +443,3 @@ if __name__ == "__main__":
         print(f"✅ Video created at: {video_path}")
     else:
         print("❌ Video creation failed.")
-```
-
-### Key Changes in `video.py`
-1. **Enhanced `create_safe_text_clip`**:
-   - Added validation to skip invalid or too-short texts (e.g., `"the"`, `"Note : In this script ,"`) using `if not text or len(text.strip()) < 2 or text.strip().replace(':', '').replace(',', '').replace('.', '').isspace()`.
-   - Returns `None` for invalid texts, allowing the caption loop to skip them.
-   - Reduced `fontsize` to 40 and `size` to `(900, 150)` for lower resource usage.
-   - Removed fade effects to minimize rendering time.
-
-2. **Improved Caption Generation**:
-   - Increased `words_per_caption` to 8, further reducing the number of `TextClip`s (e.g., 100 words → ~13 captions).
-   - Added filtering in the subtitle loop to only include phrases with `len(phrase.strip()) >= 2`.
-   - Truncated fallback caption to 100 characters to avoid long text issues.
-
-3. **Subtitle Clip Validation**:
-   - Added explicit filtering of subtitle clips: `subtitle_clips = [clip for clip in subtitle_clips if clip and hasattr(clip, 'duration') and clip.duration is not None]`.
-   - Ensures only valid clips are included in `CompositeVideoClip`.
-
-4. **Optimized Encoding**:
-   - Changed `preset` to `"ultrafast"` for faster encoding.
-   - Lowered `bitrate` to `"2000k"` and `fps` to 20 to reduce resource demands.
-   - Reduced transition times (e.g., `crossfadein` to 0.2s, zoom factor to 0.03).
-
-5. **Resource Management**:
-   - Ensured all clips are closed in the `finally` block.
-   - Kept `DEBUG` logging with stack traces for errors.
-
-### Why These Changes Address the Issues
-1. **Video Writing Error (`_NoValueType`)**:
-   - Filtering invalid captions and validating subtitle clips before `CompositeVideoClip` creation prevents `_NoValueType` errors.
-   - Explicit duration setting after `validate_clip_properties` ensures all clips have valid properties.
-
-2. **Caption Creation Errors**:
-   - Skipping problematic phrases (e.g., punctuation-heavy or single words) avoids ImageMagick rendering failures.
-   - Returning `None` and filtering in the subtitle loop ensures only valid `TextClip`s are used.
-
-3. **SIGTERM (Exit Code 143)**:
-   - Reducing caption count (8 words per caption) and simplifying `TextClip` parameters (`fontsize`, `size`, no fades) lowers memory and CPU usage.
-   - Lower encoding parameters (`ultrafast`, 2000k bitrate, 20 fps) reduce the load during video writing.
-
-### Next Steps
-1. **Apply Updated `video.py`**:
-   - Replace your `video.py` with the version above.
-   - Ensure `scheduler.yml` and `voice.py` are the latest versions from previous responses (they should be compatible).
-   - Commit and push to trigger a new GitHub Actions run.
-
-2. **Monitor the Workflow**:
-   - Check `automation.log` for:
-     - Caption generation logs (`Generated X caption phrases`, `Skipping caption...`).
-     - Video writing logs (`Writing video to...`).
-     - Any new `_NoValueType` or ImageMagick-related errors.
-   - Review the `Check disk space and memory` step in `scheduler.yml` to confirm memory usage (e.g., `free -m` output).
-
-3. **Debugging SIGTERM**:
-   - If exit code 143 persists, the resource logs will indicate if memory is exhausted. If so:
-     - Increase `words_per_caption` to 10 in `video.py`.
-     - Pre-resize images to 720x1280 in `create_video`:
-       ```python
-       img = img.resize((720, 1280), Image.Resampling.LANCZOS)
-       ```
-     - Reduce `num_images` in `main.py` (if possible).
-   - Share the full `automation.log` and resource logs for further analysis.
-
-4. **Inspect `main.py`**:
-   - The problematic captions (`"Note : In this script ,"`, `"the"`) suggest issues with the script text generated in `main.py`. Share `main.py` to verify:
-     - How `script_text` is generated (e.g., via OpenAI or Transformers).
-     - If tokenization or text cleaning is needed before passing to `video.py`.
-   - As a temporary fix, you can sanitize `script_text` in `video.py`:
-     ```python
-     script_text = ''.join(c for c in script_text if c.isalnum() or c.isspace() or c in '.?!')
-     ```
-
-5. **Test Locally (Optional)**:
-   - Test `video.py` locally with the same inputs (10 images, 60s audio, problematic script text) to isolate ImageMagick or MoviePy issues.
-   - Use a simplified script text (e.g., `"AI solves math problem."`) to confirm caption handling.
-
-6. **Provide Additional Information**:
-   - If the workflow fails again, share:
-     - The full `automation.log`.
-     - Your `main.py` to inspect script text generation.
-     - Your `requirements.txt` to verify dependency versions.
-     - The output of the `Check disk space and memory` step.
-   - I can then refine `video.py` or suggest changes to `main.py`.
-
-Let me know if you need help applying these changes, interpreting logs, or updating `main.py`!
