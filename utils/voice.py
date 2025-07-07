@@ -14,7 +14,8 @@ from gtts import gTTS
 from TTS.api import TTS
 from pathlib import Path
 from datetime import datetime
-import time  # Added import to fix NameError
+import time
+from pydub import AudioSegment  # Added for audio file validation
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +51,18 @@ def generate_voice(script: str, output_dir: str = "output") -> str:
             tts.tts_to_file(text=script, file_path=audio_path)
             logger.info(f"✅ Mozilla TTS generated audio: {audio_path}")
             
-            # Verify audio file
-            if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
-                raise FileNotFoundError("Mozilla TTS generated empty or missing audio file")
-            
+            # Validate audio file with pydub
+            try:
+                audio_seg = AudioSegment.from_file(audio_path)
+                duration = len(audio_seg) / 1000.0
+                if duration <= 0:
+                    raise ValueError("Mozilla TTS generated audio with invalid duration")
+                logger.info(f"✅ Audio file validated with pydub: duration={duration:.2f}s")
+            except Exception as validation_error:
+                logger.warning(f"⚠️ Mozilla TTS audio validation failed: {str(validation_error)}")
+                os.remove(audio_path) if os.path.exists(audio_path) else None
+                raise FileNotFoundError("Mozilla TTS generated invalid audio file")
+
             # Create safe audio clip and verify duration
             audio_clip = create_safe_audio_clip(audio_path)
             if audio_clip.duration <= 0:
@@ -72,9 +81,17 @@ def generate_voice(script: str, output_dir: str = "output") -> str:
                 gtts.save(audio_path)
                 logger.info(f"✅ gTTS generated audio: {audio_path}")
 
-                # Verify audio file
-                if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
-                    raise FileNotFoundError("gTTS generated empty or missing audio file")
+                # Validate audio file with pydub
+                try:
+                    audio_seg = AudioSegment.from_file(audio_path)
+                    duration = len(audio_seg) / 1000.0
+                    if duration <= 0:
+                        raise ValueError("gTTS generated audio with invalid duration")
+                    logger.info(f"✅ Audio file validated with pydub: duration={duration:.2f}s")
+                except Exception as validation_error:
+                    logger.warning(f"⚠️ gTTS audio validation failed: {str(validation_error)}")
+                    os.remove(audio_path) if os.path.exists(audio_path) else None
+                    raise FileNotFoundError("gTTS generated invalid audio file")
 
                 # Create safe audio clip and verify duration
                 audio_clip = create_safe_audio_clip(audio_path)
@@ -119,7 +136,6 @@ def fix_audio_clip_duration(audio_clip, fallback_duration=30.0):
         
         # Try to get duration from audio file if it's a file-based clip
         if hasattr(audio_clip, 'filename') and audio_clip.filename:
-            from pydub import AudioSegment
             try:
                 audio_seg = AudioSegment.from_file(audio_clip.filename)
                 duration = len(audio_seg) / 1000.0
