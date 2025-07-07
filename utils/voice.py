@@ -203,6 +203,9 @@ def fix_composite_audio_clips(clips):
     Returns:
         List of fixed audio clips
     """
+    from moviepy.audio.AudioClip import AudioClip
+    import numpy as np
+
     fixed_clips = []
     
     for i, clip in enumerate(clips):
@@ -210,13 +213,13 @@ def fix_composite_audio_clips(clips):
             # Fix duration
             fixed_clip = fix_audio_clip_duration(clip)
             
-            # Ensure start time is set
-            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None:
+            # Ensure start time is valid
+            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None or fixed_clip.start is moviepy.config.NO_VALUE:
                 logger.info(f"🔄 Setting start time for clip {i+1} to 0")
                 fixed_clip = fixed_clip.set_start(0)
             
             # Ensure duration is valid
-            if hasattr(fixed_clip, 'duration') and fixed_clip.duration is not None:
+            if hasattr(fixed_clip, 'duration') and fixed_clip.duration is not None and fixed_clip.duration != moviepy.config.NO_VALUE:
                 try:
                     duration = float(fixed_clip.duration)
                     if duration <= 0:
@@ -225,13 +228,17 @@ def fix_composite_audio_clips(clips):
                 except (TypeError, ValueError):
                     logger.warning(f"⚠️ Invalid duration for clip {i+1}, using fallback duration 30.0")
                     fixed_clip = fixed_clip.set_duration(30.0)
+            else:
+                logger.warning(f"⚠️ Missing duration for clip {i+1}, using fallback duration 30.0")
+                fixed_clip = fixed_clip.set_duration(30.0)
             
-            # Ensure end time is set
+            # Ensure end time is valid
             try:
-                fixed_clip = fixed_clip.set_end(fixed_clip.start + float(fixed_clip.duration))
+                end_time = float(fixed_clip.start) + float(fixed_clip.duration)
+                fixed_clip = fixed_clip.set_end(end_time)
             except (TypeError, ValueError):
                 logger.warning(f"⚠️ Invalid end time for clip {i+1}, setting based on duration")
-                fixed_clip = fixed_clip.set_end(fixed_clip.start + 30.0)
+                fixed_clip = fixed_clip.set_end(float(fixed_clip.start) + 30.0)
             
             # Recursively fix nested composite clips
             if isinstance(fixed_clip, CompositeAudioClip) and hasattr(fixed_clip, 'clips'):
@@ -453,7 +460,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
         video_clip = validate_clip_properties(video_clip, "Main Video Clip")
         
         # Ensure duration is valid
-        if not hasattr(video_clip, 'duration') or video_clip.duration is None:
+        if not hasattr(video_clip, 'duration') or video_clip.duration is None or video_clip.duration == moviepy.config.NO_VALUE:
             logger.error("❌ Invalid video clip duration")
             return False
         
@@ -518,20 +525,32 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
         # Update with user parameters
         default_params.update(kwargs)
         
-        # Write video file
-        logger.info(f"💾 Writing video to: {output_path}")
-        video_clip.write_videofile(output_path, **default_params)
-        
-        # Verify output file
-        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-            logger.info(f"✅ Video successfully written: {output_path}")
-            return True
-        else:
-            logger.error(f"❌ Video file not created or empty: {output_path}")
-            return False
+        # Write video file with retry
+        max_retries = 2
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"💾 Writing video to: {output_path} (Attempt {attempt}/{max_retries})")
+                video_clip.write_videofile(output_path, **default_params)
+                
+                # Verify output file
+                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                    logger.info(f"✅ Video successfully written: {output_path}")
+                    return True
+                else:
+                    logger.error(f"❌ Video file not created or empty: {output_path}")
+                    return False
+                
+            except Exception as e:
+                logger.error(f"❌ Error writing video file (Attempt {attempt}/{max_retries}): {str(e)}")
+                if attempt < max_retries:
+                    logger.info(f"🔄 Retrying after 1.0s...")
+                    time.sleep(1.0)
+                else:
+                    logger.error("❌ Max retries reached for writing video file")
+                    return False
             
     except Exception as e:
-        logger.error(f"❌ Error writing video file: {str(e)}", exc_info=True)
+        logger.error(f"❌ Error in safe_write_videofile: {str(e)}", exc_info=True)
         return False
     
     finally:
