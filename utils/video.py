@@ -407,6 +407,18 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_path = str(Path(output_dir) / f"video_{timestamp}.mp4")
 
+            # Validate video_clip.duration before passing to safe_write_videofile
+            if not hasattr(video, 'duration') or video.duration is None or (isinstance(video.duration, str) and video.duration.startswith('_NoValueType')):
+                logger.error("❌ Final video_clip has an invalid duration before writing.")
+                raise ValueError("Final video_clip has an invalid duration before writing.")
+            
+            # Ensure video.duration is a float
+            try:
+                final_video_duration = float(video.duration)
+            except (TypeError, ValueError) as e:
+                logger.error(f"❌ Could not convert video.duration to float: {video.duration}. Error: {e}")
+                raise ValueError("Video duration is not a valid number.")
+
             # Write video using safe_write_videofile
             logger.info(f"💾 Writing video to {output_path}...")
             success = safe_write_videofile(
