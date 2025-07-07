@@ -295,10 +295,10 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                     last_end = subtitles[-1][0][1]
                     if last_end > target_duration:
                         scale_factor = target_duration / last_end
-                       );
-
-// = [((start * scale_factor, min(end * scale_factor, target_duration)), phrase)
-                                    for (start, end), phrase in subtitles]
+                        subtitles = [
+                            ((start * scale_factor, min(end * scale_factor, target_duration)), phrase)
+                            for (start, end), phrase in subtitles
+                        ]
             except Exception as e:
                 logger.error(f"❌ Failed to generate captions with NLTK: {str(e)}", exc_info=True)
                 subtitles = [((0, target_duration), script_text[:100])]  # Fallback to truncated script
@@ -423,7 +423,7 @@ def cleanup():
                 logger.info(f"✅ Removed {file}")
             except Exception as e:
                 logger.warning(f"⚠️ Failed to remove {file}: {e}")
-  logger.info(f"✅ Cleaned up {len(temp_files)} temporary files")
+        logger.info(f"✅ Cleaned up {len(temp_files)} temporary files")
     except Exception as e:
         logger.error(f"❌ Cleanup failed: {str(e)}", exc_info=True)
 
