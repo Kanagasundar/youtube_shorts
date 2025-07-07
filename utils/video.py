@@ -201,6 +201,20 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 audio = fix_composite_audio_clips([audio])[0]
                 debug_audio_clip(audio, "Adjusted Audio")
 
+            # Additional validation for audio clip
+            if not hasattr(audio, 'duration') or audio.duration is None:
+                logger.error("❌ Audio clip has invalid duration")
+                raise ValueError("Audio clip has invalid duration")
+            if hasattr(audio, 'clips'):
+                logger.debug(f"🔍 Audio clip is composite with {len(audio.clips)} sub-clips")
+                for i, sub_clip in enumerate(audio.clips):
+                    if not hasattr(sub_clip, 'start') or not isinstance(sub_clip.start, (int, float)):
+                        logger.warning(f"⚠️ Sub-clip {i} has invalid start time: {sub_clip.start}, resetting to 0")
+                        sub_clip.start = 0
+                    if not hasattr(sub_clip, 'duration') or not isinstance(sub_clip.duration, (int, float)):
+                        logger.warning(f"⚠️ Sub-clip {i} has invalid duration: {sub_clip.duration}, resetting to {target_duration}")
+                        sub_clip.duration = target_duration
+
             num_images = len(image_paths)
 
             # Calculate image durations
@@ -268,8 +282,20 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             logger.info("🔗 Concatenating image clips...")
             video = concatenate_videoclips(clips, method="compose", padding=-0.2)
             video = validate_clip_properties(video, "Concatenated Video")
-            video = video.set_audio(audio)
             video = video.set_duration(float(target_duration))
+
+            # Assign audio with fallback
+            logger.info("🔊 Assigning audio to video...")
+            if audio:
+                try:
+                    video = video.set_audio(audio)
+                    logger.debug("✅ Audio successfully assigned to video")
+                except Exception as e:
+                    logger.error(f"❌ Failed to assign audio: {str(e)}", exc_info=True)
+                    # Fallback to re-loading audio directly
+                    audio = AudioFileClip(audio_path).set_duration(target_duration)
+                    video = video.set_audio(audio)
+                    logger.info("✅ Fallback audio assignment successful")
 
             # Generate captions
             logger.info("📝 Generating captions...")
@@ -337,10 +363,19 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             # Fix all video clips in composite
             video.clips = fix_composite_video_clips(video.clips, fallback_duration=target_duration)
 
-            # Ensure video audio is fixed
+            # Ensure video audio is valid before writing
             if video.audio is not None:
                 video.audio = fix_composite_audio_clips([video.audio])[0]
                 debug_audio_clip(video.audio, "Final Video Audio")
+                if hasattr(video.audio, 'clips'):
+                    logger.debug(f"🔍 Final audio is composite with {len(video.audio.clips)} sub-clips")
+                    for i, sub_clip in enumerate(video.audio.clips):
+                        if not hasattr(sub_clip, 'start') or not isinstance(sub_clip.start, (int, float)):
+                            logger.warning(f"⚠️ Final audio sub-clip {i} has invalid start: {sub_clip.start}, resetting to 0")
+                            sub_clip.start = 0
+                        if not hasattr(sub_clip, 'duration') or not isinstance(sub_clip.duration, (int, float)):
+                            logger.warning(f"⚠️ Final audio sub-clip {i} has invalid duration: {sub_clip.duration}, resetting to {target_duration}")
+                            sub_clip.duration = target_duration
 
             # Log final video properties
             logger.info(f"🔍 Final video clip: duration={getattr(video, 'duration', 'NOT SET'):.2f}s, "
