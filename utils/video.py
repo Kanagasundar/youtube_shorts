@@ -309,22 +309,15 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 max_captions = 10
                 phrases = [' '.join(words[i:i+words_per_caption]) for i in range(0, len(words), words_per_caption)][:max_captions]
                 logger.info(f"📊 Generated {len(phrases)} caption phrases")
-                phrase_duration = target_duration / max(len(phrases), 1)
+                phrase_duration = target_duration / max(len(phrases), 1) if phrases else target_duration
                 subtitles = []
                 current_time = 0
                 for phrase in phrases:
                     if len(phrase.strip()) >= 2:  # Skip short or invalid phrases
-                        subtitles.append(((current_time, current_time + phrase_duration), phrase))
-                        current_time += max(phrase_duration, 0.5)
-                # Adjust subtitle timings
-                if subtitles:
-                    last_end = subtitles[-1][0][1]
-                    if last_end > target_duration:
-                        scale_factor = target_duration / last_end
-                        subtitles = [
-                            ((start * scale_factor, min(end * scale_factor, target_duration)), phrase)
-                            for (start, end), phrase in subtitles
-                        ]
+                        duration = max(phrase_duration, 0.5)  # Ensure minimum duration
+                        end_time = min(current_time + duration, target_duration)
+                        subtitles.append(((current_time, end_time), phrase))
+                        current_time = end_time
             except Exception as e:
                 logger.error(f"❌ Failed to generate captions with NLTK: {str(e)}", exc_info=True)
                 subtitles = [((0, target_duration), script_text[:100])]  # Fallback to truncated script
@@ -332,9 +325,10 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             subtitle_clips = []
             for (start, end), phrase in subtitles:
                 try:
+                    caption_duration = max(float(end - start), 0.5)  # Ensure valid duration
                     caption_clip = create_safe_text_clip(
                         phrase,
-                        duration=end - start,
+                        duration=caption_duration,
                         fontsize=40,
                         color='white',
                         stroke_color='black',
@@ -342,9 +336,12 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                     )
                     if caption_clip:
                         caption_clip = validate_clip_properties(caption_clip, f"Caption '{phrase}'")
-                        caption_clip = caption_clip.set_start(float(start)).set_duration(max(float(end - start), 0.5))
-                        subtitle_clips.append(caption_clip)
-                        logger.info(f"✅ Set caption '{phrase}' start time to {start:.2f}s")
+                        if caption_clip:
+                            caption_clip = caption_clip.set_start(float(start)).set_duration(caption_duration)
+                            subtitle_clips.append(caption_clip)
+                            logger.info(f"✅ Set caption '{phrase}' start time to {start:.2f}s, duration {caption_duration:.2f}s")
+                        else:
+                            logger.warning(f"⚠️ Skipping caption '{phrase}' due to validation failure")
                     else:
                         logger.warning(f"⚠️ Skipping caption '{phrase}' due to creation failure")
                 except Exception as e:
@@ -359,9 +356,13 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             logger.info("🔄 Creating composite video with subtitles...")
             video = CompositeVideoClip([video] + subtitle_clips, size=(1080, 1920))
             video = validate_clip_properties(video, "Final Composite Video")
+            if not video or isinstance(video, ColorClip):
+                logger.error("❌ Final composite video is invalid or a ColorClip, creating fallback")
+                video = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=target_duration).set_audio(audio)
 
-            # Fix all video clips in composite
-            video.clips = fix_composite_video_clips(video.clips, fallback_duration=target_duration)
+            # Fix composite video clips if applicable
+            if isinstance(video, CompositeVideoClip) and hasattr(video, 'clips'):
+                video.clips = fix_composite_video_clips(video.clips, fallback_duration=target_duration)
 
             # Ensure video audio is valid before writing
             if video.audio is not None:
@@ -394,10 +395,10 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 output_path,
                 codec="libx264",
                 audio_codec="aac",
-                preset="ultrafast",  # Faster encoding
-                bitrate="2000k",  # Lower bitrate
+                preset="ultrafast",
+                bitrate="2000k",
                 threads=2,
-                fps=20  # Lower FPS
+                fps=20
             )
 
             if not success:

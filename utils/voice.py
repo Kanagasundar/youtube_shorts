@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MoviePy Audio Fix - Addresses the _NoValueType error in audio and video clip processing
+MoviePy Audio Fix - Addresses errors in audio and video clip processing
 """
 
 import os
@@ -93,7 +93,7 @@ def generate_voice(script: str, output_dir: str = "output") -> str:
 
 def fix_audio_clip_duration(audio_clip, fallback_duration=30.0):
     """
-    Fix audio clip duration issues that cause _NoValueType errors
+    Fix audio clip duration issues.
     
     Args:
         audio_clip: MoviePy AudioClip
@@ -144,7 +144,7 @@ def fix_audio_clip_duration(audio_clip, fallback_duration=30.0):
 
 def create_safe_audio_clip(audio_path, target_duration=None):
     """
-    Create a safe AudioClip that won't cause _NoValueType errors
+    Create a safe AudioClip that won't cause errors.
     
     Args:
         audio_path: Path to audio file
@@ -195,7 +195,7 @@ def create_safe_audio_clip(audio_path, target_duration=None):
 
 def fix_composite_audio_clips(clips):
     """
-    Fix all audio clips in a composite to prevent _NoValueType errors
+    Fix all audio clips in a composite to prevent errors.
     
     Args:
         clips: List of audio clips
@@ -210,11 +210,8 @@ def fix_composite_audio_clips(clips):
             # Fix duration
             fixed_clip = fix_audio_clip_duration(clip)
             
-            # Check for _NoValueType or invalid attributes
-            if hasattr(fixed_clip, 'start') and isinstance(fixed_clip.start, moviepy.NoValue):
-                logger.warning(f"⚠️ Clip {i+1} has _NoValueType start, setting to 0")
-                fixed_clip.start = 0
-            elif not hasattr(fixed_clip, 'start') or fixed_clip.start is None:
+            # Ensure start time is set
+            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None:
                 logger.info(f"🔄 Setting start time for clip {i+1} to 0")
                 fixed_clip = fixed_clip.set_start(0)
             
@@ -222,7 +219,7 @@ def fix_composite_audio_clips(clips):
             if hasattr(fixed_clip, 'duration') and fixed_clip.duration is not None:
                 try:
                     duration = float(fixed_clip.duration)
-                    if isinstance(duration, moviepy.NoValue) or duration <= 0:
+                    if duration <= 0:
                         logger.warning(f"⚠️ Invalid duration for clip {i+1}, using fallback duration 30.0")
                         fixed_clip = fixed_clip.set_duration(30.0)
                 except (TypeError, ValueError):
@@ -257,7 +254,7 @@ def fix_composite_audio_clips(clips):
 
 def validate_clip_properties(clip, clip_name="Unknown"):
     """
-    Recursively validate and fix clip properties to eliminate _NoValueType issues with minimal recreation.
+    Recursively validate and fix clip properties to eliminate errors with minimal recreation.
     
     Args:
         clip: MoviePy clip (VideoClip, TextClip, CompositeVideoClip, etc.)
@@ -276,7 +273,7 @@ def validate_clip_properties(clip, clip_name="Unknown"):
         
         # Fix duration
         duration = getattr(clip, 'duration', None)
-        if duration is None or isinstance(duration, moviepy.NoValue) or (isinstance(duration, (int, float)) and duration <= 0.5):
+        if duration is None or (isinstance(duration, (int, float)) and duration <= 0.5):
             logger.warning(f"⚠️ Invalid or short duration for {clip_name}, setting to 0.5")
             clip = clip.set_duration(0.5)
         else:
@@ -289,7 +286,7 @@ def validate_clip_properties(clip, clip_name="Unknown"):
         
         # Fix start time
         start = getattr(clip, 'start', None)
-        if start is None or isinstance(start, moviepy.NoValue):
+        if start is None:
             logger.debug(f"🔄 Setting start time for {clip_name} to 0")
             clip = clip.set_start(0)
         
@@ -308,13 +305,13 @@ def validate_clip_properties(clip, clip_name="Unknown"):
         # Fix position for TextClip
         if isinstance(clip, TextClip):
             pos = getattr(clip, 'pos', None)
-            if pos is None or isinstance(pos, moviepy.NoValue):
+            if pos is None:
                 logger.debug(f"🔄 Setting position for {clip_name} to ('center', 'bottom')")
                 clip = clip.set_position(('center', 'bottom'))
         
         # Fix FPS
         fps = getattr(clip, 'fps', None)
-        if fps is None or isinstance(fps, moviepy.NoValue) or (isinstance(fps, (int, float)) and fps <= 0):
+        if fps is None or (isinstance(fps, (int, float)) and fps <= 0):
             logger.debug(f"🔄 Setting FPS for {clip_name} to 30")
             clip = clip.set_fps(30)
         
@@ -325,14 +322,14 @@ def validate_clip_properties(clip, clip_name="Unknown"):
             fontsize = getattr(clip, 'fontsize', None)
             color = getattr(clip, 'color', None)
             
-            if text is None or isinstance(text, moviepy.NoValue) or font is None or isinstance(font, moviepy.NoValue) or fontsize is None or isinstance(fontsize, moviepy.NoValue) or color is None or isinstance(color, moviepy.NoValue):
+            if text is None or font is None or fontsize is None or color is None:
                 logger.warning(f"⚠️ Invalid critical attributes for {clip_name} (text={text}, font={font}, fontsize={fontsize}, color={color}), recreating TextClip")
                 try:
                     clip = TextClip(
-                        text if text and not isinstance(text, moviepy.NoValue) else "Fallback",
+                        text if text else "Fallback",
                         font='FreeSerif',
-                        fontsize=60 if fontsize is None or isinstance(fontsize, moviepy.NoValue) else fontsize,
-                        color='white' if color is None or isinstance(color, moviepy.NoValue) else color,
+                        fontsize=60 if fontsize is None else fontsize,
+                        color='white' if color is None else color,
                         stroke_color='black',
                         stroke_width=1,
                         size=(1080, 1920),
@@ -367,7 +364,7 @@ def validate_clip_properties(clip, clip_name="Unknown"):
 
 def fix_composite_video_clips(clips, fallback_duration=0.5):
     """
-    Fix all video clips (including TextClip) in a composite to prevent _NoValueType errors
+    Fix all video clips (including TextClip) in a composite to prevent errors.
     
     Args:
         clips: List of video clips (VideoClip, TextClip, etc.)
@@ -398,7 +395,7 @@ def fix_composite_video_clips(clips, fallback_duration=0.5):
                 fixed_clip = fixed_clip.set_duration(fallback_duration)
             
             # Ensure start time is set
-            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None or isinstance(fixed_clip.start, moviepy.NoValue):
+            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None:
                 logger.debug(f"🔄 Setting start time for clip {i+1} to 0")
                 fixed_clip = fixed_clip.set_start(0)
             
@@ -435,7 +432,7 @@ def fix_composite_video_clips(clips, fallback_duration=0.5):
 
 def safe_write_videofile(video_clip, output_path, **kwargs):
     """
-    Safely write video file with proper audio and video clip handling
+    Safely write video file with proper audio and video clip handling.
     
     Args:
         video_clip: MoviePy VideoClip
@@ -456,7 +453,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
         video_clip = validate_clip_properties(video_clip, "Main Video Clip")
         
         # Ensure duration is valid
-        if not hasattr(video_clip, 'duration') or video_clip.duration is None or isinstance(video_clip.duration, moviepy.NoValue):
+        if not hasattr(video_clip, 'duration') or video_clip.duration is None:
             logger.error("❌ Invalid video clip duration")
             return False
         
@@ -466,7 +463,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
             video_clip = video_clip.resize((1080, 1920))
         
         # Fix composite video clips (including subtitles)
-        if isinstance(video_clip, CompositeVideoClip):
+        if isinstance(video_clip, CompositeVideoClip) and hasattr(video_clip, 'clips'):
             logger.info("🔄 Detected CompositeVideoClip, fixing all sub-clips...")
             video_clip.clips = fix_composite_video_clips(video_clip.clips)
         
@@ -475,7 +472,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
             logger.info("🔊 Video has audio, fixing audio issues...")
             
             # Handle composite audio clips
-            if isinstance(video_clip.audio, CompositeAudioClip):
+            if isinstance(video_clip.audio, CompositeAudioClip) and hasattr(video_clip.audio, 'clips'):
                 logger.info("🔄 Detected CompositeAudioClip, fixing all sub-clips...")
                 video_clip.audio.clips = fix_composite_audio_clips(video_clip.audio.clips)
             
@@ -547,7 +544,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
 
 def debug_audio_clip(audio_clip, clip_name="Unknown"):
     """
-    Debug audio clip properties to identify issues
+    Debug audio clip properties to identify issues.
     
     Args:
         audio_clip: AudioClip to debug
@@ -581,7 +578,7 @@ def debug_audio_clip(audio_clip, clip_name="Unknown"):
 
 def create_video_with_fixed_audio(video_path, audio_path, output_path):
     """
-    Create video with properly handled audio to avoid _NoValueType errors
+    Create video with properly handled audio to avoid errors.
     
     Args:
         video_path: Path to video file
