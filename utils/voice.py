@@ -14,6 +14,7 @@ from gtts import gTTS
 from TTS.api import TTS
 from pathlib import Path
 from datetime import datetime
+import time  # Added import to fix NameError
 
 logger = logging.getLogger(__name__)
 
@@ -195,7 +196,7 @@ def create_safe_audio_clip(audio_path, target_duration=None):
 
 def fix_composite_audio_clips(clips):
     """
-    Fix all audio clips in a composite to prevent errors.
+    Fix all audio clips in a composite to prevent errors, including handling _NoValueType.
     
     Args:
         clips: List of audio clips
@@ -213,12 +214,12 @@ def fix_composite_audio_clips(clips):
             # Fix duration
             fixed_clip = fix_audio_clip_duration(clip)
             
-            # Ensure start time is valid
-            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None:
+            # Ensure start time is valid and not _NoValueType
+            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None or str(fixed_clip.start).startswith('_NoValueType'):
                 logger.info(f"🔄 Setting start time for clip {i+1} to 0")
                 fixed_clip = fixed_clip.set_start(0)
             
-            # Ensure duration is valid
+            # Ensure duration is valid and not _NoValueType
             if hasattr(fixed_clip, 'duration') and fixed_clip.duration is not None:
                 try:
                     duration = float(fixed_clip.duration)
@@ -232,7 +233,7 @@ def fix_composite_audio_clips(clips):
                 logger.warning(f"⚠️ Missing duration for clip {i+1}, using fallback duration 30.0")
                 fixed_clip = fixed_clip.set_duration(30.0)
             
-            # Ensure end time is valid
+            # Ensure end time is valid and not _NoValueType
             try:
                 end_time = float(fixed_clip.start) + float(fixed_clip.duration)
                 fixed_clip = fixed_clip.set_end(end_time)
@@ -261,7 +262,7 @@ def fix_composite_audio_clips(clips):
 
 def validate_clip_properties(clip, clip_name="Unknown"):
     """
-    Recursively validate and fix clip properties to eliminate errors with minimal recreation.
+    Recursively validate and fix clip properties to eliminate errors with minimal recreation, including handling _NoValueType.
     
     Args:
         clip: MoviePy clip (VideoClip, TextClip, CompositeVideoClip, etc.)
@@ -280,7 +281,7 @@ def validate_clip_properties(clip, clip_name="Unknown"):
         
         # Fix duration
         duration = getattr(clip, 'duration', None)
-        if duration is None or (isinstance(duration, (int, float)) and duration <= 0.5):
+        if duration is None or str(duration).startswith('_NoValueType') or (isinstance(duration, (int, float)) and duration <= 0.5):
             logger.warning(f"⚠️ Invalid or short duration for {clip_name}, setting to 0.5")
             clip = clip.set_duration(0.5)
         else:
@@ -293,7 +294,7 @@ def validate_clip_properties(clip, clip_name="Unknown"):
         
         # Fix start time
         start = getattr(clip, 'start', None)
-        if start is None:
+        if start is None or str(start).startswith('_NoValueType'):
             logger.debug(f"🔄 Setting start time for {clip_name} to 0")
             clip = clip.set_start(0)
         
@@ -312,13 +313,13 @@ def validate_clip_properties(clip, clip_name="Unknown"):
         # Fix position for TextClip
         if isinstance(clip, TextClip):
             pos = getattr(clip, 'pos', None)
-            if pos is None:
+            if pos is None or str(pos).startswith('_NoValueType'):
                 logger.debug(f"🔄 Setting position for {clip_name} to ('center', 'bottom')")
                 clip = clip.set_position(('center', 'bottom'))
         
         # Fix FPS
         fps = getattr(clip, 'fps', None)
-        if fps is None or (isinstance(fps, (int, float)) and fps <= 0):
+        if fps is None or str(fps).startswith('_NoValueType') or (isinstance(fps, (int, float)) and fps <= 0):
             logger.debug(f"🔄 Setting FPS for {clip_name} to 30")
             clip = clip.set_fps(30)
         
@@ -329,14 +330,17 @@ def validate_clip_properties(clip, clip_name="Unknown"):
             fontsize = getattr(clip, 'fontsize', None)
             color = getattr(clip, 'color', None)
             
-            if text is None or font is None or fontsize is None or color is None:
+            if text is None or str(text).startswith('_NoValueType') or \
+               font is None or str(font).startswith('_NoValueType') or \
+               fontsize is None or str(fontsize).startswith('_NoValueType') or \
+               color is None or str(color).startswith('_NoValueType'):
                 logger.warning(f"⚠️ Invalid critical attributes for {clip_name} (text={text}, font={font}, fontsize={fontsize}, color={color}), recreating TextClip")
                 try:
                     clip = TextClip(
-                        text if text else "Fallback",
+                        text if text and not str(text).startswith('_NoValueType') else "Fallback",
                         font='FreeSerif',
-                        fontsize=60 if fontsize is None else fontsize,
-                        color='white' if color is None else color,
+                        fontsize=60 if fontsize is None or str(fontsize).startswith('_NoValueType') else fontsize,
+                        color='white' if color is None or str(color).startswith('_NoValueType') else color,
                         stroke_color='black',
                         stroke_width=1,
                         size=(1080, 1920),
@@ -402,7 +406,7 @@ def fix_composite_video_clips(clips, fallback_duration=0.5):
                 fixed_clip = fixed_clip.set_duration(fallback_duration)
             
             # Ensure start time is set
-            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None:
+            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None or str(fixed_clip.start).startswith('_NoValueType'):
                 logger.debug(f"🔄 Setting start time for clip {i+1} to 0")
                 fixed_clip = fixed_clip.set_start(0)
             
@@ -460,7 +464,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
         video_clip = validate_clip_properties(video_clip, "Main Video Clip")
         
         # Ensure duration is valid
-        if not hasattr(video_clip, 'duration') or video_clip.duration is None:
+        if not hasattr(video_clip, 'duration') or video_clip.duration is None or str(video_clip.duration).startswith('_NoValueType'):
             logger.error("❌ Invalid video clip duration")
             return False
         
@@ -507,6 +511,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
         # Log final clip properties
         logger.debug(f"🔍 Final video clip properties: duration={getattr(video_clip, 'duration', 'NOT SET')}, "
                     f"start={getattr(video_clip, 'start', 'NOT SET')}, "
+                    f"end={getattr(video_clip, 'end', 'NOT SET')}, "
                     f"size={getattr(video_clip, 'size', 'NOT SET')}, "
                     f"fps={getattr(video_clip, 'fps', 'NOT SET')}, "
                     f"pos={getattr(video_clip, 'pos', 'NOT SET')}")
