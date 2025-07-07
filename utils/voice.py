@@ -578,7 +578,8 @@ def debug_audio_clip(audio_clip, clip_name="Unknown"):
         logger.debug(f"   - End: {getattr(audio_clip, 'end', 'NOT SET')}")
         logger.debug(f"   - FPS: {getattr(audio_clip, 'fps', 'NOT SET')}")
         
-        դ if hasattr(audio_clip, 'clips'):
+        # Check if it's a composite clip
+        if hasattr(audio_clip, 'clips'):
             logger.debug(f"   - Composite with {len(audio_clip.clips)} clips")
             for i, subclip in enumerate(audio_clip.clips):
                 logger.debug(f"     Clip {i+1}: duration={getattr(subclip, 'duration', 'NOT SET')}, "
