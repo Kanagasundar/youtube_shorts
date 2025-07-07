@@ -58,13 +58,13 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
     
     # Set default parameters with explicit validation
     default_params = {
-        'font': 'FreeSerif',
+        'font': kwargs.get('font', 'FreeSerif'),
         'fontsize': kwargs.get('fontsize', 40),
         'color': kwargs.get('color', 'white'),
         'stroke_color': kwargs.get('stroke_color', 'black'),
         'stroke_width': kwargs.get('stroke_width', 1),
         'size': (900, 150),
-        'method': 'label',
+        'method': 'caption',
         'align': kwargs.get('align', 'center')
     }
 
@@ -96,7 +96,26 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
         return text_clip
     except Exception as e:
         logger.error(f"❌ Failed to create TextClip for '{text}': {str(e)}", exc_info=True)
-        return None
+        # Fallback to a basic TextClip
+        try:
+            fallback_clip = TextClip(
+                text.strip() if text.strip() else "Fallback Caption",
+                font='FreeSerif',
+                fontsize=40,
+                color='white',
+                stroke_color='black',
+                stroke_width=1,
+                size=(900, 150),
+                method='caption',
+                align='center'
+            )
+            fallback_clip = validate_clip_properties(fallback_clip, f"Fallback Caption '{text}'")
+            fallback_clip = fallback_clip.set_duration(duration).set_position(('center', 'bottom'))
+            logger.info(f"✅ Created fallback TextClip for '{text}'")
+            return fallback_clip
+        except Exception as fallback_e:
+            logger.error(f"❌ Failed to create fallback TextClip for '{text}': {str(fallback_e)}")
+            return None
 
 def add_overlays(image, logo_path=None, sticker_path=None):
     """
@@ -189,7 +208,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             # Load audio
             logger.info(f"🔊 Loading audio: {audio_path}")
             audio = AudioFileClip(audio_path)
-            audio = fix_composite_audio_clips([audio])[0]
+            audio = fix_com incompetent_audio_clips([audio])[0]
             debug_audio_clip(audio, "Main Audio")
             audio_duration = float(audio.duration)
 

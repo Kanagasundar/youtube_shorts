@@ -214,12 +214,12 @@ def fix_composite_audio_clips(clips):
             fixed_clip = fix_audio_clip_duration(clip)
             
             # Ensure start time is valid
-            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None or fixed_clip.start is moviepy.config.NO_VALUE:
+            if not hasattr(fixed_clip, 'start') or fixed_clip.start is None:
                 logger.info(f"🔄 Setting start time for clip {i+1} to 0")
                 fixed_clip = fixed_clip.set_start(0)
             
             # Ensure duration is valid
-            if hasattr(fixed_clip, 'duration') and fixed_clip.duration is not None and fixed_clip.duration != moviepy.config.NO_VALUE:
+            if hasattr(fixed_clip, 'duration') and fixed_clip.duration is not None:
                 try:
                     duration = float(fixed_clip.duration)
                     if duration <= 0:
@@ -460,7 +460,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
         video_clip = validate_clip_properties(video_clip, "Main Video Clip")
         
         # Ensure duration is valid
-        if not hasattr(video_clip, 'duration') or video_clip.duration is None or video_clip.duration == moviepy.config.NO_VALUE:
+        if not hasattr(video_clip, 'duration') or video_clip.duration is None:
             logger.error("❌ Invalid video clip duration")
             return False
         
@@ -578,8 +578,7 @@ def debug_audio_clip(audio_clip, clip_name="Unknown"):
         logger.debug(f"   - End: {getattr(audio_clip, 'end', 'NOT SET')}")
         logger.debug(f"   - FPS: {getattr(audio_clip, 'fps', 'NOT SET')}")
         
-        # Check if it's a composite clip
-        if hasattr(audio_clip, 'clips'):
+        դ if hasattr(audio_clip, 'clips'):
             logger.debug(f"   - Composite with {len(audio_clip.clips)} clips")
             for i, subclip in enumerate(audio_clip.clips):
                 logger.debug(f"     Clip {i+1}: duration={getattr(subclip, 'duration', 'NOT SET')}, "
