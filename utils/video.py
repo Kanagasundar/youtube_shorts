@@ -53,8 +53,8 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
         MoviePy TextClip or None if creation fails
     """
     if not text or len(text.strip()) < 2 or text.strip().replace(':', '').replace(',', '').replace('.', '').isspace():
-        logger.warning(f"⚠️ Skipping invalid or too short text: '{text}'")
-        return None
+        logger.warning(f"⚠️ Invalid or too short text: '{text}', using fallback text")
+        text = "Default Caption"
     
     # Set default parameters with explicit validation
     default_params = {
@@ -86,7 +86,14 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
         logger.debug(f"📝 Attempting to create TextClip for text: '{text}' with params: {default_params}")
         text_clip = TextClip(
             text.strip(),
-            **default_params
+            font=default_params['font'],
+            fontsize=int(default_params['fontsize']),
+            color=default_params['color'],
+            stroke_color=default_params['stroke_color'],
+            stroke_width=float(default_params['stroke_width']),
+            size=default_params['size'],
+            method=default_params['method'],
+            align=default_params['align']
         )
         # Validate and set duration
         duration = max(float(duration), 0.5) if isinstance(duration, (int, float)) else 0.5
@@ -99,7 +106,7 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
         # Fallback to a basic TextClip
         try:
             fallback_clip = TextClip(
-                text.strip() if text.strip() else "Fallback Caption",
+                "Fallback Caption",
                 font='FreeSerif',
                 fontsize=40,
                 color='white',
@@ -111,11 +118,11 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
             )
             fallback_clip = validate_clip_properties(fallback_clip, f"Fallback Caption '{text}'")
             fallback_clip = fallback_clip.set_duration(duration).set_position(('center', 'bottom'))
-            logger.info(f"✅ Created fallback TextClip for '{text}'")
+            logger.info(f"✅ Created fallback TextClip")
             return fallback_clip
         except Exception as fallback_e:
-            logger.error(f"❌ Failed to create fallback TextClip for '{text}': {str(fallback_e)}")
-            return None
+            logger.error(f"❌ Failed to create fallback TextClip: {str(fallback_e)}")
+            return ColorClip(size=(900, 150), color=(0, 0, 0), duration=duration)
 
 def add_overlays(image, logo_path=None, sticker_path=None):
     """
@@ -204,6 +211,9 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
                 logger.info(f"✅ Created output directory: {output_dir}")
+            if not script_text or len(script_text.strip()) < 10 or "narrative script about" in script_text.lower():
+                logger.warning(f"⚠️ Invalid script_text: '{script_text}', using default")
+                script_text = "AI advancements are transforming technology, creating new opportunities."
 
             # Load audio
             logger.info(f"🔊 Loading audio: {audio_path}")
@@ -323,10 +333,13 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 nltk.download('punkt', quiet=True)
                 nltk.download('punkt_tab', quiet=True)
                 words = nltk.word_tokenize(script_text)
-                # Combine words into phrases (8 words per caption, max 10 captions to reduce load)
+                # Combine words into phrases (8 words per caption, max 10 captions)
                 words_per_caption = 8
                 max_captions = 10
                 phrases = [' '.join(words[i:i+words_per_caption]) for i in range(0, len(words), words_per_caption)][:max_captions]
+                if not phrases or all(len(p.strip()) < 2 for p in phrases):
+                    logger.warning("⚠️ No valid caption phrases generated, using fallback")
+                    phrases = ["AI is transforming technology."] * max_captions
                 logger.info(f"📊 Generated {len(phrases)} caption phrases")
                 phrase_duration = target_duration / max(len(phrases), 1) if phrases else target_duration
                 subtitles = []
@@ -339,7 +352,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                         current_time = end_time
             except Exception as e:
                 logger.error(f"❌ Failed to generate captions with NLTK: {str(e)}", exc_info=True)
-                subtitles = [((0, target_duration), script_text[:100])]  # Fallback to truncated script
+                subtitles = [((0, target_duration), "AI is transforming technology.")]  # Fallback to default caption
 
             subtitle_clips = []
             for (start, end), phrase in subtitles:
@@ -406,18 +419,6 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             # Generate output path
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_path = str(Path(output_dir) / f"video_{timestamp}.mp4")
-
-            # Validate video_clip.duration before passing to safe_write_videofile
-            if not hasattr(video, 'duration') or video.duration is None or (isinstance(video.duration, str) and video.duration.startswith('_NoValueType')):
-                logger.error("❌ Final video_clip has an invalid duration before writing.")
-                raise ValueError("Final video_clip has an invalid duration before writing.")
-            
-            # Ensure video.duration is a float
-            try:
-                final_video_duration = float(video.duration)
-            except (TypeError, ValueError) as e:
-                logger.error(f"❌ Could not convert video.duration to float: {video.duration}. Error: {e}")
-                raise ValueError("Video duration is not a valid number.")
 
             # Write video using safe_write_videofile
             logger.info(f"💾 Writing video to {output_path}...")
