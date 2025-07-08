@@ -15,7 +15,7 @@ from TTS.api import TTS
 from pathlib import Path
 from datetime import datetime
 import time
-from pydub import AudioSegment  # Added for audio file validation
+from pydub import AudioSegment
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +56,12 @@ def generate_voice(script: str, output_dir: str = "output") -> str:
                 audio_seg = AudioSegment.from_file(audio_path)
                 duration = len(audio_seg) / 1000.0
                 if duration <= 0:
-                    raise ValueError("Mozilla TTS generated audio with invalid duration or is empty.")
+                    raise ValueError("Mozilla TTS generated audio with invalid duration")
                 logger.info(f"✅ Audio file validated with pydub: duration={duration:.2f}s")
             except Exception as validation_error:
                 logger.warning(f"⚠️ Mozilla TTS audio validation failed: {str(validation_error)}")
                 os.remove(audio_path) if os.path.exists(audio_path) else None
-                raise FileNotFoundError("Mozilla TTS generated invalid or unreadable audio file, triggering gTTS fallback.")
+                raise FileNotFoundError("Mozilla TTS generated invalid audio file")
 
             # Create safe audio clip and verify duration
             audio_clip = create_safe_audio_clip(audio_path)
@@ -111,7 +111,7 @@ def generate_voice(script: str, output_dir: str = "output") -> str:
 
 def fix_audio_clip_duration(audio_clip, fallback_duration=30.0):
     """
-    Fix audio clip duration issues, including handling _NoValueType explicitly.
+    Fix audio clip duration issues.
     
     Args:
         audio_clip: MoviePy AudioClip
@@ -121,45 +121,33 @@ def fix_audio_clip_duration(audio_clip, fallback_duration=30.0):
         AudioClip with properly set duration
     """
     try:
-        duration = None
-        # Check if clip has valid duration or is _NoValueType
+        # Check if clip has valid duration
         if hasattr(audio_clip, 'duration') and audio_clip.duration is not None:
-            if str(audio_clip.duration).startswith('_NoValueType'):
-                logger.warning("⚠️ _NoValueType duration detected, attempting to fix...")
-                duration = None # Indicate that we need to calculate
-            else:
-                try:
-                    duration = float(audio_clip.duration)
-                    if duration > 0:
-                        logger.info(f"✅ Audio clip has valid duration: {duration:.2f}s")
-                        return audio_clip.set_duration(duration)
-                except (TypeError, ValueError):
-                    logger.warning("⚠️ Invalid duration detected, attempting to fix...")
-                    duration = None # Indicate that we need to calculate
-        else:
-            duration = None # Indicate that we need to calculate
+            try:
+                duration = float(audio_clip.duration)
+                if duration > 0:
+                    logger.info(f"✅ Audio clip has valid duration: {duration:.2f}s")
+                    return audio_clip.set_duration(duration)
+            except (TypeError, ValueError):
+                logger.warning("⚠️ Invalid duration detected, attempting to fix...")
         
-        # If no valid duration or it was _NoValueType, try to get it from the audio file
-        if duration is None or duration <= 0: # Check if duration is still invalid
-            logger.warning("⚠️ Audio clip missing or invalid duration, attempting to calculate...")
-            
-            if hasattr(audio_clip, 'filename') and audio_clip.filename:
-                try:
-                    audio_seg = AudioSegment.from_file(audio_clip.filename)
-                    duration = len(audio_seg) / 1000.0
-                    logger.info(f"📊 Calculated duration from file: {duration:.2f}s")
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to calculate duration from file: {e}")
-                    duration = fallback_duration
-            else:
+        # If no valid duration, try to get it from the audio file
+        logger.warning("⚠️ Audio clip missing or invalid duration, attempting to calculate...")
+        
+        # Try to get duration from audio file if it's a file-based clip
+        if hasattr(audio_clip, 'filename') and audio_clip.filename:
+            try:
+                audio_seg = AudioSegment.from_file(audio_clip.filename)
+                duration = len(audio_seg) / 1000.0
+                logger.info(f"📊 Calculated duration from file: {duration:.2f}s")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to calculate duration from file: {e}")
                 duration = fallback_duration
-                logger.warning(f"🔄 Using fallback duration: {duration:.2f}s")
-        
-        # Ensure duration is positive
-        if duration <= 0:
+        else:
+            # Use fallback duration
             duration = fallback_duration
-            logger.warning(f"⚠️ Calculated duration was non-positive, falling back to {duration:.2f}s")
-
+            logger.warning(f"🔄 Using fallback duration: {duration:.2f}s")
+        
         # Set the duration explicitly
         audio_clip = audio_clip.set_duration(duration)
         logger.info(f"✅ Fixed audio clip duration: {duration:.2f}s")
@@ -170,7 +158,6 @@ def fix_audio_clip_duration(audio_clip, fallback_duration=30.0):
         logger.error(f"❌ Error fixing audio clip duration: {e}")
         # Create a silent clip as fallback
         return AudioClip(make_frame=lambda t: np.array([0.0]), duration=fallback_duration)
-
 
 def create_safe_audio_clip(audio_path, target_duration=None):
     """
@@ -310,7 +297,7 @@ def validate_clip_properties(clip, clip_name="Unknown"):
         
         # Fix duration
         duration = getattr(clip, 'duration', None)
-        if duration is None or str(duration).startswith('_NoValueType') or (isinstance(duration, (int, float)) and duration <= 0.5):
+        if duration is None or str(duration).startswith('_NoValueType') or duration is None or (isinstance(duration, (int, float)) and duration <= 0.5):
             logger.warning(f"⚠️ Invalid or short duration for {clip_name}, setting to 0.5")
             clip = clip.set_duration(0.5)
         else:
@@ -335,16 +322,15 @@ def validate_clip_properties(clip, clip_name="Unknown"):
             clip = clip.set_end(float(clip.start) + float(clip.duration))
         
         # Fix size
-        if isinstance(clip, (ImageClip, CompositeVideoClip, TextClip)) and (not hasattr(clip, 'size') or clip.size is None):
+        if isinstance(clip, (ImageClip, CompositeVideoClip, TextClip)) and (not hasattr(clip, 'size') or clip.size is None or str(clip.size).startswith('_NoValueType')):
             logger.debug(f"🔄 Setting size for {clip_name} to (1080, 1920)")
             clip = clip.resize((1080, 1920))
         
-        # Fix position for TextClip
-        if isinstance(clip, TextClip):
-            pos = getattr(clip, 'pos', None)
-            if pos is None or str(pos).startswith('_NoValueType'):
-                logger.debug(f"🔄 Setting position for {clip_name} to ('center', 'bottom')")
-                clip = clip.set_position(('center', 'bottom'))
+        # Fix position
+        pos = getattr(clip, 'pos', None)
+        if pos is None or str(pos).startswith('_NoValueType'):
+            logger.debug(f"🔄 Setting position for {clip_name} to ('center', 'center')")
+            clip = clip.set_position(('center', 'center'))
         
         # Fix FPS
         fps = getattr(clip, 'fps', None)
@@ -354,10 +340,10 @@ def validate_clip_properties(clip, clip_name="Unknown"):
         
         # Validate TextClip-specific properties
         if isinstance(clip, TextClip):
-            text = getattr(clip, 'text', None)
-            font = getattr(clip, 'font', None)
-            fontsize = getattr(clip, 'fontsize', None)
-            color = getattr(clip, 'color', None)
+            text = getattr(clip, 'text', 'Fallback')
+            font = getattr(clip, 'font', 'FreeSerif')
+            fontsize = getattr(clip, 'fontsize', 60)
+            color = getattr(clip, 'color', 'white')
             
             if text is None or str(text).startswith('_NoValueType') or \
                font is None or str(font).startswith('_NoValueType') or \
@@ -368,7 +354,7 @@ def validate_clip_properties(clip, clip_name="Unknown"):
                     clip = TextClip(
                         text if text and not str(text).startswith('_NoValueType') else "Fallback",
                         font='FreeSerif',
-                        fontsize=60 if fontsize is None or str(fontsize).startswith('_NoValueType') else fontsize,
+                        fontsize=60 if fontsize is None or str(fontsize).startswith('_NoValueType') else int(fontsize),
                         color='white' if color is None or str(color).startswith('_NoValueType') else color,
                         stroke_color='black',
                         stroke_width=1,
@@ -447,9 +433,14 @@ def fix_composite_video_clips(clips, fallback_duration=0.5):
                 fixed_clip = fixed_clip.set_end(float(fixed_clip.start) + fallback_duration)
             
             # Ensure size is set
-            if isinstance(fixed_clip, (ImageClip, CompositeVideoClip, TextClip)) and (not hasattr(fixed_clip, 'size') or fixed_clip.size is None):
+            if isinstance(fixed_clip, (ImageClip, CompositeVideoClip, TextClip)) and (not hasattr(fixed_clip, 'size') or fixed_clip.size is None or str(fixed_clip.size).startswith('_NoValueType')):
                 logger.debug(f"🔄 Setting size for clip {i+1} to (1080, 1920)")
                 fixed_clip = fixed_clip.resize((1080, 1920))
+            
+            # Ensure position is set
+            if isinstance(fixed_clip, (ImageClip, TextClip)) and (not hasattr(fixed_clip, 'pos') or fixed_clip.pos is None or str(fixed_clip.pos).startswith('_NoValueType')):
+                logger.debug(f"🔄 Setting position for clip {i+1} to ('center', 'center')")
+                fixed_clip = fixed_clip.set_position(('center', 'center'))
             
             # Debug clip properties
             logger.debug(f"🔍 Video clip {i+1} properties: duration={getattr(fixed_clip, 'duration', 'NOT SET')}, "
@@ -498,7 +489,7 @@ def safe_write_videofile(video_clip, output_path, **kwargs):
             return False
         
         # Ensure size is valid
-        if not hasattr(video_clip, 'size') or video_clip.size is None:
+        if not hasattr(video_clip, 'size') or video_clip.size is None or str(video_clip.size).startswith('_NoValueType'):
             logger.debug("🔄 Setting video clip size to (1080, 1920)")
             video_clip = video_clip.resize((1080, 1920))
         
