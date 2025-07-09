@@ -19,7 +19,7 @@ from voice import fix_composite_audio_clips, debug_audio_clip, safe_write_videof
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Detailed logging for debugging
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -50,12 +50,16 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
         **kwargs: Additional TextClip parameters (fontsize, color, etc.)
 
     Returns:
-        MoviePy TextClip or None if creation fails
+        MoviePy TextClip or ColorClip if creation fails
     """
     if not text or len(text.strip()) < 2 or text.strip().replace(':', '').replace(',', '').replace('.', '').isspace():
         logger.warning(f"⚠️ Invalid or too short text: '{text}', using fallback text")
         text = "Default Caption"
     
+    # Cap duration for readability
+    duration = min(max(float(duration), 0.5), 6.0)  # 0.5s to 6s
+    logger.debug(f"📝 Adjusted caption duration to {duration:.2f}s for '{text}'")
+
     # Set default parameters with explicit validation
     default_params = {
         'font': kwargs.get('font', 'FreeSerif'),
@@ -83,7 +87,7 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
         default_params['stroke_width'] = 1
 
     try:
-        logger.debug(f"📝 Attempting to create TextClip for text: '{text}' with params: {default_params}")
+        logger.debug(f"📝 Creating TextClip for text: '{text}' with params: {default_params}")
         text_clip = TextClip(
             text.strip(),
             font=default_params['font'],
@@ -95,15 +99,12 @@ def create_safe_text_clip(text: str, duration: float, **kwargs) -> TextClip:
             method=default_params['method'],
             align=default_params['align']
         )
-        # Validate and set duration
-        duration = max(float(duration), 0.5) if isinstance(duration, (int, float)) else 0.5
         text_clip = validate_clip_properties(text_clip, f"Caption '{text}'")
         text_clip = text_clip.set_duration(duration).set_position(('center', 'bottom'))
-        logger.debug(f"✅ Successfully created TextClip: duration={text_clip.duration:.2f}s")
+        logger.info(f"✅ Created TextClip: duration={text_clip.duration:.2f}s, size={text_clip.size}, pos={text_clip.pos}")
         return text_clip
     except Exception as e:
         logger.error(f"❌ Failed to create TextClip for '{text}': {str(e)}", exc_info=True)
-        # Fallback to a basic TextClip
         try:
             fallback_clip = TextClip(
                 "Fallback Caption",
@@ -213,7 +214,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 logger.info(f"✅ Created output directory: {output_dir}")
             if not script_text or len(script_text.strip()) < 10 or "narrative script about" in script_text.lower():
                 logger.warning(f"⚠️ Invalid script_text: '{script_text}', using default")
-                script_text = "AI advancements are transforming technology, creating new opportunities."
+                script_text = "AI advancements are transforming technology, creating new opportunities for innovation and research in various fields."
 
             # Load audio
             logger.info(f"🔊 Loading audio: {audio_path}")
@@ -321,7 +322,6 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                     logger.debug("✅ Audio successfully assigned to video")
                 except Exception as e:
                     logger.error(f"❌ Failed to assign audio: {str(e)}", exc_info=True)
-                    # Fallback to re-loading audio directly
                     audio = AudioFileClip(audio_path).set_duration(target_duration)
                     video = video.set_audio(audio)
                     logger.info("✅ Fallback audio assignment successful")
@@ -333,31 +333,33 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 nltk.download('punkt', quiet=True)
                 nltk.download('punkt_tab', quiet=True)
                 words = nltk.word_tokenize(script_text)
-                # Combine words into phrases (8 words per caption, max 10 captions)
-                words_per_caption = 8
-                max_captions = 10
-                phrases = [' '.join(words[i:i+words_per_caption]) for i in range(0, len(words), words_per_caption)][:max_captions]
+                # Aim for 8-12 captions, 6-8 words each
+                words_per_caption = 6
+                target_captions = max(8, min(12, int(target_duration / 5)))  # ~5s per caption
+                phrases = [' '.join(words[i:i+words_per_caption]) for i in range(0, len(words), words_per_caption)][:target_captions]
                 if not phrases or all(len(p.strip()) < 2 for p in phrases):
                     logger.warning("⚠️ No valid caption phrases generated, using fallback")
-                    phrases = ["AI is transforming technology."] * max_captions
+                    phrases = ["AI is transforming technology.", "New opportunities arise daily."] * (target_captions // 2)
                 logger.info(f"📊 Generated {len(phrases)} caption phrases")
-                phrase_duration = target_duration / max(len(phrases), 1) if phrases else target_duration
+                phrase_duration = min(target_duration / max(len(phrases), 1), 6.0)  # Cap at 6s
                 subtitles = []
                 current_time = 0
                 for phrase in phrases:
-                    if len(phrase.strip()) >= 2:  # Skip short or invalid phrases
-                        duration = max(phrase_duration, 0.5)  # Ensure minimum duration
+                    if len(phrase.strip()) >= 2:
+                        duration = min(phrase_duration, 6.0)  # Cap duration
                         end_time = min(current_time + duration, target_duration)
                         subtitles.append(((current_time, end_time), phrase))
                         current_time = end_time
+                if not subtitles:
+                    subtitles = [((0, target_duration), "AI is transforming technology.")]
             except Exception as e:
                 logger.error(f"❌ Failed to generate captions with NLTK: {str(e)}", exc_info=True)
-                subtitles = [((0, target_duration), "AI is transforming technology.")]  # Fallback to default caption
+                subtitles = [((0, target_duration), "AI is transforming technology.")]
 
             subtitle_clips = []
             for (start, end), phrase in subtitles:
                 try:
-                    caption_duration = max(float(end - start), 0.5)  # Ensure valid duration
+                    caption_duration = max(float(end - start), 0.5)
                     caption_clip = create_safe_text_clip(
                         phrase,
                         duration=caption_duration,
@@ -392,23 +394,14 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 logger.error("❌ Final composite video is invalid or a ColorClip, creating fallback")
                 video = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=target_duration).set_audio(audio)
 
-            # Fix composite video clips if applicable
+            # Fix composite video clips
             if isinstance(video, CompositeVideoClip) and hasattr(video, 'clips'):
                 video.clips = fix_composite_video_clips(video.clips, fallback_duration=target_duration)
 
-            # Ensure video audio is valid before writing
+            # Ensure video audio is valid
             if video.audio is not None:
                 video.audio = fix_composite_audio_clips([video.audio])[0]
                 debug_audio_clip(video.audio, "Final Video Audio")
-                if hasattr(video.audio, 'clips'):
-                    logger.debug(f"🔍 Final audio is composite with {len(video.audio.clips)} sub-clips")
-                    for i, sub_clip in enumerate(video.audio.clips):
-                        if not hasattr(sub_clip, 'start') or not isinstance(sub_clip.start, (int, float)):
-                            logger.warning(f"⚠️ Final audio sub-clip {i} has invalid start: {sub_clip.start}, resetting to 0")
-                            sub_clip.start = 0
-                        if not hasattr(sub_clip, 'duration') or not isinstance(sub_clip.duration, (int, float)):
-                            logger.warning(f"⚠️ Final audio sub-clip {i} has invalid duration: {sub_clip.duration}, resetting to {target_duration}")
-                            sub_clip.duration = target_duration
 
             # Log final video properties
             logger.info(f"🔍 Final video clip: duration={getattr(video, 'duration', 'NOT SET'):.2f}s, "
@@ -420,7 +413,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_path = str(Path(output_dir) / f"video_{timestamp}.mp4")
 
-            # Write video using safe_write_videofile
+            # Write video
             logger.info(f"💾 Writing video to {output_path}...")
             success = safe_write_videofile(
                 video,
@@ -430,7 +423,7 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                 preset="ultrafast",
                 bitrate="2000k",
                 threads=2,
-                fps=20
+                fps=30
             )
 
             if not success:
@@ -461,7 +454,6 @@ def create_video(audio_path: str, image_paths: list, output_dir: str, script_tex
                     logger.info(f"🖼️ Saved last processed frame for debugging: {debug_path}")
                 return None
         finally:
-            # Ensure resources are released
             if 'audio' in locals():
                 try:
                     audio.close()
@@ -496,16 +488,21 @@ def cleanup():
         logger.error(f"❌ Cleanup failed: {str(e)}", exc_info=True)
 
 if __name__ == "__main__":
-    audio_path = "output/narration_20250704_084011.mp3"
+    audio_path = "output/narration_20250708_125535.mp3"
     image_paths = [
-        f"output/frame_20250704_084016_1.png",
-        f"output/frame_20250704_084022_2.png",
-        f"output/frame_20250704_084031_3.png",
-        f"output/frame_20250704_084035_4.png",
-        f"output/frame_20250704_084047_5.png"
+        "output/frame_20250708_125539_1.png",
+        "output/frame_20250708_125546_2.png",
+        "output/frame_20250708_125555_3.png",
+        "output/frame_20250708_125601_4.png",
+        "output/frame_20250708_125605_5.png",
+        "output/frame_20250708_125610_6.png",
+        "output/frame_20250708_125612_7.png",
+        "output/frame_20250708_125617_8.png",
+        "output/frame_20250708_125622_9.png",
+        "output/frame_20250708_125628_10.png"
     ]
     output_dir = "output"
-    script_text = "AI just solved a 50-year-old problem in mathematics, opening new possibilities for research."
+    script_text = "AI advancements are transforming technology, creating new opportunities for innovation and research in various fields."
     video_path = create_video(audio_path, image_paths, output_dir, script_text)
     if video_path:
         print(f"✅ Video created at: {video_path}")
